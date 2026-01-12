@@ -116,7 +116,7 @@ export function FloatingWindow({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+    <div id="FloatingWindow" className="fixed inset-0 z-50 pointer-events-none">
       <div
         className="absolute bg-black rounded-xl shadow-xl border border-white/10 pointer-events-auto"
         style={{
@@ -366,7 +366,6 @@ export default function ZoomMeetingEmbed({
         <FloatingWindow
           open={openZoomModal && !!zoomWebClientUrl}
           onClose={closeZoomModal}
-          className="FloatingWindow " 
           title="Zoom Meeting"
           initialPosition={{ x: 80, y: 60 }}
           initialSize={{ width: 1000, height: 600 }}
