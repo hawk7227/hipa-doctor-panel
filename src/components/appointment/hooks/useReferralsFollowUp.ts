@@ -2,6 +2,38 @@ import { useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 
+// Helper function to convert UTC date to Phoenix timezone (same as CreateAppointmentDialog)
+function convertToTimezone(dateString: string, timezone: string): Date {
+  const date = new Date(dateString)
+  
+  // Get the date/time components in the specified timezone
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', options)
+  const parts = formatter.formatToParts(date)
+  
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  const hour = parseInt(getValue('hour'))
+  const minute = parseInt(getValue('minute'))
+  const second = parseInt(getValue('second'))
+  
+  const converted = new Date(Date.UTC(year, month, day, hour, minute, second))
+  
+  return converted
+}
+
 export interface Referral {
   id: string
   specialist_name: string
@@ -217,29 +249,66 @@ export function useReferralsFollowUp(
       throw new Error('Please select date and time for follow-up')
     }
 
+    if (!appointment.patient_id || !appointment.doctor_id) {
+      throw new Error('Patient ID and Doctor ID are required')
+    }
+
     setIsSchedulingFollowUp(true)
 
     try {
-      const followUpDateTime = new Date(`${followUpData.date}T${followUpData.time}`)
+      // CRITICAL: Provider timezone is ALWAYS America/Phoenix
+      // Parse the date and time from form inputs (they are strings representing Phoenix time)
+      const [year, month, day] = followUpData.date.split('-').map(Number)
+      const [hours, minutes] = followUpData.time.split(':').map(Number)
+      
+      // Convert to Phoenix timezone to get correct date components (same as CreateAppointmentDialog)
+      const doctorTimezone = 'America/Phoenix'
+      // Create a date string from the parsed components and convert to Phoenix timezone
+      // This ensures we get the correct date components in Phoenix timezone
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00Z`
+      const phoenixDate = convertToTimezone(dateStr, doctorTimezone)
+      const phoenixYear = phoenixDate.getUTCFullYear()
+      const phoenixMonth = phoenixDate.getUTCMonth() + 1 // JavaScript months are 0-indexed
+      const phoenixDay = phoenixDate.getUTCDate()
+      
+      // Hours and minutes are already in the correct format (24-hour), use them directly
+      // They represent Phoenix time as selected by the user
+      
+      // Use the same API endpoint as CreateAppointmentDialog
+      const response = await fetch('/api/appointments/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          doctorId: appointment.doctor_id,
+          year: phoenixYear,
+          month: phoenixMonth,
+          day: phoenixDay,
+          hours: hours,
+          minutes: minutes,
+          visitType: followUpData.visitType,
+          patientFirstName: appointment.patients?.first_name || '',
+          patientLastName: appointment.patients?.last_name || '',
+          patientEmail: appointment.patients?.email || null,
+          patientPhone: appointment.patients?.phone || null,
+          patientDob: null, // Not available in appointment object
+          patientLocation: null, // Not available in appointment object
+          serviceType: 'follow-up',
+          notes: followUpData.reason || `Follow-up: ${appointment.chief_complaint || 'Follow-up appointment'}`
+        })
+      })
 
-      // Create new appointment in appointments table
-      const { error } = await supabase
-        .from('appointments')
-        .insert([{
-          patient_id: appointment.patient_id,
-          doctor_id: appointment.doctor_id,
-          requested_date_time: followUpDateTime.toISOString(),
-          visit_type: followUpData.visitType,
-          chief_complaint: followUpData.reason || `Follow-up: ${appointment.chief_complaint || 'Follow-up appointment'}`,
-          notes: followUpData.notes,
-          status: 'scheduled',
-          service_type: appointment.service_type || 'general'
-        }])
+      const result = await response.json()
 
-      if (error) throw error
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to schedule follow-up')
+      }
 
-      // Call onFollowUp callback if provided
+      // Call onFollowUp callback if provided (for any additional handling)
       if (onFollowUp && appointment.patients) {
+        // Create date object for callback (in Phoenix timezone)
+        const followUpDateTime = new Date(Date.UTC(phoenixYear, phoenixMonth - 1, phoenixDay, hours, minutes, 0))
         onFollowUp(
           {
             id: appointment.patients.id,
