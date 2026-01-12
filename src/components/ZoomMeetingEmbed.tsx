@@ -41,7 +41,7 @@ export function FloatingWindow({
   onClose,
   children,
   initialPosition = { x: 100, y: 100 },
-  initialSize = { width: 1000, height: 800 },
+  initialSize = { width: 600, height: 500 },
   minWidth = 360,
   minHeight = 240
 }: FloatingWindowProps) {
@@ -430,32 +430,6 @@ export default function ZoomMeetingEmbed({
         </button>
       </div>
     </div>
-	
-	
-	 <FloatingWindow
-          open={openZoomModal && !!zoomWebClientUrl} 
-          title="Zoom Meeting"
-          initialPosition={{ x: 80, y: 60 }}
-          initialSize={{ width: 1000, height: 600 }}
-        >
-          <div className="relative w-full h-full">
-            <button 
-              className="absolute top-3 right-3 z-50 inline-flex items-center gap-2 bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700"
-            >
-              <X className="h-4 w-4" />
-              Close
-            </button>
-
-            <iframe
-              // You can switch between start_url or join_url:
-              // src={appointment?.zoom_start_url ?? ''}
-              src={appointment?.zoom_start_url ?? ''}
-              className="w-full h-full border-0"
-              allow="camera; microphone; fullscreen"
-              allowFullScreen
-            />
-          </div>
-        </FloatingWindow>
   )
 }
 
