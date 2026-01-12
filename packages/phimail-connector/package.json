@@ -1,0 +1,9 @@
+{
+  "name": "phimail-connector",
+  "version": "0.97.101",
+  "description": "PhiMailConnector module for phiMail Server",
+  "main": "index.js",
+  "author": "EMR Direct",
+  "license": "PROPRIETARY"
+}
+

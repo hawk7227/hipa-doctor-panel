@@ -1,0 +1,575 @@
+/* ============================================
+   MODAL OVERLAY
+   ============================================ */
+.queue-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.queue-modal-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ============================================
+   MODAL CONTAINER
+   ============================================ */
+.queue-modal {
+  background: linear-gradient(145deg, #1a1a2e 0%, #0d0d1a 100%);
+  border-radius: 24px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  overflow: hidden;
+  animation: modalSlideIn 0.4s ease;
+}
+
+.queue-modal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 24px;
+  padding: 2px;
+  background: linear-gradient(135deg, #14b8a6, #ec4899, #3b82f6);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ============================================
+   MODAL HEADER
+   ============================================ */
+.queue-header {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.2), rgba(236, 72, 153, 0.1));
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.queue-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.queue-title-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4); }
+  50% { transform: scale(1.05); box-shadow: 0 0 20px 5px rgba(20, 184, 166, 0.2); }
+}
+
+.queue-title h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #14b8a6, #5eead4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.queue-title span {
+  font-size: 0.75rem;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.close-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* ============================================
+   PATIENT INFO SECTION
+   ============================================ */
+.patient-section {
+  padding: 24px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.patient-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 auto 16px;
+  box-shadow: 0 8px 32px rgba(236, 72, 153, 0.3);
+}
+
+.patient-name {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.patient-details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.patient-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
+.patient-detail-icon {
+  font-size: 14px;
+}
+
+.visit-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.visit-type-badge.video {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2));
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.visit-type-badge.phone {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(20, 184, 166, 0.2));
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* ============================================
+   CLOCK SECTION
+   ============================================ */
+.clock-section {
+  padding: 32px 24px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
+}
+
+.clock-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: #64748b;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+
+.clock-container {
+  position: relative;
+  display: inline-block;
+}
+
+.clock-ring {
+  position: absolute;
+  top: -20px;
+  left: -20px;
+  right: -20px;
+  bottom: -20px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: #14b8a6;
+  border-right-color: #ec4899;
+  animation: clockSpin 3s linear infinite;
+}
+
+@keyframes clockSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.clock-display {
+  font-family: 'Orbitron', monospace;
+  font-size: 4rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #14b8a6 0%, #5eead4 50%, #ec4899 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 4px;
+  padding: 30px 40px;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 0 60px rgba(20, 184, 166, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  min-width: 280px;
+}
+
+.clock-display::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.1), rgba(236, 72, 153, 0.1));
+  pointer-events: none;
+}
+
+.clock-seconds {
+  font-size: 1.5rem;
+  color: #ec4899;
+  vertical-align: super;
+  margin-left: 4px;
+}
+
+.clock-started {
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.clock-started strong {
+  color: #94a3b8;
+}
+
+/* ============================================
+   QUEUE POSITION
+   ============================================ */
+.queue-position-section {
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.queue-stat {
+  text-align: center;
+}
+
+.queue-stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  font-family: 'Orbitron', monospace;
+}
+
+.queue-stat-value.position {
+  color: #f59e0b;
+}
+
+.queue-stat-value.total {
+  color: #64748b;
+}
+
+.queue-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.queue-divider {
+  width: 1px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.estimated-wait {
+  text-align: center;
+}
+
+.estimated-wait-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.estimated-wait-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+/* ============================================
+   REASON SECTION
+   ============================================ */
+.reason-section {
+  padding: 20px 24px;
+}
+
+.reason-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #ec4899;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.reason-text {
+  color: #e2e8f0;
+  font-size: 1rem;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px 16px;
+  border-radius: 12px;
+  border-left: 3px solid #ec4899;
+}
+
+/* ============================================
+   ACTION BUTTONS
+   ============================================ */
+.action-section {
+  padding: 20px 24px 24px;
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.action-btn.start-call {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+}
+
+.action-btn.start-call:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(16, 185, 129, 0.4);
+}
+
+.action-btn.complete {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+}
+
+.action-btn.complete:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(59, 130, 246, 0.4);
+}
+
+.action-btn.cancel {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.action-btn.cancel:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
+.progress-section {
+  padding: 0 24px 20px;
+}
+
+.progress-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.progress-steps::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-50%);
+  z-index: 0;
+}
+
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.step-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.step-icon.completed {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+.step-icon.active {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+  animation: stepPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes stepPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.step-icon.pending {
+  background: rgba(255, 255, 255, 0.1);
+  color: #64748b;
+}
+
+.step-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.step-label.active {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.step-label.completed {
+  color: #10b981;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 480px) {
+  .queue-modal {
+    margin: 10px;
+    border-radius: 20px;
+  }
+
+  .clock-display {
+    font-size: 2.5rem;
+    padding: 20px 30px;
+    min-width: auto;
+  }
+
+  .patient-name {
+    font-size: 1.4rem;
+  }
+
+  .action-section {
+    flex-direction: column;
+  }
+
+  .queue-position-section {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+}
+
