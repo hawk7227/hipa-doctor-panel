@@ -433,15 +433,13 @@ export default function ZoomMeetingEmbed({
 	
 	
 	 <FloatingWindow
-          open={openZoomModal && !!zoomWebClientUrl}
-          onClose={closeZoomModal}
+          open={openZoomModal && !!zoomWebClientUrl} 
           title="Zoom Meeting"
           initialPosition={{ x: 80, y: 60 }}
           initialSize={{ width: 1000, height: 600 }}
         >
           <div className="relative w-full h-full">
-            <button
-              onClick={closeZoomModal}
+            <button 
               className="absolute top-3 right-3 z-50 inline-flex items-center gap-2 bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700"
             >
               <X className="h-4 w-4" />
