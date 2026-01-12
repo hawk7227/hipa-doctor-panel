@@ -363,6 +363,33 @@ export default function ZoomMeetingEmbed({
         </div>
 
        
+	{/* ✅ Floating resizable window with iframe */}
+        <FloatingWindow
+          open={openZoomModal && !!zoomWebClientUrl}
+          onClose={closeZoomModal}
+          title="Zoom Meeting"
+          initialPosition={{ x: 80, y: 60 }}
+          initialSize={{ width: 1000, height: 600 }}
+        >
+          <div className="relative w-full h-full">
+            <button
+              onClick={closeZoomModal}
+              className="absolute top-3 right-3 z-50 inline-flex items-center gap-2 bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700"
+            >
+              <X className="h-4 w-4" />
+              Close
+            </button>
+
+            <iframe
+              // You can switch between start_url or join_url:
+              // src={appointment?.zoom_start_url ?? ''}
+              src={appointment?.zoom_start_url ?? ''}
+              className="w-full h-full border-0"
+              allow="camera; microphone; fullscreen"
+              allowFullScreen
+            />
+          </div>
+        </FloatingWindow>
 		
         <hr className="border-white/10 my-4" />
 
@@ -404,8 +431,8 @@ export default function ZoomMeetingEmbed({
       </div>
     </div>
 	
-	{/* ✅ Floating resizable window with iframe */}
-        <FloatingWindow
+	
+	 <FloatingWindow
           open={openZoomModal && !!zoomWebClientUrl}
           onClose={closeZoomModal}
           title="Zoom Meeting"
