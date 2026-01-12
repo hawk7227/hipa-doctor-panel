@@ -3,47 +3,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import { ZoomMtg } from "@zoom/meetingsdk";
-//import "@zoom/meetingsdk/dist/css/bootstrap.css";
-//import "@zoom/meetingsdk/dist/css/react-select.css";
-
-ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
-ZoomMtg.preLoadWasm();
-ZoomMtg.prepareWebSDK();
-
-export default function ZoomMeeting() {
-  const joinMeeting = async () => {
-    const meetingNumber = "84894467575";
-    const passWord = "770438";
-    const userName = "React User";
-    const role = 0;
-
-    const response = await fetch("http://localhost:4000/zoom-signature", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ meetingNumber, role })
-    });
-
-    const { signature } = await response.json();
-
-    ZoomMtg.init({
-      leaveUrl: "http://localhost:3000",
-      success: () => {
-        ZoomMtg.join({
-          sdkKey: 'JmDe5hb1RxCCkVUwefYEjw',
-          signature,
-          meetingNumber,
-          passWord,
-          userName,
-          success: () => console.log("Joined"),
-          error: (err) => console.error(err)
-        });
-      },
-      error: (err) => console.error(err)
-    });
-  };
-
-  return <button onClick={joinMeeting}>Join Zoom Meeting</button>;
-}
 
 interface ZoomMeetingEmbedProps {
   appointment: {
