@@ -41,7 +41,7 @@ export function FloatingWindow({
   onClose,
   children,
   initialPosition = { x: 100, y: 100 },
-  initialSize = { width: 900, height: 600 },
+  initialSize = { width: 1000, height: 800 },
   minWidth = 360,
   minHeight = 240
 }: FloatingWindowProps) {
