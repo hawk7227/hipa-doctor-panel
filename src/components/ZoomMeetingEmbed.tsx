@@ -366,6 +366,7 @@ export default function ZoomMeetingEmbed({
         <FloatingWindow
           open={openZoomModal && !!zoomWebClientUrl}
           onClose={closeZoomModal}
+          className="FloatingWindow " 
           title="Zoom Meeting"
           initialPosition={{ x: 80, y: 60 }}
           initialSize={{ width: 1000, height: 600 }}
