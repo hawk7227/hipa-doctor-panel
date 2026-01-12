@@ -111,7 +111,7 @@ useEffect(() => {
   }, [])
 
   return (
-    <div {...sectionProps} style={{ contain: 'layout style paint' }}>
+    <div {...sectionProps} style={{ contain: 'contain' }}>
       {isCustomizeMode && (
         <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
           <GripVertical className="h-4 w-4" />
