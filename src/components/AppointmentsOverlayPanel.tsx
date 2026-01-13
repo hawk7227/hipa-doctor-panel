@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { X, GripHorizontal, Calendar, ArrowLeft, Video, Phone, MessageSquare, User, FileText, Pill, Stethoscope, ClipboardList, Heart, Activity, Thermometer, Scale, AlertTriangle, TestTube, Upload, ChevronDown, ChevronUp, Clock, MapPin, Mail, Shield, History } from 'lucide-react'
+import { X, GripHorizontal, Calendar, ArrowLeft, Video, Phone, MessageSquare, User, FileText, Pill, Stethoscope, ClipboardList, Heart, Activity, Thermometer, AlertTriangle, TestTube, Upload, ChevronDown, ChevronUp, Clock, History } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Appointment {
@@ -66,10 +66,13 @@ export default function AppointmentsOverlayPanel({
   const [labOrders, setLabOrders] = useState<any[]>([])
   const [documents, setDocuments] = useState<any[]>([])
   const [referrals, setReferrals] = useState<any[]>([])
+  const [allergies, setAllergies] = useState<any[]>([])
+  const [vitals, setVitals] = useState<any[]>([])
+  const [medications, setMedications] = useState<any[]>([])
   
   // Collapsible sections
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([
-    'visit-info', 'patient-demographics', 'soap-notes', 'clinical-notes', 'prescriptions'
+    'visit-info', 'patient-demographics', 'allergies', 'vitals', 'medications', 'soap-notes', 'clinical-notes', 'prescriptions'
   ]))
 
   // Draggable state
@@ -89,6 +92,9 @@ export default function AppointmentsOverlayPanel({
       setLabOrders([])
       setDocuments([])
       setReferrals([])
+      setAllergies([])
+      setVitals([])
+      setMedications([])
     }
   }, [isOpen])
 
@@ -205,6 +211,37 @@ export default function AppointmentsOverlayPanel({
         .select('*')
         .eq('appointment_id', appointmentId)
       setReferrals(referralsData || [])
+
+      // Fetch patient allergies
+      if (appointmentData.patient_id) {
+        const { data: allergiesData } = await supabase
+          .from('patient_allergies')
+          .select('*')
+          .eq('patient_id', appointmentData.patient_id)
+          .order('recorded_at', { ascending: false })
+        console.log('Allergies data:', allergiesData)
+        setAllergies(allergiesData || [])
+      }
+
+      // Fetch vitals for this appointment
+      const { data: vitalsData } = await supabase
+        .from('vitals')
+        .select('*')
+        .eq('appointment_id', appointmentId)
+        .order('recorded_at', { ascending: false })
+      console.log('Vitals data:', vitalsData)
+      setVitals(vitalsData || [])
+
+      // Fetch patient medications
+      if (appointmentData.patient_id) {
+        const { data: medsData } = await supabase
+          .from('patient_medications')
+          .select('*')
+          .eq('patient_id', appointmentData.patient_id)
+          .order('recorded_at', { ascending: false })
+        console.log('Medications data:', medsData)
+        setMedications(medsData || [])
+      }
 
     } catch (error: any) {
       console.error('Error fetching appointment detail:', error)
@@ -342,7 +379,7 @@ export default function AppointmentsOverlayPanel({
       style={{ background: '#0a1732', borderBottom: '1px solid #1b2b4d' }}
     >
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4" style={{ color: color === 'cyan' ? '#00e6ff' : color === 'pink' ? '#ff7ad6' : color === 'green' ? '#19d67f' : color === 'orange' ? '#f5a524' : '#00e6ff' }} />
+        <Icon className="h-4 w-4" style={{ color: color === 'cyan' ? '#00e6ff' : color === 'pink' ? '#ff7ad6' : color === 'green' ? '#19d67f' : color === 'orange' ? '#f5a524' : color === 'red' ? '#f87171' : '#00e6ff' }} />
         <span className="font-semibold text-white text-sm">{title}</span>
         {count !== undefined && count > 0 && (
           <span className="px-2 py-0.5 text-xs rounded-full bg-[#1b2b4d] text-[#00e6ff]">{count}</span>
@@ -558,6 +595,124 @@ export default function AppointmentsOverlayPanel({
                   )}
                 </div>
               )}
+
+              {/* 🚨 Allergies - Critical Patient Safety */}
+              <div className="rounded-lg overflow-hidden border border-[#4d1b1b]">
+                <SectionHeader id="allergies" title="Allergies" icon={AlertTriangle} count={allergies.length} color="red" />
+                {expandedSections.has('allergies') && (
+                  <div className="p-4" style={{ background: '#1a0a0a' }}>
+                    {allergies.length === 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-green-900/50 text-green-400 text-sm rounded-full border border-green-700">
+                          NKDA - No Known Drug Allergies
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {allergies.map((allergy, idx) => (
+                          <div key={allergy.id || idx} className="p-3 rounded-lg bg-[#0d1424] border border-[#4d1b1b]">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-4 w-4 text-red-400" />
+                                <span className="text-white font-medium text-sm">{allergy.allergen_name || allergy.allergy}</span>
+                              </div>
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                allergy.status === 'active' ? 'bg-red-900/50 text-red-400' : 'bg-gray-700 text-gray-400'
+                              }`}>
+                                {allergy.status || 'active'}
+                              </span>
+                            </div>
+                            {allergy.reaction && (
+                              <p className="text-red-300 text-xs mt-1 ml-6">Reaction: {allergy.reaction}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Vitals */}
+              <div className="rounded-lg overflow-hidden border border-[#1b2b4d]">
+                <SectionHeader id="vitals" title="Vitals" icon={Activity} count={vitals.length} color="cyan" />
+                {expandedSections.has('vitals') && (
+                  <div className="p-4" style={{ background: '#0a1220' }}>
+                    {vitals.length === 0 ? (
+                      <p className="text-gray-400 text-sm">No vitals recorded for this visit</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {vitals.map((vital, idx) => (
+                          <div key={vital.id || idx} className="p-3 rounded-lg bg-[#0d1424] border border-[#1b2b4d]">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-gray-400">
+                                {vital.recorded_at ? formatDateTime(vital.recorded_at) : 'Recorded'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {(vital.systolic_bp || vital.diastolic_bp) && (
+                                <div className="text-center p-2 rounded bg-[#0a1732]">
+                                  <Heart className="h-4 w-4 text-red-400 mx-auto mb-1" />
+                                  <p className="text-[10px] text-gray-400">Blood Pressure</p>
+                                  <p className="text-white text-sm font-medium">{vital.systolic_bp}/{vital.diastolic_bp}</p>
+                                </div>
+                              )}
+                              {vital.heart_rate && (
+                                <div className="text-center p-2 rounded bg-[#0a1732]">
+                                  <Activity className="h-4 w-4 text-pink-400 mx-auto mb-1" />
+                                  <p className="text-[10px] text-gray-400">Heart Rate</p>
+                                  <p className="text-white text-sm font-medium">{vital.heart_rate} bpm</p>
+                                </div>
+                              )}
+                              {vital.temperature && (
+                                <div className="text-center p-2 rounded bg-[#0a1732]">
+                                  <Thermometer className="h-4 w-4 text-orange-400 mx-auto mb-1" />
+                                  <p className="text-[10px] text-gray-400">Temperature</p>
+                                  <p className="text-white text-sm font-medium">{vital.temperature}°F</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Medications */}
+              <div className="rounded-lg overflow-hidden border border-[#1b4d2b]">
+                <SectionHeader id="medications" title="Current Medications" icon={Pill} count={medications.length} color="green" />
+                {expandedSections.has('medications') && (
+                  <div className="p-4" style={{ background: '#0a1a12' }}>
+                    {medications.length === 0 ? (
+                      <p className="text-gray-400 text-sm">No active medications on record</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {medications.map((med, idx) => (
+                          <div key={med.id || idx} className="p-3 rounded-lg bg-[#0d1424] border border-[#1b4d2b]">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="text-white font-medium text-sm">{med.medication_name}</p>
+                                {med.start_taking_datetime && (
+                                  <p className="text-gray-400 text-xs mt-1">
+                                    Started: {formatDate(med.start_taking_datetime)}
+                                  </p>
+                                )}
+                              </div>
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                med.status === 'active' ? 'bg-green-900/50 text-green-400' : 'bg-gray-700 text-gray-400'
+                              }`}>
+                                {med.status || 'active'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Clinical Notes */}
               <div className="rounded-lg overflow-hidden border border-[#1b2b4d]">
@@ -822,6 +977,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
