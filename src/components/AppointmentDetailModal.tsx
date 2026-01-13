@@ -2203,8 +2203,8 @@ const renderCurrentDaySlots = () => {
 
       {/* Orders Panel - Placeholder */}
       {showOrdersPanel && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowOrdersPanel(false)} />
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
           <div 
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
             style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
@@ -2225,8 +2225,8 @@ const renderCurrentDaySlots = () => {
 
       {/* Prescription History Panel - Placeholder */}
       {showPrescriptionHistoryPanel && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPrescriptionHistoryPanel(false)} />
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
           <div 
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
             style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
@@ -2247,5 +2247,6 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
 
 
