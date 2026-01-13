@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
+import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search, ExternalLink } from 'lucide-react'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
+import MedicationHistoryPanel from '@/components/MedicationHistoryPanel'
 
 interface Patient {
   id: string
@@ -116,6 +117,7 @@ export default function DoctorPatients() {
   const [newMedHistory, setNewMedHistory] = useState({medication: '', provider: '', date: ''})
   const [newPrescriptionLog, setNewPrescriptionLog] = useState({medication: '', quantity: '', pharmacy: '', date: ''})
   const [savingProblems, setSavingProblems] = useState(false)
+  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
 
   useEffect(() => {
     fetchCurrentDoctor()
@@ -2119,7 +2121,16 @@ export default function DoctorPatients() {
                       {/* Medication History */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-white">Medication History (Surescripts)</label>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-semibold text-white">Medication History (Surescripts)</label>
+                            <button
+                              onClick={() => setShowMedicationHistoryPanel(true)}
+                              className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 px-2 py-0.5 bg-cyan-500/10 rounded border border-cyan-500/20"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Open Full View
+                            </button>
+                          </div>
                           <button
                             onClick={handleAddMedicationHistory}
                             disabled={!newMedHistory.medication.trim() || savingProblems}
@@ -2173,7 +2184,17 @@ export default function DoctorPatients() {
 
                       {/* Active Medication Orders */}
                       <div>
-                        <label className="text-sm font-semibold text-white block mb-2">Active Medication Orders</label>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-semibold text-white">Active Medication Orders</label>
+                          <button
+                            onClick={() => setShowMedicationHistoryPanel(true)}
+                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 px-2 py-0.5 bg-cyan-500/10 rounded border border-cyan-500/20"
+                          >
+                            <Pill className="h-3 w-3" />
+                            View Recent Prescriptions
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mb-2">Prescriptions sent from eRx Composer will appear here.</p>
                         <div className="space-y-2">
                           {activeMedOrders.map((order) => (
                             <div key={order.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
@@ -2183,7 +2204,7 @@ export default function DoctorPatients() {
                             </div>
                           ))}
                           {activeMedOrders.length === 0 && (
-                            <p className="text-xs text-gray-400">No active orders</p>
+                            <p className="text-xs text-gray-400">No active orders. Prescriptions sent from eRx Composer will appear here.</p>
                           )}
                         </div>
                       </div>
@@ -2292,7 +2313,36 @@ export default function DoctorPatients() {
         }}
         onStatusChange={handleAppointmentStatusChange}
       />
+
+      {/* Medication History Panel */}
+      {selectedPatient && (
+        <MedicationHistoryPanel
+          isOpen={showMedicationHistoryPanel}
+          onClose={() => setShowMedicationHistoryPanel(false)}
+          patientId={selectedPatient.id}
+          patientName={`${selectedPatient.first_name} ${selectedPatient.last_name}`}
+          patientDOB={selectedPatient.date_of_birth}
+          onReconcile={(medications) => {
+            // Add reconciled medications to the medication history state
+            const newMeds = medications.map((med, idx) => ({
+              id: `reconciled-${Date.now()}-${idx}`,
+              medication: med.medication_name,
+              provider: med.prescriber || 'Surescripts',
+              date: med.start_date || new Date().toISOString().split('T')[0]
+            }))
+            setMedicationHistory(prev => [...newMeds, ...prev])
+            saveProblemsAndMedications()
+          }}
+          onMedicationAdded={() => {
+            // Refresh chart data when medication is added/edited
+            if (selectedPatient) {
+              fetchPatientChart(selectedPatient.id)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
+
 
