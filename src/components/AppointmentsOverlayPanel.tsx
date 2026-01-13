@@ -102,6 +102,7 @@ export default function AppointmentsOverlayPanel({
         .from('appointments')
         .select(`
           id,
+          patient_id,
           visit_type,
           requested_date_time,
           status,
@@ -160,21 +161,13 @@ export default function AppointmentsOverlayPanel({
       setPrescriptions(rxData || [])
 
       // Fetch problems for this patient
-      if (transformed.patients) {
-        const patientId = appointmentData.patient_id || (await supabase
-          .from('appointments')
-          .select('patient_id')
-          .eq('id', appointmentId)
-          .single()).data?.patient_id
-
-        if (patientId) {
-          const { data: problemsData } = await supabase
-            .from('problems')
-            .select('*')
-            .eq('patient_id', patientId)
-            .order('created_at', { ascending: false })
-          setProblems(problemsData || [])
-        }
+      if (transformed.patients && appointmentData.patient_id) {
+        const { data: problemsData } = await supabase
+          .from('problems')
+          .select('*')
+          .eq('patient_id', appointmentData.patient_id)
+          .order('created_at', { ascending: false })
+        setProblems(problemsData || [])
       }
 
       // Fetch lab orders
@@ -875,6 +868,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
