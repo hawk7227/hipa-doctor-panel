@@ -25,6 +25,8 @@ interface Patient {
     created_at: string
     requested_date_time: string | null
   }>
+  // Track merged patient IDs for data operations
+  merged_patient_ids?: string[]
   // Medical chart fields
   allergies?: string | null
   current_medications?: string | null
@@ -369,6 +371,56 @@ export default function DoctorPatients() {
     }
   }
 
+  // Consolidate patients by email - merges duplicates into single records
+  const consolidatePatientsByEmail = (patients: Patient[]): Patient[] => {
+    const emailMap = new Map<string, Patient>()
+    
+    patients.forEach(patient => {
+      const email = patient.email?.toLowerCase().trim()
+      if (!email) {
+        // Keep patients without email as-is
+        emailMap.set(patient.id, patient)
+        return
+      }
+      
+      const existing = emailMap.get(email)
+      if (!existing) {
+        emailMap.set(email, {
+          ...patient,
+          merged_patient_ids: [patient.id]
+        })
+      } else {
+        // Merge appointments from duplicate patient
+        const mergedAppointments = [...(existing.appointments || []), ...(patient.appointments || [])]
+        // Sort by created_at descending
+        mergedAppointments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        
+        // Keep the most complete/recent patient info
+        const useNewer = new Date(patient.created_at) > new Date(existing.created_at)
+        
+        emailMap.set(email, {
+          ...existing,
+          // Use newer patient's basic info if available
+          first_name: (useNewer && patient.first_name) ? patient.first_name : existing.first_name,
+          last_name: (useNewer && patient.last_name) ? patient.last_name : existing.last_name,
+          mobile_phone: patient.mobile_phone || existing.mobile_phone,
+          date_of_birth: patient.date_of_birth || existing.date_of_birth,
+          address: patient.address || existing.address,
+          // Merge appointments
+          appointments: mergedAppointments,
+          appointments_count: mergedAppointments.length,
+          // Use most recent appointment info
+          last_appointment: mergedAppointments[0]?.created_at || existing.last_appointment,
+          last_appointment_status: mergedAppointments[0]?.status || existing.last_appointment_status,
+          // Track all merged patient IDs
+          merged_patient_ids: [...(existing.merged_patient_ids || [existing.id]), patient.id]
+        })
+      }
+    })
+    
+    return Array.from(emailMap.values())
+  }
+
   const fetchPatients = async () => {
     try {
       // Get all patients with their appointments
@@ -429,7 +481,9 @@ export default function DoctorPatients() {
         }
       })
 
-      setPatients(processedPatients)
+      // Consolidate patients by email to merge duplicates
+      const consolidatedPatients = consolidatePatientsByEmail(processedPatients)
+      setPatients(consolidatedPatients)
     } catch (error) {
       console.error('Error fetching patients:', error)
     } finally {
@@ -486,20 +540,27 @@ export default function DoctorPatients() {
       if (error) throw error
 
       if (data) {
+        // Fetch ALL appointments for this patient (complete history)
+        const { data: allAppointmentsData } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('patient_id', patientId)
+          .order('created_at', { ascending: false })
+
         // Fetch active problems from normalized table
         const { data: activeProblemsData } = await supabase
           .from('problems')
           .select('*')
-        .eq('patient_id', patientId)
+          .eq('patient_id', patientId)
           .eq('status', 'active')
-        .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false })
 
         let parsedActiveProblems: Array<{id: string, problem: string, since: string}> = []
         if (activeProblemsData && activeProblemsData.length > 0) {
           parsedActiveProblems = activeProblemsData.map((p, idx) => ({
             id: p.id || `ap-${idx}`,
             problem: p.problem_name || '',
-            since: ''
+            since: p.onset_date ? new Date(p.onset_date).toISOString().split('T')[0] : ''
           }))
         } else if (data.active_problems) {
           // Fallback to old field for backward compatibility
@@ -533,7 +594,7 @@ export default function DoctorPatients() {
           resolvedDate: p.resolved_date ? new Date(p.resolved_date).toISOString().split('T')[0] : ''
         })) || []
 
-        // Fetch medication history
+        // Fetch ALL medication history
         const { data: medHistoryData } = await supabase
           .from('medication_history')
           .select('*')
@@ -541,9 +602,9 @@ export default function DoctorPatients() {
           .order('start_date', { ascending: false })
 
         const parsedMedHistory = medHistoryData?.map((m, idx) => ({
-              id: m.id || `mh-${idx}`,
+          id: m.id || `mh-${idx}`,
           medication: m.medication_name || '',
-          provider: 'External Provider',
+          provider: m.prescriber || 'External Provider',
           date: m.start_date ? new Date(m.start_date).toISOString().split('T')[0] : ''
         })) || []
 
@@ -562,12 +623,12 @@ export default function DoctorPatients() {
           status: m.status || 'Sent'
         })) || []
 
-        // Fetch past medication orders
+        // Fetch ALL past/completed medication orders
         const { data: pastOrdersData } = await supabase
           .from('medication_orders')
           .select('*')
           .eq('patient_id', patientId)
-          .eq('status', 'completed')
+          .in('status', ['completed', 'discontinued', 'expired'])
           .order('created_at', { ascending: false })
 
         const parsedPastOrders = pastOrdersData?.map((m, idx) => ({
@@ -577,25 +638,19 @@ export default function DoctorPatients() {
           date: m.created_at ? new Date(m.created_at).toISOString().split('T')[0] : ''
         })) || []
 
-        // Get latest appointment for prescription logs
-        const { data: latestAppointment } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
+        // Fetch ALL prescription logs from ALL appointments (not just latest)
         let parsedPrescriptionLogs: Array<any> = []
-        if (latestAppointment) {
-          const { data: prescriptionLogsData } = await supabase
+        if (allAppointmentsData && allAppointmentsData.length > 0) {
+          const appointmentIds = allAppointmentsData.map(apt => apt.id)
+          
+          const { data: allPrescriptionLogsData } = await supabase
             .from('prescription_logs')
             .select('*')
-            .eq('appointment_id', latestAppointment.id)
+            .in('appointment_id', appointmentIds)
             .order('action_at', { ascending: false })
 
-          if (prescriptionLogsData && prescriptionLogsData.length > 0) {
-            parsedPrescriptionLogs = prescriptionLogsData.map((p, idx) => {
+          if (allPrescriptionLogsData && allPrescriptionLogsData.length > 0) {
+            parsedPrescriptionLogs = allPrescriptionLogsData.map((p, idx) => {
               const notes = p.notes || ''
               const medMatch = notes.match(/(.+?)\s*-\s*Qty:/)
               const qtyMatch = notes.match(/Qty:\s*(.+?)\s*-/)
@@ -604,7 +659,7 @@ export default function DoctorPatients() {
               return {
                 id: p.id || `pl-${idx}`,
                 date: p.action_at ? new Date(p.action_at).toISOString().split('T')[0] : '',
-                medication: medMatch ? medMatch[1].trim() : '',
+                medication: medMatch ? medMatch[1].trim() : notes,
                 quantity: qtyMatch ? qtyMatch[1].trim() : '',
                 pharmacy: pharmMatch ? pharmMatch[1].trim() : '',
                 status: p.action || 'Sent'
@@ -639,10 +694,17 @@ export default function DoctorPatients() {
           ...data,
           mobile_phone: data.phone || '',
           address: data.location || '',
-          appointments_count: selectedPatient?.appointments_count || 0,
-          last_appointment: selectedPatient?.last_appointment || '',
-          last_appointment_status: selectedPatient?.last_appointment_status || '',
-          appointments: selectedPatient?.appointments || [],
+          appointments_count: allAppointmentsData?.length || selectedPatient?.appointments_count || 0,
+          last_appointment: allAppointmentsData?.[0]?.created_at || selectedPatient?.last_appointment || '',
+          last_appointment_status: allAppointmentsData?.[0]?.status || selectedPatient?.last_appointment_status || '',
+          appointments: allAppointmentsData?.map(apt => ({
+            id: apt.id,
+            status: apt.status,
+            service_type: apt.service_type,
+            visit_type: apt.visit_type,
+            created_at: apt.created_at,
+            requested_date_time: apt.requested_date_time
+          })) || selectedPatient?.appointments || [],
           // Use normalized data with fallback to old fields
           recent_surgeries_details: surgeriesData?.content || data.recent_surgeries_details || '',
           ongoing_medical_issues_details: medicalIssuesText || data.ongoing_medical_issues_details || ''
@@ -836,6 +898,60 @@ export default function DoctorPatients() {
     setSelectedAppointmentId(appointmentId)
     setShowAppointmentModal(true)
     setShowPatientModal(false)
+  }
+
+  // Open clinical panel for any patient - creates appointment if needed
+  const handleOpenClinicalPanel = async (patient: Patient) => {
+    if (patient.appointments && patient.appointments.length > 0) {
+      // Patient has appointments - open the most recent one
+      const sortedAppointments = [...patient.appointments].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      handleViewAppointment(sortedAppointments[0].id)
+    } else {
+      // No appointments - create a pending General Consultation
+      try {
+        const { data: newAppointment, error } = await supabase
+          .from('appointments')
+          .insert({
+            patient_id: patient.id,
+            doctor_id: currentDoctor?.id,
+            status: 'pending',
+            service_type: 'General Consultation',
+            visit_type: 'video',
+            requested_date_time: new Date().toISOString()
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        if (newAppointment) {
+          // Update local state with new appointment
+          const updatedPatient = {
+            ...patient,
+            appointments: [{
+              id: newAppointment.id,
+              status: newAppointment.status,
+              service_type: newAppointment.service_type,
+              visit_type: newAppointment.visit_type,
+              created_at: newAppointment.created_at,
+              requested_date_time: newAppointment.requested_date_time
+            }],
+            appointments_count: 1,
+            last_appointment: newAppointment.created_at,
+            last_appointment_status: newAppointment.status
+          }
+          setSelectedPatient(updatedPatient)
+          
+          // Open the clinical panel with the new appointment
+          handleViewAppointment(newAppointment.id)
+        }
+      } catch (error) {
+        console.error('Error creating appointment for clinical panel:', error)
+        alert('Failed to open clinical panel. Please try again.')
+      }
+    }
   }
 
   const handleAppointmentStatusChange = () => {
@@ -1560,16 +1676,26 @@ export default function DoctorPatients() {
                 <h2 className="text-xl font-bold text-white">
                   Patient Details: {selectedPatient.first_name} {selectedPatient.last_name}
                 </h2>
-                <button
-                  onClick={() => {
-                    setShowPatientModal(false)
-                    setIsEditing(false)
-                    setSelectedPatient(null)
-                  }}
-                  className="text-gray-400 hover:text-white transition-colors p-2"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* View Details Button - Opens Clinical Panel */}
+                  <button
+                    onClick={() => handleOpenClinicalPanel(selectedPatient)}
+                    className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium"
+                  >
+                    <Activity className="h-4 w-4" />
+                    View Details
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowPatientModal(false)
+                      setIsEditing(false)
+                      setSelectedPatient(null)
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors p-2"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2169,3 +2295,4 @@ export default function DoctorPatients() {
     </div>
   )
 }
+
