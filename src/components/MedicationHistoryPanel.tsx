@@ -61,6 +61,11 @@ export default function MedicationHistoryPanel({
   const [fillHistory, setFillHistory] = useState<FillHistoryItem[]>([])
   const [interactionAlert, setInteractionAlert] = useState<string>('')
   
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
   // Panel theme colors
   const [panelTheme, setPanelTheme] = useState<'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'orange' | 'red' | 'pink'>('purple')
   
@@ -1070,7 +1075,7 @@ export default function MedicationHistoryPanel({
           </div>
         </div>
 
-        {/* Color Theme Selector Footer */}
+        {/* Footer with Save Status and Color Theme Selector */}
         <div 
           className="sticky bottom-0 p-3 border-t flex items-center justify-between"
           style={{ 
@@ -1079,7 +1084,25 @@ export default function MedicationHistoryPanel({
             borderColor: currentTheme.border 
           }}
         >
-          <span className="text-xs text-gray-400">Panel Theme:</span>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-gray-400">Panel Theme:</span>
+            {/* Save Status Indicator */}
+            <span className={`text-xs flex items-center gap-1 ${
+              saveStatus === 'saving' ? 'text-yellow-400' :
+              saveStatus === 'saved' ? 'text-green-400' :
+              saveStatus === 'error' ? 'text-red-400' : 'text-gray-500'
+            }`}>
+              {saveStatus === 'saving' && (
+                <><span className="animate-spin">⟳</span> Saving...</>
+              )}
+              {saveStatus === 'saved' && lastSaved && (
+                <>✓ Saved {lastSaved.toLocaleTimeString()}</>
+              )}
+              {saveStatus === 'error' && (
+                <>✗ Save failed</>
+              )}
+            </span>
+          </div>
           <div className="flex items-center gap-1.5">
             {(Object.keys(themeColors) as Array<keyof typeof themeColors>).map((color) => (
               <button
@@ -1096,6 +1119,7 @@ export default function MedicationHistoryPanel({
     </div>
   )
 }
+
 
 
 
