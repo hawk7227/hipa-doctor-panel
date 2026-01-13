@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, Activity, AlertTriangle, FileText, ClipboardList } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 
@@ -31,6 +31,11 @@ import CommunicationHistorySection from './appointment/sections/CommunicationHis
 import GmailStyleEmailPanel from './GmailStyleEmailPanel'
 import EnhancedSMSPanel from './EnhancedSMSPanel'
 import MakeCallFaxPanel from './MakeCallFaxPanel'
+
+// EHR Overlay Panels
+import AllergiesPanel from './AllergiesPanel'
+import VitalsPanel from './VitalsPanel'
+import MedicationsPanel from './MedicationsPanel'
 import MedicationHistoryPanel from './MedicationHistoryPanel'
 import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 
@@ -314,106 +319,12 @@ export default function AppointmentDetailModal({
   const [selectedMoveTime, setSelectedMoveTime] = useState<string>('')
   const [moveLoading, setMoveLoading] = useState(false)
 
-  // EHR Panel states (header buttons)
+  // EHR Panel States
+  const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
+  const [showVitalsPanel, setShowVitalsPanel] = useState(false)
+  const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
   const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
-  const [showOrdersPanel, setShowOrdersPanel] = useState(false)
-  const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
   const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
-  const [patientAppointments, setPatientAppointments] = useState<Array<{
-    id: string
-    status: string
-    service_type: string
-    visit_type: string
-    created_at: string
-    requested_date_time: string | null
-  }>>([])
-
-  // Fetch patient appointments when overlay is opened
-  // Need to get ALL appointments from ALL patient records with same email (like patients page does)
-  useEffect(() => {
-    if (showAppointmentsOverlay && appointment?.patient_id) {
-      const fetchPatientAppointments = async () => {
-        try {
-          // First get the patient's email
-          const { data: currentPatient, error: patientError } = await supabase
-            .from('patients')
-            .select('email')
-            .eq('id', appointment.patient_id)
-            .single()
-
-          if (patientError || !currentPatient?.email) {
-            console.error('Error fetching patient email:', patientError)
-            // Fallback: just get appointments for this patient_id
-            const { data: fallbackData } = await supabase
-              .from('patients')
-              .select(`
-                id,
-                appointments:appointments!appointments_patient_id_fkey (
-                  id,
-                  status,
-                  service_type,
-                  visit_type,
-                  created_at,
-                  requested_date_time
-                )
-              `)
-              .eq('id', appointment.patient_id)
-              .single()
-            
-            if (fallbackData?.appointments) {
-              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => 
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              )
-              setPatientAppointments(sorted)
-            }
-            return
-          }
-
-          // Get ALL patient records with the same email (handles duplicates like patients page)
-          const { data: allPatientsData, error: allPatientsError } = await supabase
-            .from('patients')
-            .select(`
-              id,
-              appointments:appointments!appointments_patient_id_fkey (
-                id,
-                status,
-                service_type,
-                visit_type,
-                created_at,
-                requested_date_time
-              )
-            `)
-            .eq('email', currentPatient.email)
-
-          if (allPatientsError) {
-            console.error('Error fetching all patients by email:', allPatientsError)
-            return
-          }
-
-          // Merge all appointments from all patient records (like consolidatePatientsByEmail does)
-          const allAppointments: any[] = []
-          if (allPatientsData) {
-            allPatientsData.forEach(patient => {
-              if (patient.appointments && Array.isArray(patient.appointments)) {
-                allAppointments.push(...patient.appointments)
-              }
-            })
-          }
-
-          // Sort by created_at descending
-          const sorted = allAppointments.sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-          
-          console.log('Found appointments for patient:', sorted.length)
-          setPatientAppointments(sorted)
-        } catch (err) {
-          console.error('Error fetching patient appointments:', err)
-        }
-      }
-      fetchPatientAppointments()
-    }
-  }, [showAppointmentsOverlay, appointment?.patient_id])
 
   // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
   // Also check and auto-generate CDSS if needed
@@ -1990,34 +1901,41 @@ const renderCurrentDaySlots = () => {
               {/* Action Buttons - only show when not in customize mode */}
               {!layout.isCustomizeMode && appointment && (
                 <>
-                  {/* EHR Quick Access Buttons - Always visible */}
+                  {/* EHR Panel Buttons */}
                   <button
                     onClick={() => setShowMedicationHistoryPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs"
                   >
                     <Pill className="h-3.5 w-3.5" />
                     Medication History
                   </button>
                   <button
-                    onClick={() => setShowOrdersPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
+                    onClick={() => setShowAppointmentsOverlay(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs"
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                    Appointments
+                  </button>
+                  <button
+                    onClick={() => setShowAllergiesPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Allergies
+                  </button>
+                  <button
+                    onClick={() => setShowVitalsPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs"
+                  >
+                    <Activity className="h-3.5 w-3.5" />
+                    Vitals
+                  </button>
+                  <button
+                    onClick={() => setShowMedicationsPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-xs"
                   >
                     <ClipboardList className="h-3.5 w-3.5" />
-                    Orders
-                  </button>
-                  <button
-                    onClick={() => setShowPrescriptionHistoryPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-xs font-medium"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    Prescription History
-                  </button>
-                  <button
-                    onClick={() => setShowAppointmentsOverlay(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs font-medium"
-                  >
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    Appointments
+                    Medications
                   </button>
 
                   {/* Accept/Reject for pending appointments */}
@@ -2281,93 +2199,52 @@ const renderCurrentDaySlots = () => {
         />
       )}
 
-      {/* Medication History Panel (Surescripts) */}
-      {appointment?.patient_id && (
-        <MedicationHistoryPanel
-          isOpen={showMedicationHistoryPanel}
-          onClose={() => setShowMedicationHistoryPanel(false)}
-          patientId={appointment.patient_id}
-          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
-          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
-          onReconcile={(medications) => {
-            // Add reconciled medications to the medication history
-            const newMeds = medications.map((med, idx) => ({
-              id: `reconciled-${Date.now()}-${idx}`,
-              medication: med.medication_name,
-              provider: med.prescriber || 'Surescripts',
-              date: med.start_date || new Date().toISOString().split('T')[0]
-            }))
-            // Add to problemsMedications hook
-            newMeds.forEach(med => {
-              problemsMedications.handleAddMedicationHistory(med.medication, med.provider, med.date)
-            })
-          }}
-        />
-      )}
+      {/* EHR Overlay Panels */}
+      <AllergiesPanel
+        isOpen={showAllergiesPanel}
+        onClose={() => setShowAllergiesPanel(false)}
+        patientId={appointment?.patient_id || ''}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
+      />
 
-      {/* Orders Panel - Placeholder */}
-      {showOrdersPanel && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
-          <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
-            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <ClipboardList className="h-5 w-5 text-blue-400" />
-                Orders
-              </h2>
-              <button onClick={() => setShowOrdersPanel(false)} className="text-gray-400 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="text-gray-400 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
-          </div>
-        </div>
-      )}
+      <VitalsPanel
+        isOpen={showVitalsPanel}
+        onClose={() => setShowVitalsPanel(false)}
+        patientId={appointment?.patient_id || ''}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
+        appointmentId={appointmentId || undefined}
+      />
 
-      {/* Prescription History Panel - Placeholder */}
-      {showPrescriptionHistoryPanel && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
-          <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
-            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <FileText className="h-5 w-5 text-teal-400" />
-                Prescription History
-              </h2>
-              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-gray-400 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="text-gray-400 text-sm">Internal prescription logs from this practice - Coming Soon</p>
-          </div>
-        </div>
-      )}
+      <MedicationsPanel
+        isOpen={showMedicationsPanel}
+        onClose={() => setShowMedicationsPanel(false)}
+        patientId={appointment?.patient_id || ''}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
+      />
 
-      {/* Appointments Overlay Panel */}
-      {appointment?.patient_id && (
-        <AppointmentsOverlayPanel
-          isOpen={showAppointmentsOverlay}
-          onClose={() => setShowAppointmentsOverlay(false)}
-          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
-          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
-          appointments={patientAppointments}
-          onViewAppointment={(apptId) => {
-            setShowAppointmentsOverlay(false)
-            if (onAppointmentSwitch) {
-              onAppointmentSwitch(apptId)
-            }
-          }}
-        />
-      )}
+      <MedicationHistoryPanel
+        isOpen={showMedicationHistoryPanel}
+        onClose={() => setShowMedicationHistoryPanel(false)}
+        patientId={appointment?.patient_id || ''}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
+        patientDOB={appointment?.patients?.date_of_birth || ''}
+      />
+
+      <AppointmentsOverlayPanel
+        isOpen={showAppointmentsOverlay}
+        onClose={() => setShowAppointmentsOverlay(false)}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
+        patientDOB={appointment?.patients?.date_of_birth}
+        appointments={appointment?.patient_id ? [] : []}
+        onViewAppointment={(aptId) => {
+          setShowAppointmentsOverlay(false)
+          // Could navigate to that appointment
+        }}
+      />
     </>
   )
 }
+
 
 
 
