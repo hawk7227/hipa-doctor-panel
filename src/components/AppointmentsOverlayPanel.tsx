@@ -34,11 +34,6 @@ interface AppointmentDetail {
     email?: string
     phone?: string
     date_of_birth?: string
-    location?: string
-    allergies?: string
-    current_medications?: string
-    insurance_provider?: string
-    insurance_member_id?: string
   } | null
 }
 
@@ -72,7 +67,7 @@ export default function AppointmentsOverlayPanel({
   
   // Collapsible sections
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([
-    'visit-info', 'patient-demographics', 'vitals', 'allergies', 'clinical-notes', 'prescriptions'
+    'visit-info', 'patient-demographics', 'vitals', 'clinical-notes', 'prescriptions'
   ]))
 
   // Draggable state
@@ -127,12 +122,7 @@ export default function AppointmentsOverlayPanel({
             last_name,
             email,
             phone,
-            date_of_birth,
-            location,
-            allergies,
-            current_medications,
-            insurance_provider,
-            insurance_member_id
+            date_of_birth
           )
         `)
         .eq('id', appointmentId)
@@ -559,19 +549,6 @@ export default function AppointmentsOverlayPanel({
                           <p className="text-xs text-gray-400 mb-1">Email</p>
                           <p className="text-white text-sm break-all">{selectedAppointment.patients.email || 'N/A'}</p>
                         </div>
-                        <div>
-                          <p className="text-xs text-gray-400 mb-1">Location</p>
-                          <p className="text-white text-sm">{selectedAppointment.patients.location || 'N/A'}</p>
-                        </div>
-                        {selectedAppointment.patients.insurance_provider && (
-                          <div className="col-span-2 md:col-span-3">
-                            <p className="text-xs text-gray-400 mb-1">Insurance</p>
-                            <p className="text-white text-sm">
-                              {selectedAppointment.patients.insurance_provider}
-                              {selectedAppointment.patients.insurance_member_id && ` — ID: ${selectedAppointment.patients.insurance_member_id}`}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
@@ -634,29 +611,6 @@ export default function AppointmentsOverlayPanel({
                       </div>
                     )
                   })()}
-                </div>
-              )}
-
-              {/* Allergies & Current Medications */}
-              {(selectedAppointment.patients?.allergies || selectedAppointment.patients?.current_medications) && (
-                <div className="rounded-lg overflow-hidden border border-[#4d1b3d]">
-                  <SectionHeader id="allergies" title="Allergies & Current Medications" icon={AlertTriangle} color="pink" />
-                  {expandedSections.has('allergies') && (
-                    <div className="p-4 space-y-3" style={{ background: '#1a0a15' }}>
-                      {selectedAppointment.patients?.allergies && (
-                        <div>
-                          <p className="text-xs text-pink-300 mb-1 font-medium">Allergies</p>
-                          <p className="text-white text-sm">{selectedAppointment.patients.allergies}</p>
-                        </div>
-                      )}
-                      {selectedAppointment.patients?.current_medications && (
-                        <div>
-                          <p className="text-xs text-cyan-300 mb-1 font-medium">Current Medications</p>
-                          <p className="text-white text-sm">{selectedAppointment.patients.current_medications}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -900,6 +854,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
