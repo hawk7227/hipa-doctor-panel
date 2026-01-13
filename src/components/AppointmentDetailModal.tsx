@@ -329,12 +329,48 @@ export default function AppointmentDetailModal({
   }>>([])
 
   // Fetch patient appointments when overlay is opened
+  // Need to get ALL appointments from ALL patient records with same email (like patients page does)
   useEffect(() => {
     if (showAppointmentsOverlay && appointment?.patient_id) {
       const fetchPatientAppointments = async () => {
         try {
-          // Use the same query pattern as the patients page
-          const { data: patientData, error } = await supabase
+          // First get the patient's email
+          const { data: currentPatient, error: patientError } = await supabase
+            .from('patients')
+            .select('email')
+            .eq('id', appointment.patient_id)
+            .single()
+
+          if (patientError || !currentPatient?.email) {
+            console.error('Error fetching patient email:', patientError)
+            // Fallback: just get appointments for this patient_id
+            const { data: fallbackData } = await supabase
+              .from('patients')
+              .select(`
+                id,
+                appointments:appointments!appointments_patient_id_fkey (
+                  id,
+                  status,
+                  service_type,
+                  visit_type,
+                  created_at,
+                  requested_date_time
+                )
+              `)
+              .eq('id', appointment.patient_id)
+              .single()
+            
+            if (fallbackData?.appointments) {
+              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )
+              setPatientAppointments(sorted)
+            }
+            return
+          }
+
+          // Get ALL patient records with the same email (handles duplicates like patients page)
+          const { data: allPatientsData, error: allPatientsError } = await supabase
             .from('patients')
             .select(`
               id,
@@ -347,21 +383,30 @@ export default function AppointmentDetailModal({
                 requested_date_time
               )
             `)
-            .eq('id', appointment.patient_id)
-            .single()
+            .eq('email', currentPatient.email)
 
-          if (error) {
-            console.error('Error fetching patient appointments:', error)
+          if (allPatientsError) {
+            console.error('Error fetching all patients by email:', allPatientsError)
             return
           }
 
-          if (patientData && patientData.appointments) {
-            // Sort by created_at descending
-            const sorted = [...(patientData.appointments as any[])].sort((a, b) => 
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )
-            setPatientAppointments(sorted)
+          // Merge all appointments from all patient records (like consolidatePatientsByEmail does)
+          const allAppointments: any[] = []
+          if (allPatientsData) {
+            allPatientsData.forEach(patient => {
+              if (patient.appointments && Array.isArray(patient.appointments)) {
+                allAppointments.push(...patient.appointments)
+              }
+            })
           }
+
+          // Sort by created_at descending
+          const sorted = allAppointments.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          
+          console.log('Found appointments for patient:', sorted.length)
+          setPatientAppointments(sorted)
         } catch (err) {
           console.error('Error fetching patient appointments:', err)
         }
@@ -2323,6 +2368,7 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
 
 
 
