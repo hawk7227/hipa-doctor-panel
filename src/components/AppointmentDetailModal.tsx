@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 
@@ -31,6 +31,8 @@ import CommunicationHistorySection from './appointment/sections/CommunicationHis
 import GmailStyleEmailPanel from './GmailStyleEmailPanel'
 import EnhancedSMSPanel from './EnhancedSMSPanel'
 import MakeCallFaxPanel from './MakeCallFaxPanel'
+import MedicationHistoryPanel from './MedicationHistoryPanel'
+import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 
 // Utils
 import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/utils/timezone-utils'
@@ -311,6 +313,12 @@ export default function AppointmentDetailModal({
   const [showMoveForm, setShowMoveForm] = useState(false)
   const [selectedMoveTime, setSelectedMoveTime] = useState<string>('')
   const [moveLoading, setMoveLoading] = useState(false)
+
+  // EHR Panel states (header buttons)
+  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
+  const [showOrdersPanel, setShowOrdersPanel] = useState(false)
+  const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
+  const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
 
   // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
   // Also check and auto-generate CDSS if needed
@@ -1887,6 +1895,36 @@ const renderCurrentDaySlots = () => {
               {/* Action Buttons - only show when not in customize mode */}
               {!layout.isCustomizeMode && appointment && (
                 <>
+                  {/* EHR Quick Access Buttons - Always visible */}
+                  <button
+                    onClick={() => setShowMedicationHistoryPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
+                  >
+                    <Pill className="h-3.5 w-3.5" />
+                    Medication History
+                  </button>
+                  <button
+                    onClick={() => setShowOrdersPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    Orders
+                  </button>
+                  <button
+                    onClick={() => setShowPrescriptionHistoryPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-xs font-medium"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Prescription History
+                  </button>
+                  <button
+                    onClick={() => setShowAppointmentsOverlay(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs font-medium"
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Appointments
+                  </button>
+
                   {/* Accept/Reject for pending appointments */}
                   {appointment.status === 'pending' && (
                     <>
@@ -2147,6 +2185,91 @@ const renderCurrentDaySlots = () => {
           onClose={() => documentUpload.setSelectedDocument(null)}
         />
       )}
+
+      {/* Medication History Panel (Surescripts) */}
+      {appointment?.patient_id && (
+        <MedicationHistoryPanel
+          isOpen={showMedicationHistoryPanel}
+          onClose={() => setShowMedicationHistoryPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          onReconcile={(medications) => {
+            // Add reconciled medications to the medication history
+            const newMeds = medications.map((med, idx) => ({
+              id: `reconciled-${Date.now()}-${idx}`,
+              medication: med.medication_name,
+              provider: med.prescriber || 'Surescripts',
+              date: med.start_date || new Date().toISOString().split('T')[0]
+            }))
+            // Add to problemsMedications hook
+            newMeds.forEach(med => {
+              problemsMedications.handleAddMedicationHistory(med.medication, med.provider, med.date)
+            })
+          }}
+        />
+      )}
+
+      {/* Orders Panel - Placeholder */}
+      {showOrdersPanel && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
+          <div 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
+            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-blue-400" />
+                Orders
+              </h2>
+              <button onClick={() => setShowOrdersPanel(false)} className="text-gray-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
+          </div>
+        </div>
+      )}
+
+      {/* Prescription History Panel - Placeholder */}
+      {showPrescriptionHistoryPanel && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
+          <div 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
+            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <FileText className="h-5 w-5 text-teal-400" />
+                Prescription History
+              </h2>
+              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-gray-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm">Internal prescription logs from this practice - Coming Soon</p>
+          </div>
+        </div>
+      )}
+
+      {/* Appointments Overlay Panel */}
+      {appointment?.patient_id && (
+        <AppointmentsOverlayPanel
+          isOpen={showAppointmentsOverlay}
+          onClose={() => setShowAppointmentsOverlay(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          currentAppointmentId={appointmentId ?? undefined}
+        />
+      )}
     </>
   )
 }
+
+
+
+
+
