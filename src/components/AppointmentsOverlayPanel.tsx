@@ -63,6 +63,7 @@ export default function AppointmentsOverlayPanel({
   // Selected appointment for mini chart view
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [clinicalNotes, setClinicalNotes] = useState<any[]>([])
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [problems, setProblems] = useState<any[]>([])
@@ -85,6 +86,7 @@ export default function AppointmentsOverlayPanel({
   useEffect(() => {
     if (!isOpen) {
       setSelectedAppointment(null)
+      setFetchError(null)
       setClinicalNotes([])
       setPrescriptions([])
       setProblems([])
@@ -96,13 +98,18 @@ export default function AppointmentsOverlayPanel({
 
   const fetchAppointmentDetail = async (appointmentId: string) => {
     setLoadingDetail(true)
+    setFetchError(null)
+    console.log('Fetching appointment detail for:', appointmentId)
+    
     try {
       // Fetch appointment with patient and doctor data
+      // Using explicit foreign key pattern for reliability
       const { data: appointmentData, error: appointmentError } = await supabase
         .from('appointments')
         .select(`
           id,
           patient_id,
+          doctor_id,
           visit_type,
           requested_date_time,
           status,
@@ -111,12 +118,12 @@ export default function AppointmentsOverlayPanel({
           doctor_notes,
           intake_answers,
           service_type,
-          doctors (
+          doctors!appointments_doctor_id_fkey (
             first_name,
             last_name,
             specialty
           ),
-          patients (
+          patients!appointments_patient_id_fkey (
             first_name,
             last_name,
             email,
@@ -133,7 +140,20 @@ export default function AppointmentsOverlayPanel({
         .eq('id', appointmentId)
         .single()
 
-      if (appointmentError) throw appointmentError
+      console.log('Appointment query result:', { appointmentData, appointmentError })
+
+      if (appointmentError) {
+        console.error('Appointment query error:', appointmentError)
+        setFetchError(`Failed to load appointment: ${appointmentError.message}`)
+        setLoadingDetail(false)
+        return
+      }
+
+      if (!appointmentData) {
+        setFetchError('Appointment not found')
+        setLoadingDetail(false)
+        return
+      }
 
       // Transform Supabase array joins to objects
       const transformed = {
@@ -142,6 +162,7 @@ export default function AppointmentsOverlayPanel({
         patients: Array.isArray(appointmentData.patients) ? appointmentData.patients[0] || null : appointmentData.patients
       }
 
+      console.log('Transformed appointment:', transformed)
       setSelectedAppointment(transformed)
 
       // Fetch clinical notes
@@ -193,8 +214,9 @@ export default function AppointmentsOverlayPanel({
         .eq('appointment_id', appointmentId)
       setReferrals(referralsData || [])
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching appointment detail:', error)
+      setFetchError(error?.message || 'Failed to load appointment details')
     } finally {
       setLoadingDetail(false)
     }
@@ -206,6 +228,7 @@ export default function AppointmentsOverlayPanel({
 
   const handleBackToList = () => {
     setSelectedAppointment(null)
+    setFetchError(null)
   }
 
   const toggleSection = (section: string) => {
@@ -382,7 +405,7 @@ export default function AppointmentsOverlayPanel({
           <div className="flex items-center gap-3">
             <GripHorizontal className="h-5 w-5 text-gray-500" />
             
-            {selectedAppointment ? (
+            {(selectedAppointment || fetchError) ? (
               <button
                 onClick={handleBackToList}
                 className="flex items-center gap-1.5 text-[#00e6ff] hover:text-white transition-colors text-sm font-medium"
@@ -437,6 +460,21 @@ export default function AppointmentsOverlayPanel({
           {loadingDetail ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
+            </div>
+          ) : fetchError ? (
+            /* Error State */
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="text-red-400 mb-4">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-2" />
+                <p className="text-lg font-medium">Error Loading Appointment</p>
+                <p className="text-sm text-gray-400 mt-2">{fetchError}</p>
+              </div>
+              <button
+                onClick={handleBackToList}
+                className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm"
+              >
+                Back to Appointments
+              </button>
             </div>
           ) : selectedAppointment ? (
             /* ═══════════════════════════════════════════════════════════════
@@ -868,6 +906,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
