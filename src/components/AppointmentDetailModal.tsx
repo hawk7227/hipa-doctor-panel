@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, Activity, AlertTriangle, FileText, ClipboardList } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 
@@ -31,13 +31,13 @@ import CommunicationHistorySection from './appointment/sections/CommunicationHis
 import GmailStyleEmailPanel from './GmailStyleEmailPanel'
 import EnhancedSMSPanel from './EnhancedSMSPanel'
 import MakeCallFaxPanel from './MakeCallFaxPanel'
+import MedicationHistoryPanel from './MedicationHistoryPanel'
+import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 
-// EHR Overlay Panels
+// EHR Panels
 import AllergiesPanel from './AllergiesPanel'
 import VitalsPanel from './VitalsPanel'
 import MedicationsPanel from './MedicationsPanel'
-import MedicationHistoryPanel from './MedicationHistoryPanel'
-import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 
 // Utils
 import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/utils/timezone-utils'
@@ -319,12 +319,112 @@ export default function AppointmentDetailModal({
   const [selectedMoveTime, setSelectedMoveTime] = useState<string>('')
   const [moveLoading, setMoveLoading] = useState(false)
 
-  // EHR Panel States
+  // EHR Panel states (header buttons)
+  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
+  const [showOrdersPanel, setShowOrdersPanel] = useState(false)
+  const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
+  const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
+  
+  // NEW: EHR Panel states for Allergies, Vitals, Medications
   const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
-  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
-  const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
+  
+  const [patientAppointments, setPatientAppointments] = useState<Array<{
+    id: string
+    status: string
+    service_type: string
+    visit_type: string
+    created_at: string
+    requested_date_time: string | null
+  }>>([])
+
+  // Fetch patient appointments when overlay is opened
+  // Need to get ALL appointments from ALL patient records with same email (like patients page does)
+  useEffect(() => {
+    if (showAppointmentsOverlay && appointment?.patient_id) {
+      const fetchPatientAppointments = async () => {
+        try {
+          // First get the patient's email
+          const { data: currentPatient, error: patientError } = await supabase
+            .from('patients')
+            .select('email')
+            .eq('id', appointment.patient_id)
+            .single()
+
+          if (patientError || !currentPatient?.email) {
+            console.error('Error fetching patient email:', patientError)
+            // Fallback: just get appointments for this patient_id
+            const { data: fallbackData } = await supabase
+              .from('patients')
+              .select(`
+                id,
+                appointments:appointments!appointments_patient_id_fkey (
+                  id,
+                  status,
+                  service_type,
+                  visit_type,
+                  created_at,
+                  requested_date_time
+                )
+              `)
+              .eq('id', appointment.patient_id)
+              .single()
+            
+            if (fallbackData?.appointments) {
+              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )
+              setPatientAppointments(sorted)
+            }
+            return
+          }
+
+          // Get ALL patient records with the same email (handles duplicates like patients page)
+          const { data: allPatientsData, error: allPatientsError } = await supabase
+            .from('patients')
+            .select(`
+              id,
+              appointments:appointments!appointments_patient_id_fkey (
+                id,
+                status,
+                service_type,
+                visit_type,
+                created_at,
+                requested_date_time
+              )
+            `)
+            .eq('email', currentPatient.email)
+
+          if (allPatientsError) {
+            console.error('Error fetching all patients by email:', allPatientsError)
+            return
+          }
+
+          // Merge all appointments from all patient records (like consolidatePatientsByEmail does)
+          const allAppointments: any[] = []
+          if (allPatientsData) {
+            allPatientsData.forEach(patient => {
+              if (patient.appointments && Array.isArray(patient.appointments)) {
+                allAppointments.push(...patient.appointments)
+              }
+            })
+          }
+
+          // Sort by created_at descending
+          const sorted = allAppointments.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          
+          console.log('Found appointments for patient:', sorted.length)
+          setPatientAppointments(sorted)
+        } catch (err) {
+          console.error('Error fetching patient appointments:', err)
+        }
+      }
+      fetchPatientAppointments()
+    }
+  }, [showAppointmentsOverlay, appointment?.patient_id])
 
   // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
   // Also check and auto-generate CDSS if needed
@@ -1483,8 +1583,6 @@ export default function AppointmentDetailModal({
            ''
   }
 
-
-
 // Render current day slots (left sidebar) - Updated to match new design
 const renderCurrentDaySlots = () => {
       if (!appointment?.requested_date_time) return null
@@ -1629,215 +1727,6 @@ const renderCurrentDaySlots = () => {
       )
     }
 
-  // Render current day slots (left sidebar) - Updated to match new design
-  // const renderCurrentDaySlots = () => {
-  //   if (!appointment?.requested_date_time) return null
-    
-  //   // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
-  //   // This must match the main calendar which always uses Phoenix timezone
-  //   const doctorTimezone = 'America/Phoenix'
-  //   const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-    
-  //   // Round the appointment time to the nearest 30-minute slot (matching appointment mapping logic)
-  //   // This ensures we match slots which are created on 30-minute boundaries
-  //   const roundedAppointment = roundToNearestSlot(appointmentDate)
-  //   const appointmentHour = roundedAppointment.getUTCHours() // UTC methods because convertToTimezone returns UTC values representing Phoenix time
-  //   const appointmentMinute = roundedAppointment.getUTCMinutes()
-    
-  //   // Generate time slots (5 AM to 8 PM, 30-min intervals)
-  //   // CRITICAL: Create slots matching main calendar approach
-  //   // Extract the appointment date components and create a fresh date for that day
-  //   // Then set hours on it (matching how main calendar creates slots)
-  //   const slots: Date[] = []
-  //   // Get the appointment date components in local time (for the appointment's day)
-  //   // appointmentDate has UTC values representing Phoenix time, so we need to extract the date properly
-  //   const appointmentYear = appointmentDate.getUTCFullYear()
-  //   const appointmentMonth = appointmentDate.getUTCMonth()
-  //   const appointmentDay = appointmentDate.getUTCDate()
-  //   // Create a fresh date for the appointment day (using local date constructor)
-  //   const baseDate = new Date(appointmentYear, appointmentMonth, appointmentDay)
-    
-  //   for (let hour = 5; hour <= 20; hour++) {
-  //     for (let minute = 0; minute < 60; minute += 30) {
-  //       const time = new Date(baseDate)
-  //       time.setHours(hour, minute, 0, 0)
-  //       slots.push(time)
-  //     }
-  //   }
-    
-  //   return (
-  //     <div style={{ 
-  //       padding: '12px', 
-  //       background: 'linear-gradient(180deg, #0d1424, #0b1222)',
-  //       height: '100%', 
-  //       overflowY: 'auto',
-  //       borderRight: '1px solid #1b2b4d',
-  //       scrollbarWidth: 'thin',
-  //       scrollbarColor: '#1b2b4d #0a1222'
-  //     }}
-  //     className="scrollbar-thin scrollbar-thumb-[#1b2b4d] scrollbar-track-[#0a1222]"
-  //     >
-  //       {/* Day Header */}
-  //       <div style={{
-  //         color: '#cfe1ff',
-  //         fontWeight: 'bold',
-  //         fontSize: '14px',
-  //         marginBottom: '16px',
-  //         position: 'sticky',
-  //         top: 0,
-  //         background: 'linear-gradient(180deg, #0d1424, #0b1222)',
-  //         paddingBottom: '12px',
-  //         borderBottom: '1px solid #1b2b4d',
-  //         zIndex: 10
-  //       }}>
-  //         {appointmentDate.toLocaleDateString('en-US', { 
-  //           weekday: 'long',
-  //           month: 'short', 
-  //           day: 'numeric' 
-  //         })}
-  //       </div>
-        
-  //       {/* Time Slots */}
-  //       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-  //         {slots.map((time) => {
-  //           // CRITICAL: Pass the slot's date (not appointmentDate) to getAppointmentForSlot
-  //           // This matches how the main calendar works - it passes the calendar date, not the appointment date
-  //           const slotDate = new Date(time)
-  //           slotDate.setHours(0, 0, 0, 0) // Reset to midnight for date comparison
-  //           const slotAppointment = getAppointmentForSlot(slotDate, time)
-  //           // CRITICAL: Check if this slot matches the current appointment
-  //           // Slots are created with local hours (setHours) which we treat as Phoenix time visually
-  //           // Appointment hours are from UTC methods which represent Phoenix time
-  //           const slotHour = time.getHours()
-  //           const slotMinute = time.getMinutes()
-            
-  //           // PRIMARY: Check if getAppointmentForSlot found THIS specific appointment
-  //           const foundThisAppointment = appointment?.id && slotAppointment?.id === appointment.id
-            
-  //           // FALLBACK: Direct time comparison (only if getAppointmentForSlot didn't find it)
-  //           // Slots are created with local hours representing Phoenix time visually
-  //           // Appointment hours are from UTC methods representing Phoenix time
-  //           // So slotHour (local) should equal appointmentHour (UTC) when both represent the same Phoenix time
-  //           const timeMatches = appointment?.id && !foundThisAppointment && appointmentHour === slotHour && appointmentMinute === slotMinute
-            
-  //           // Highlight if we found this appointment OR if time matches
-  //           const isSelected = foundThisAppointment || timeMatches
-            
-  //           // DEBUG: Log when we find a match (remove after fixing)
-  //           if (isSelected && process.env.NODE_ENV === 'development') {
-  //             console.log('🔍 Sidebar slot match:', {
-  //               slotTime: `${slotHour}:${slotMinute}`,
-  //               appointmentTime: `${appointmentHour}:${appointmentMinute}`,
-  //               foundThisAppointment,
-  //               timeMatches,
-  //               slotAppointmentId: slotAppointment?.id,
-  //               appointmentId: appointment?.id
-  //             })
-  //           }
-  //           const isAvailable = !slotAppointment
-  //           const timeString = `${slotHour.toString().padStart(2, '0')}:${slotMinute.toString().padStart(2, '0')}`
-  //           const isMoveSelected = showMoveForm && selectedMoveTime === timeString
-
-  //           return (
-  //             <div 
-  //               key={time.getTime()}
-  //               onClick={() => {
-  //                 if (showMoveForm && isAvailable) {
-  //                   setSelectedMoveTime(timeString)
-  //                 } else if (slotAppointment && slotAppointment.id !== appointment?.id) {
-  //                   if (onAppointmentSwitch) {
-  //                     onAppointmentSwitch(slotAppointment.id)
-  //                   }
-  //                 }
-  //               }}
-  //               style={{
-  //                 padding: '10px',
-  //                 borderRadius: '10px',
-  //                 fontSize: '12px',
-  //                 cursor: 'pointer',
-  //                 transition: 'all 0.2s',
-  //                 background: isMoveSelected
-  //                   ? 'linear-gradient(135deg, rgba(0, 230, 255, 0.3), rgba(0, 230, 255, 0.2))'
-  //                   : isSelected
-  //                     ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.3), rgba(211, 47, 47, 0.2))'
-  //                     : slotAppointment
-  //                       ? '#0a1222'
-  //                       : 'linear-gradient(135deg, rgba(25,214,127,.18), rgba(25,214,127,.12))',
-  //                 border: isMoveSelected
-  //                   ? '2px solid #00e6ff'
-  //                   : isSelected
-  //                     ? '2px solid #00e6ff'
-  //                     : slotAppointment
-  //                       ? '2px solid #e53935'
-  //                       : '2px solid rgba(25,214,127,.6)',
-  //                 boxShadow: isMoveSelected
-  //                   ? '0 0 12px rgba(0, 230, 255, 0.4)'
-  //                   : isSelected
-  //                     ? '0 0 12px rgba(229, 57, 53, 0.4), 0 0 20px rgba(0, 230, 255, 0.3)'
-  //                     : slotAppointment
-  //                       ? '0 0 8px rgba(229, 57, 53, 0.3)'
-  //                       : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-  //                 color: slotAppointment ? '#ffffff' : '#cde7da'
-  //               }}
-  //               onMouseEnter={(e) => {
-  //                 e.currentTarget.style.filter = 'brightness(1.15)'
-  //               }}
-  //               onMouseLeave={(e) => {
-  //                 e.currentTarget.style.filter = 'brightness(1)'
-  //               }}
-  //             >
-  //               <div style={{ fontWeight: 'bold', fontSize: '13px', color: slotAppointment ? '#ffffff' : '#cde7da' }}>{formatTime(time)}</div>
-  //               {slotAppointment && (
-  //                 <>
-  //                   <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: '600', color: '#ffffff' }}>
-  //                     {slotAppointment.patients?.first_name} {slotAppointment.patients?.last_name}
-  //                   </div>
-  //                   <span style={{
-  //                     display: 'inline-block',
-  //                     padding: '2px 6px',
-  //                     borderRadius: '4px',
-  //                     fontSize: '9px',
-  //                     fontWeight: 'bold',
-  //                     marginTop: '4px',
-  //                     textTransform: 'uppercase',
-  //                     background: slotAppointment.visit_type === 'video' ? 'rgba(0, 230, 255, 0.25)' :
-  //                                slotAppointment.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.25)' :
-  //                                slotAppointment.visit_type === 'async' ? 'rgba(176, 122, 255, 0.25)' : 'rgba(255,255,255,0.1)',
-  //                     border: `1px solid ${slotAppointment.visit_type === 'video' ? '#00e6ff' :
-  //                                         slotAppointment.visit_type === 'phone' ? '#00c26e' :
-  //                                         slotAppointment.visit_type === 'async' ? '#b07aff' : 'transparent'}`,
-  //                     color: slotAppointment.visit_type === 'video' ? '#00e6ff' :
-  //                            slotAppointment.visit_type === 'phone' ? '#00c26e' :
-  //                            slotAppointment.visit_type === 'async' ? '#b07aff' : '#fff'
-  //                   }}>
-  //                     {slotAppointment.visit_type === 'video' ? 'VIDEO' :
-  //                      slotAppointment.visit_type === 'phone' ? 'PHONE' :
-  //                      slotAppointment.visit_type === 'async' ? 'ASYNC' : 'VISIT'}
-  //                   </span>
-  //                   {(() => {
-  //                     const reason = getAppointmentReason(slotAppointment)
-  //                     if (!reason) return null
-  //                     const words = reason.trim().split(/\s+/)
-  //                     const shortReason = words.slice(0, 2).join(' ')
-  //                     return (
-  //                       <div style={{ fontSize: '10px', marginTop: '4px', color: '#ffffff', opacity: 0.9 }}>
-  //                         {shortReason}
-  //                       </div>
-  //                     )
-  //                   })()}
-  //                 </>
-  //               )}
-  //               {isAvailable && (
-  //                 <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8, fontWeight: '600' }}>Available</div>
-  //               )}
-  //             </div>
-  //           )
-  //         })}
-  //       </div>
-  //     </div>
-  //   )
-  // }
-
   if (!isOpen) return null
 
   return (
@@ -1901,40 +1790,56 @@ const renderCurrentDaySlots = () => {
               {/* Action Buttons - only show when not in customize mode */}
               {!layout.isCustomizeMode && appointment && (
                 <>
-                  {/* EHR Panel Buttons */}
+                  {/* EHR Quick Access Buttons - Always visible */}
                   <button
                     onClick={() => setShowMedicationHistoryPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
                   >
                     <Pill className="h-3.5 w-3.5" />
                     Medication History
                   </button>
                   <button
-                    onClick={() => setShowAppointmentsOverlay(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs"
+                    onClick={() => setShowOrdersPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
                   >
-                    <Calendar className="h-3.5 w-3.5" />
-                    Appointments
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    Orders
                   </button>
                   <button
+                    onClick={() => setShowPrescriptionHistoryPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-xs font-medium"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Prescription History
+                  </button>
+                  <button
+                    onClick={() => setShowAppointmentsOverlay(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs font-medium"
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Appointments
+                  </button>
+                  
+                  {/* NEW: Allergies, Vitals, Medications buttons */}
+                  <button
                     onClick={() => setShowAllergiesPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs font-medium"
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Allergies
                   </button>
                   <button
                     onClick={() => setShowVitalsPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs font-medium"
                   >
                     <Activity className="h-3.5 w-3.5" />
                     Vitals
                   </button>
                   <button
                     onClick={() => setShowMedicationsPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-xs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-xs font-medium"
                   >
-                    <ClipboardList className="h-3.5 w-3.5" />
+                    <Pill className="h-3.5 w-3.5" />
                     Medications
                   </button>
 
@@ -2199,51 +2104,125 @@ const renderCurrentDaySlots = () => {
         />
       )}
 
-      {/* EHR Overlay Panels */}
-      <AllergiesPanel
-        isOpen={showAllergiesPanel}
-        onClose={() => setShowAllergiesPanel(false)}
-        patientId={appointment?.patient_id || ''}
-        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
-      />
+      {/* Medication History Panel (Surescripts) */}
+      {appointment?.patient_id && (
+        <MedicationHistoryPanel
+          isOpen={showMedicationHistoryPanel}
+          onClose={() => setShowMedicationHistoryPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          onReconcile={(medications) => {
+            // Add reconciled medications to the medication history
+            const newMeds = medications.map((med, idx) => ({
+              id: `reconciled-${Date.now()}-${idx}`,
+              medication: med.medication_name,
+              provider: med.prescriber || 'Surescripts',
+              date: med.start_date || new Date().toISOString().split('T')[0]
+            }))
+            // Add to problemsMedications hook
+            newMeds.forEach(med => {
+              problemsMedications.handleAddMedicationHistory(med.medication, med.provider, med.date)
+            })
+          }}
+        />
+      )}
 
-      <VitalsPanel
-        isOpen={showVitalsPanel}
-        onClose={() => setShowVitalsPanel(false)}
-        patientId={appointment?.patient_id || ''}
-        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
-        appointmentId={appointmentId || undefined}
-      />
+      {/* Orders Panel - Placeholder */}
+      {showOrdersPanel && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
+          <div 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
+            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-blue-400" />
+                Orders
+              </h2>
+              <button onClick={() => setShowOrdersPanel(false)} className="text-gray-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
+          </div>
+        </div>
+      )}
 
-      <MedicationsPanel
-        isOpen={showMedicationsPanel}
-        onClose={() => setShowMedicationsPanel(false)}
-        patientId={appointment?.patient_id || ''}
-        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
-      />
+      {/* Prescription History Panel - Placeholder */}
+      {showPrescriptionHistoryPanel && (
+        <div className="fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
+          <div 
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
+            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <FileText className="h-5 w-5 text-teal-400" />
+                Prescription History
+              </h2>
+              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-gray-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm">Internal prescription logs from this practice - Coming Soon</p>
+          </div>
+        </div>
+      )}
 
-      <MedicationHistoryPanel
-        isOpen={showMedicationHistoryPanel}
-        onClose={() => setShowMedicationHistoryPanel(false)}
-        patientId={appointment?.patient_id || ''}
-        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
-        patientDOB={appointment?.patients?.date_of_birth || ''}
-      />
+      {/* Appointments Overlay Panel */}
+      {appointment?.patient_id && (
+        <AppointmentsOverlayPanel
+          isOpen={showAppointmentsOverlay}
+          onClose={() => setShowAppointmentsOverlay(false)}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          appointments={patientAppointments}
+          onViewAppointment={(apptId) => {
+            setShowAppointmentsOverlay(false)
+            if (onAppointmentSwitch) {
+              onAppointmentSwitch(apptId)
+            }
+          }}
+        />
+      )}
 
-      <AppointmentsOverlayPanel
-        isOpen={showAppointmentsOverlay}
-        onClose={() => setShowAppointmentsOverlay(false)}
-        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : ''}
-        patientDOB={appointment?.patients?.date_of_birth}
-        appointments={appointment?.patient_id ? [] : []}
-        onViewAppointment={(aptId) => {
-          setShowAppointmentsOverlay(false)
-          // Could navigate to that appointment
-        }}
-      />
+      {/* NEW: Allergies Panel */}
+      {appointment?.patient_id && (
+        <AllergiesPanel
+          isOpen={showAllergiesPanel}
+          onClose={() => setShowAllergiesPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+        />
+      )}
+
+      {/* NEW: Vitals Panel */}
+      {appointment?.patient_id && (
+        <VitalsPanel
+          isOpen={showVitalsPanel}
+          onClose={() => setShowVitalsPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          appointmentId={appointmentId ?? undefined}
+        />
+      )}
+
+      {/* NEW: Medications Panel */}
+      {appointment?.patient_id && (
+        <MedicationsPanel
+          isOpen={showMedicationsPanel}
+          onClose={() => setShowMedicationsPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+        />
+      )}
     </>
   )
 }
+
 
 
 
