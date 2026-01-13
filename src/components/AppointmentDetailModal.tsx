@@ -2184,7 +2184,7 @@ const renderCurrentDaySlots = () => {
           onClose={() => setShowMedicationHistoryPanel(false)}
           patientId={appointment.patient_id}
           patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
-          patientDOB={appointment?.patients?.date_of_birth}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
           onReconcile={(medications) => {
             // Add reconciled medications to the medication history
             const newMeds = medications.map((med, idx) => ({
@@ -2247,4 +2247,5 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
 
