@@ -347,24 +347,6 @@ export default function ZoomMeetingEmbed({
 
         {/* Start Meeting Button */}
         <div className="mb-4">
-          {appointment?.zoom_meeting_id ? (
-            <div className="flex items-center gap-4 flex-wrap">
-              <button
-                onClick={handleStartMeeting}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                <Video className="h-4 w-4" />
-                <span>Start Meeting</span>
-              </button>
-            </div>
-          ) : (
-            <div className="text-sm text-gray-400">Meeting link will be available after appointment is accepted.</div>
-          )}
-        </div>
-		
-
-        {/* Start Meeting Button */}
-        <div className="mb-4">
           {appointment?.zoom_start_url ? (
             <div className="flex items-center gap-4 flex-wrap">
               <button 
