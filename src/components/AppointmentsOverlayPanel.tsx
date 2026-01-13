@@ -91,14 +91,14 @@ interface AppointmentDetail {
     id: string
     test_name: string
     status: string
-    ordered_at: string
+    created_at: string
     results?: string
   }>
   documents?: Array<{
     id: string
     file_name: string
     file_type: string
-    uploaded_at: string
+    created_at: string
     url?: string
   }>
   referrals?: Array<{
@@ -993,7 +993,7 @@ export default function AppointmentsOverlayPanel({
                               >
                                 <div>
                                   <p className="text-[#e6f4ff] text-sm font-medium">{lab.test_name}</p>
-                                  <p className="text-[#98b1c9] text-xs">{formatDate(lab.ordered_at)}</p>
+                                  <p className="text-[#98b1c9] text-xs">{formatDate(lab.created_at)}</p>
                                 </div>
                                 <span 
                                   className="text-xs px-2 py-0.5 rounded-full"
@@ -1087,7 +1087,7 @@ export default function AppointmentsOverlayPanel({
                                 <FileText className="h-4 w-4 text-[#f5a524]" />
                                 <div>
                                   <p className="text-[#e6f4ff] text-sm">{doc.file_name}</p>
-                                  <p className="text-[#98b1c9] text-xs">{doc.file_type} · {formatDate(doc.uploaded_at)}</p>
+                                  <p className="text-[#98b1c9] text-xs">{doc.file_type} · {formatDate(doc.created_at)}</p>
                                 </div>
                               </div>
                               {doc.url && (
@@ -1209,4 +1209,5 @@ export default function AppointmentsOverlayPanel({
     </div>
   )
 }
+
 
