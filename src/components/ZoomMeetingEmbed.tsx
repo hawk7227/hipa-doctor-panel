@@ -182,7 +182,7 @@ export default function ZoomMeetingEmbed({
     const pwd = appointment.zoom_meeting_password?.trim() ?? ''
 
     if (appointment.zoom_start_url) return appointment.zoom_start_url
-    return `https://zoom.us/wc/${encodeURIComponent(mid)}/join?pwd=${encodeURIComponent(pwd)}`
+    return `https://app.zoom.us/wc/${encodeURIComponent(mid)}/join?pwd=${encodeURIComponent(pwd)}`
   }, [appointment?.zoom_meeting_id, appointment?.zoom_meeting_password, appointment?.zoom_start_url])
 
   // Check if meeting has started (or is near start)
