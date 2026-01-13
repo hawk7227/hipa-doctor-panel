@@ -319,6 +319,56 @@ export default function AppointmentDetailModal({
   const [showOrdersPanel, setShowOrdersPanel] = useState(false)
   const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
   const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
+  const [patientAppointments, setPatientAppointments] = useState<Array<{
+    id: string
+    status: string
+    service_type: string
+    visit_type: string
+    created_at: string
+    requested_date_time: string | null
+  }>>([])
+
+  // Fetch patient appointments when overlay is opened
+  useEffect(() => {
+    if (showAppointmentsOverlay && appointment?.patient_id) {
+      const fetchPatientAppointments = async () => {
+        try {
+          // Use the same query pattern as the patients page
+          const { data: patientData, error } = await supabase
+            .from('patients')
+            .select(`
+              id,
+              appointments:appointments!appointments_patient_id_fkey (
+                id,
+                status,
+                service_type,
+                visit_type,
+                created_at,
+                requested_date_time
+              )
+            `)
+            .eq('id', appointment.patient_id)
+            .single()
+
+          if (error) {
+            console.error('Error fetching patient appointments:', error)
+            return
+          }
+
+          if (patientData && patientData.appointments) {
+            // Sort by created_at descending
+            const sorted = [...(patientData.appointments as any[])].sort((a, b) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+            setPatientAppointments(sorted)
+          }
+        } catch (err) {
+          console.error('Error fetching patient appointments:', err)
+        }
+      }
+      fetchPatientAppointments()
+    }
+  }, [showAppointmentsOverlay, appointment?.patient_id])
 
   // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
   // Also check and auto-generate CDSS if needed
@@ -2259,10 +2309,15 @@ const renderCurrentDaySlots = () => {
         <AppointmentsOverlayPanel
           isOpen={showAppointmentsOverlay}
           onClose={() => setShowAppointmentsOverlay(false)}
-          patientId={appointment.patient_id}
           patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
           patientDOB={appointment?.patients?.date_of_birth ?? undefined}
-          currentAppointmentId={appointmentId ?? undefined}
+          appointments={patientAppointments}
+          onViewAppointment={(apptId) => {
+            setShowAppointmentsOverlay(false)
+            if (onAppointmentSwitch) {
+              onAppointmentSwitch(apptId)
+            }
+          }}
         />
       )}
     </>
