@@ -475,13 +475,13 @@ export default function MedicationHistoryPanel({
 
   return (
     <div 
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-[60]"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Backdrop - reduced opacity so appointment content shows through */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       
       {/* Panel - using reference colors */}
       <div
@@ -1056,4 +1056,5 @@ export default function MedicationHistoryPanel({
     </div>
   )
 }
+
 
