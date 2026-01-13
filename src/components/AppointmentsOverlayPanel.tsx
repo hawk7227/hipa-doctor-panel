@@ -70,6 +70,22 @@ export default function AppointmentsOverlayPanel({
   const [vitals, setVitals] = useState<any[]>([])
   const [medications, setMedications] = useState<any[]>([])
   
+  // Panel theme colors
+  const [panelTheme, setPanelTheme] = useState<'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'orange' | 'red' | 'pink'>('orange')
+  
+  const themeColors = {
+    purple: { gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%)', border: '#a78bfa', glow: 'rgba(124, 58, 237, 0.3)', bg: 'linear-gradient(180deg, #1e1033 0%, #0d0a1a 100%)', light: '#c4b5fd', text: '#f5f3ff' },
+    blue: { gradient: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)', border: '#60a5fa', glow: 'rgba(37, 99, 235, 0.3)', bg: 'linear-gradient(180deg, #0a1628 0%, #060d18 100%)', light: '#93c5fd', text: '#eff6ff' },
+    cyan: { gradient: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 50%, #0e7490 100%)', border: '#67e8f9', glow: 'rgba(6, 182, 212, 0.3)', bg: 'linear-gradient(180deg, #061a1a 0%, #040d0d 100%)', light: '#a5f3fc', text: '#ecfeff' },
+    teal: { gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)', border: '#5eead4', glow: 'rgba(20, 184, 166, 0.3)', bg: 'linear-gradient(180deg, #0a1a1a 0%, #060d0d 100%)', light: '#99f6e4', text: '#f0fdfa' },
+    green: { gradient: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)', border: '#6ee7b7', glow: 'rgba(16, 185, 129, 0.3)', bg: 'linear-gradient(180deg, #061a12 0%, #040d0a 100%)', light: '#a7f3d0', text: '#ecfdf5' },
+    orange: { gradient: 'linear-gradient(135deg, #ea580c 0%, #c2410c 50%, #9a3412 100%)', border: '#fb923c', glow: 'rgba(234, 88, 12, 0.3)', bg: 'linear-gradient(180deg, #1a1008 0%, #0d0a06 100%)', light: '#fdba74', text: '#fff7ed' },
+    red: { gradient: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', border: '#f87171', glow: 'rgba(220, 38, 38, 0.3)', bg: 'linear-gradient(180deg, #1a0808 0%, #0d0606 100%)', light: '#fca5a5', text: '#fef2f2' },
+    pink: { gradient: 'linear-gradient(135deg, #db2777 0%, #be185d 50%, #9d174d 100%)', border: '#f472b6', glow: 'rgba(219, 39, 119, 0.3)', bg: 'linear-gradient(180deg, #1a0812 0%, #0d060a 100%)', light: '#f9a8d4', text: '#fdf2f8' }
+  }
+  
+  const currentTheme = themeColors[panelTheme]
+  
   // Collapsible sections
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([
     'visit-info', 'patient-demographics', 'allergies', 'vitals', 'medications', 'soap-notes', 'clinical-notes', 'prescriptions'
@@ -414,52 +430,52 @@ export default function AppointmentsOverlayPanel({
           maxWidth: 'calc(100vw - 40px)',
           maxHeight: 'calc(100vh - 60px)',
           cursor: isDragging ? 'grabbing' : 'default',
-          background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+          background: currentTheme.bg,
           borderRadius: '16px',
-          boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d',
+          boxShadow: `0 12px 60px ${currentTheme.glow}, inset 0 0 0 2px ${currentTheme.border}`,
           transition: 'width 0.3s ease'
         }}
         onMouseDown={handleMouseDown}
       >
-        {/* Header */}
+        {/* Header - Dynamic theme */}
         <div 
           className="drag-handle sticky top-0 z-10 cursor-grab active:cursor-grabbing"
           style={{ 
-            background: '#070c18b3', 
+            background: currentTheme.gradient, 
             backdropFilter: 'blur(8px)', 
-            borderBottom: '1px solid #1b2b4d',
+            borderBottom: `2px solid ${currentTheme.border}`,
             padding: '10px 16px'
           }}
         >
           <div className="flex items-center gap-3">
-            <GripHorizontal className="h-5 w-5 text-gray-500" />
+            <GripHorizontal className="h-5 w-5" style={{ color: currentTheme.light }} />
             
             {(selectedAppointment || fetchError) ? (
               <button
                 onClick={handleBackToList}
-                className="flex items-center gap-1.5 text-[#00e6ff] hover:text-white transition-colors text-sm font-medium"
+                className="flex items-center gap-1.5 text-white hover:opacity-80 transition-colors text-sm font-medium"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to Appointments
               </button>
             ) : (
               <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-orange-400" />
-                <span className="font-black text-[#e6f4ff]">Patient Appointments</span>
+                <Calendar className="h-5 w-5 text-white" />
+                <span className="font-black text-white">Patient Appointments</span>
               </div>
             )}
             
             {/* Patient pills */}
             <span 
-              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full"
-              style={{ background: '#0a1732', border: '1px solid #1b2b4d', color: '#cfe1ff' }}
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium"
+              style={{ background: currentTheme.glow, border: `1px solid ${currentTheme.border}`, color: currentTheme.text }}
             >
               {patientName}
             </span>
             {patientDOB && (
               <span 
-                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full"
-                style={{ background: '#0a1732', border: '1px solid #1b2b4d', color: '#cfe1ff' }}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium"
+                style={{ background: currentTheme.glow, border: `1px solid ${currentTheme.border}`, color: currentTheme.text }}
               >
                 DOB {formatDate(patientDOB)}
               </span>
@@ -468,7 +484,7 @@ export default function AppointmentsOverlayPanel({
             {selectedAppointment && (
               <button
                 onClick={() => onViewAppointment(selectedAppointment.id)}
-                className="ml-auto mr-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-medium transition-colors"
+                className="ml-auto mr-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-medium transition-colors border border-white/30"
               >
                 Open Full Chart
               </button>
@@ -477,7 +493,8 @@ export default function AppointmentsOverlayPanel({
             <div className="flex-1" />
             <button
               onClick={onClose}
-              className="text-[#98b1c9] hover:text-white transition-colors p-2"
+              className="hover:text-white transition-colors p-2"
+              style={{ color: currentTheme.light }}
             >
               <X className="h-5 w-5" />
             </button>
@@ -972,6 +989,29 @@ export default function AppointmentsOverlayPanel({
               )}
             </div>
           )}
+        </div>
+
+        {/* Color Theme Selector Footer */}
+        <div 
+          className="sticky bottom-0 p-3 border-t flex items-center justify-between"
+          style={{ 
+            background: 'rgba(0,0,0,0.5)', 
+            backdropFilter: 'blur(8px)',
+            borderColor: currentTheme.border 
+          }}
+        >
+          <span className="text-xs text-gray-400">Panel Theme:</span>
+          <div className="flex items-center gap-1.5">
+            {(Object.keys(themeColors) as Array<keyof typeof themeColors>).map((color) => (
+              <button
+                key={color}
+                onClick={() => setPanelTheme(color)}
+                className={`w-6 h-6 rounded-full transition-all hover:scale-110 ${panelTheme === color ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110' : ''}`}
+                style={{ background: themeColors[color].gradient }}
+                title={color.charAt(0).toUpperCase() + color.slice(1)}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </>
