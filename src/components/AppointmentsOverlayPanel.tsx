@@ -20,8 +20,10 @@ interface AppointmentDetail {
   status: string | null
   created_at: string
   chief_complaint?: string | null
-  doctor_notes?: string | null
-  intake_answers?: any | null
+  subjective_notes?: string | null
+  objective_notes?: string | null
+  assessment_notes?: string | null
+  plan_notes?: string | null
   service_type?: string | null
   doctors?: {
     first_name?: string
@@ -67,7 +69,7 @@ export default function AppointmentsOverlayPanel({
   
   // Collapsible sections
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([
-    'visit-info', 'patient-demographics', 'vitals', 'clinical-notes', 'prescriptions'
+    'visit-info', 'patient-demographics', 'soap-notes', 'clinical-notes', 'prescriptions'
   ]))
 
   // Draggable state
@@ -109,8 +111,10 @@ export default function AppointmentsOverlayPanel({
           status,
           created_at,
           chief_complaint,
-          doctor_notes,
-          intake_answers,
+          subjective_notes,
+          objective_notes,
+          assessment_notes,
+          plan_notes,
           service_type,
           doctors!appointments_doctor_id_fkey (
             first_name,
@@ -555,65 +559,6 @@ export default function AppointmentsOverlayPanel({
                 </div>
               )}
 
-              {/* Vitals */}
-              {selectedAppointment.intake_answers && (
-                <div className="rounded-lg overflow-hidden border border-[#1b2b4d]">
-                  <SectionHeader id="vitals" title="Vitals" icon={Activity} color="cyan" />
-                  {expandedSections.has('vitals') && (() => {
-                    const vitals = parseVitals(selectedAppointment.intake_answers)
-                    if (!vitals) return null
-                    return (
-                      <div className="p-4" style={{ background: '#0a1220' }}>
-                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                          {vitals.blood_pressure && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Heart className="h-4 w-4 text-red-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">BP</p>
-                              <p className="text-white text-sm font-medium">{vitals.blood_pressure}</p>
-                            </div>
-                          )}
-                          {vitals.heart_rate && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Activity className="h-4 w-4 text-pink-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">HR</p>
-                              <p className="text-white text-sm font-medium">{vitals.heart_rate} bpm</p>
-                            </div>
-                          )}
-                          {vitals.temperature && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Thermometer className="h-4 w-4 text-orange-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">Temp</p>
-                              <p className="text-white text-sm font-medium">{vitals.temperature}°F</p>
-                            </div>
-                          )}
-                          {vitals.weight && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Scale className="h-4 w-4 text-blue-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">Weight</p>
-                              <p className="text-white text-sm font-medium">{vitals.weight} lbs</p>
-                            </div>
-                          )}
-                          {vitals.oxygen_saturation && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Activity className="h-4 w-4 text-cyan-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">SpO2</p>
-                              <p className="text-white text-sm font-medium">{vitals.oxygen_saturation}%</p>
-                            </div>
-                          )}
-                          {vitals.respiratory_rate && (
-                            <div className="p-3 rounded-lg bg-[#0d1424] text-center border border-[#1b2b4d]">
-                              <Activity className="h-4 w-4 text-green-400 mx-auto mb-1" />
-                              <p className="text-[10px] text-gray-400">RR</p>
-                              <p className="text-white text-sm font-medium">{vitals.respiratory_rate}/min</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-
               {/* Clinical Notes */}
               <div className="rounded-lg overflow-hidden border border-[#1b2b4d]">
                 <SectionHeader id="clinical-notes" title="Clinical Notes" icon={FileText} count={clinicalNotes.length} color="cyan" />
@@ -638,13 +583,36 @@ export default function AppointmentsOverlayPanel({
                 )}
               </div>
 
-              {/* Doctor Notes */}
-              {selectedAppointment.doctor_notes && (
+              {/* SOAP Notes */}
+              {(selectedAppointment.subjective_notes || selectedAppointment.objective_notes || selectedAppointment.assessment_notes || selectedAppointment.plan_notes) && (
                 <div className="rounded-lg overflow-hidden border border-[#1b2b4d]">
-                  <SectionHeader id="doctor-notes" title="Doctor Notes" icon={Stethoscope} color="cyan" />
-                  {expandedSections.has('doctor-notes') && (
-                    <div className="p-4" style={{ background: '#0a1220' }}>
-                      <p className="text-white text-sm whitespace-pre-wrap">{selectedAppointment.doctor_notes}</p>
+                  <SectionHeader id="soap-notes" title="SOAP Notes" icon={Stethoscope} color="cyan" />
+                  {expandedSections.has('soap-notes') && (
+                    <div className="p-4 space-y-4" style={{ background: '#0a1220' }}>
+                      {selectedAppointment.subjective_notes && (
+                        <div>
+                          <p className="text-xs text-cyan-400 font-medium mb-1">Subjective</p>
+                          <p className="text-white text-sm whitespace-pre-wrap">{selectedAppointment.subjective_notes}</p>
+                        </div>
+                      )}
+                      {selectedAppointment.objective_notes && (
+                        <div>
+                          <p className="text-xs text-green-400 font-medium mb-1">Objective</p>
+                          <p className="text-white text-sm whitespace-pre-wrap">{selectedAppointment.objective_notes}</p>
+                        </div>
+                      )}
+                      {selectedAppointment.assessment_notes && (
+                        <div>
+                          <p className="text-xs text-yellow-400 font-medium mb-1">Assessment</p>
+                          <p className="text-white text-sm whitespace-pre-wrap">{selectedAppointment.assessment_notes}</p>
+                        </div>
+                      )}
+                      {selectedAppointment.plan_notes && (
+                        <div>
+                          <p className="text-xs text-pink-400 font-medium mb-1">Plan</p>
+                          <p className="text-white text-sm whitespace-pre-wrap">{selectedAppointment.plan_notes}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -854,6 +822,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
