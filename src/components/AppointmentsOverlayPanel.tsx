@@ -34,7 +34,6 @@ interface AppointmentDetail {
     email?: string
     phone?: string
     date_of_birth?: string
-    gender?: string
     location?: string
     allergies?: string
     current_medications?: string
@@ -129,7 +128,6 @@ export default function AppointmentsOverlayPanel({
             email,
             phone,
             date_of_birth,
-            gender,
             location,
             allergies,
             current_medications,
@@ -554,10 +552,6 @@ export default function AppointmentsOverlayPanel({
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400 mb-1">Gender</p>
-                          <p className="text-white text-sm capitalize">{selectedAppointment.patients.gender || 'N/A'}</p>
-                        </div>
-                        <div>
                           <p className="text-xs text-gray-400 mb-1">Phone</p>
                           <p className="text-white text-sm">{selectedAppointment.patients.phone || 'N/A'}</p>
                         </div>
@@ -906,6 +900,7 @@ export default function AppointmentsOverlayPanel({
     </>
   )
 }
+
 
 
 
