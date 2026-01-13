@@ -60,6 +60,11 @@ export default function VitalsPanel({
   const [saving, setSaving] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list')
   
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
   // Panel theme colors
   const [panelTheme, setPanelTheme] = useState<'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'orange' | 'red' | 'pink'>('cyan')
   
@@ -180,10 +185,13 @@ export default function VitalsPanel({
       await fetchVitals()
       resetForm()
       setShowAddForm(false)
+      setSaveStatus('saved')
+      setLastSaved(new Date())
       
     } catch (err) {
       console.error('Add error:', err)
       setError(err instanceof Error ? err.message : 'Failed to add vitals')
+      setSaveStatus('error')
     } finally {
       setSaving(false)
     }
@@ -220,10 +228,13 @@ export default function VitalsPanel({
       await fetchVitals()
       resetForm()
       setEditingId(null)
+      setSaveStatus('saved')
+      setLastSaved(new Date())
       
     } catch (err) {
       console.error('Update error:', err)
       setError(err instanceof Error ? err.message : 'Failed to update vitals')
+      setSaveStatus('error')
     } finally {
       setSaving(false)
     }
@@ -258,6 +269,78 @@ export default function VitalsPanel({
       setError(err instanceof Error ? err.message : 'Failed to delete vitals')
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // AUTO-SAVE (2 second debounce after typing stops)
+  // ---------------------------------------------------------------------------
+  
+  const autoSaveEdit = async () => {
+    if (!editingId) return
+    
+    setSaveStatus('saving')
+    
+    try {
+      const updateData: any = {}
+      
+      if (formData.systolic_bp) updateData.systolic_bp = parseInt(formData.systolic_bp)
+      if (formData.diastolic_bp) updateData.diastolic_bp = parseInt(formData.diastolic_bp)
+      if (formData.heart_rate) updateData.heart_rate = parseInt(formData.heart_rate)
+      if (formData.temperature) updateData.temperature = parseFloat(formData.temperature)
+      if (formData.weight) updateData.weight = parseFloat(formData.weight)
+      if (formData.height) updateData.height = parseFloat(formData.height)
+      if (formData.oxygen_saturation) updateData.oxygen_saturation = parseInt(formData.oxygen_saturation)
+      if (formData.respiratory_rate) updateData.respiratory_rate = parseInt(formData.respiratory_rate)
+      
+      const { error: updateError } = await supabase
+        .from('vitals')
+        .update(updateData)
+        .eq('id', editingId)
+      
+      if (updateError) {
+        setSaveStatus('error')
+        console.error('Auto-save error:', updateError)
+        return
+      }
+      
+      setSaveStatus('saved')
+      setLastSaved(new Date())
+      console.log('Auto-saved vitals at', new Date().toLocaleTimeString())
+      
+      // Refresh data in background
+      fetchVitals()
+      
+    } catch (err) {
+      setSaveStatus('error')
+      console.error('Auto-save error:', err)
+    }
+  }
+  
+  // Debounced form change handler for auto-save
+  const handleFormChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    
+    // Only auto-save when editing existing record
+    if (editingId) {
+      // Clear existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+      
+      // Set new timer for 2 seconds
+      autoSaveTimerRef.current = setTimeout(() => {
+        autoSaveEdit()
+      }, 2000)
+    }
+  }
+  
+  // Cleanup auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [])
 
   // ---------------------------------------------------------------------------
   // FORM HELPERS
@@ -755,7 +838,7 @@ export default function VitalsPanel({
         )}
       </div>
       
-      {/* Footer with Color Selector */}
+      {/* Footer with Save Status and Color Selector */}
       <div 
         className="p-3 border-t rounded-b-xl"
         style={{ 
@@ -765,9 +848,24 @@ export default function VitalsPanel({
         }}
       >
         <div className="flex items-center justify-between">
-          <div className="text-xs text-gray-400">
-            <span>{vitals.length} vitals records</span>
-            <span className="ml-3">Last 50 readings shown</span>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="text-gray-400">{vitals.length} vitals records</span>
+            {/* Save Status Indicator */}
+            <span className={`flex items-center gap-1 ${
+              saveStatus === 'saving' ? 'text-yellow-400' :
+              saveStatus === 'saved' ? 'text-green-400' :
+              saveStatus === 'error' ? 'text-red-400' : 'text-gray-500'
+            }`}>
+              {saveStatus === 'saving' && (
+                <><span className="animate-spin">⟳</span> Saving...</>
+              )}
+              {saveStatus === 'saved' && lastSaved && (
+                <>✓ Saved {lastSaved.toLocaleTimeString()}</>
+              )}
+              {saveStatus === 'error' && (
+                <>✗ Save failed</>
+              )}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">Theme:</span>
@@ -788,4 +886,5 @@ export default function VitalsPanel({
     </div>
   )
 }
+
 
