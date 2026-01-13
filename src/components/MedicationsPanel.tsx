@@ -107,6 +107,11 @@ export default function MedicationsPanel({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [saving, setSaving] = useState(false)
   
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
   // Panel theme colors
   const [panelTheme, setPanelTheme] = useState<'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'orange' | 'red' | 'pink'>('green')
   
@@ -224,10 +229,13 @@ export default function MedicationsPanel({
       await fetchMedications()
       resetForm()
       setShowAddForm(false)
+      setSaveStatus('saved')
+      setLastSaved(new Date())
       
     } catch (err) {
       console.error('Add error:', err)
       setError(err instanceof Error ? err.message : 'Failed to add medication')
+      setSaveStatus('error')
     } finally {
       setSaving(false)
     }
@@ -268,10 +276,13 @@ export default function MedicationsPanel({
       await fetchMedications()
       resetForm()
       setEditingId(null)
+      setSaveStatus('saved')
+      setLastSaved(new Date())
       
     } catch (err) {
       console.error('Update error:', err)
       setError(err instanceof Error ? err.message : 'Failed to update medication')
+      setSaveStatus('error')
     } finally {
       setSaving(false)
     }
@@ -331,6 +342,77 @@ export default function MedicationsPanel({
       setError(err instanceof Error ? err.message : 'Failed to discontinue medication')
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // AUTO-SAVE (2 second debounce after typing stops)
+  // ---------------------------------------------------------------------------
+  
+  const autoSaveEdit = async () => {
+    if (!editingId || !formData.medication_name.trim()) return
+    
+    setSaveStatus('saving')
+    
+    try {
+      const { error: updateError } = await supabase
+        .from('medications')
+        .update({
+          medication_name: formData.medication_name,
+          dosage: formData.dosage || null,
+          frequency: formData.frequency || null,
+          route: formData.route || null,
+          status: formData.status || 'active',
+          start_taking_datetime: formData.start_taking_datetime || null,
+          end_taking_datetime: formData.end_taking_datetime || null,
+          prescriber: formData.prescriber || null,
+          notes: formData.notes || null
+        })
+        .eq('id', editingId)
+      
+      if (updateError) {
+        setSaveStatus('error')
+        console.error('Auto-save error:', updateError)
+        return
+      }
+      
+      setSaveStatus('saved')
+      setLastSaved(new Date())
+      console.log('Auto-saved medication at', new Date().toLocaleTimeString())
+      
+      // Refresh data in background
+      fetchMedications()
+      
+    } catch (err) {
+      setSaveStatus('error')
+      console.error('Auto-save error:', err)
+    }
+  }
+  
+  // Debounced form change handler for auto-save
+  const handleFormChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    
+    // Only auto-save when editing existing record
+    if (editingId) {
+      // Clear existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+      
+      // Set new timer for 2 seconds
+      autoSaveTimerRef.current = setTimeout(() => {
+        autoSaveEdit()
+      }, 2000)
+    }
+  }
+  
+  // Cleanup auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [])
 
   // ---------------------------------------------------------------------------
   // FORM HELPERS
@@ -778,7 +860,7 @@ export default function MedicationsPanel({
         )}
       </div>
       
-      {/* Footer with Color Selector */}
+      {/* Footer with Save Status and Color Selector */}
       <div 
         className="p-3 border-t rounded-b-xl"
         style={{ 
@@ -788,11 +870,23 @@ export default function MedicationsPanel({
         }}
       >
         <div className="flex items-center justify-between">
-          <div className="text-xs text-gray-400">
-            <span>{filteredMedications.length} of {medications.length} medications</span>
-            <span className="ml-3 flex items-center gap-1 inline-flex">
-              <AlertTriangle className="h-3 w-3 text-yellow-500" />
-              Check for drug interactions
+          <div className="flex items-center gap-4 text-xs">
+            <span className="text-gray-400">{filteredMedications.length} of {medications.length} medications</span>
+            {/* Save Status Indicator */}
+            <span className={`flex items-center gap-1 ${
+              saveStatus === 'saving' ? 'text-yellow-400' :
+              saveStatus === 'saved' ? 'text-green-400' :
+              saveStatus === 'error' ? 'text-red-400' : 'text-gray-500'
+            }`}>
+              {saveStatus === 'saving' && (
+                <><span className="animate-spin">⟳</span> Saving...</>
+              )}
+              {saveStatus === 'saved' && lastSaved && (
+                <>✓ Saved {lastSaved.toLocaleTimeString()}</>
+              )}
+              {saveStatus === 'error' && (
+                <>✗ Save failed</>
+              )}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -899,4 +993,5 @@ function MedicationCard({
     </div>
   )
 }
+
 
