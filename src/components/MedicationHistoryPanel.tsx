@@ -1056,3 +1056,4 @@ export default function MedicationHistoryPanel({
     </div>
   )
 }
+
