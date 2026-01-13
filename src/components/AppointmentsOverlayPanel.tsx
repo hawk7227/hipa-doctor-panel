@@ -116,6 +116,7 @@ interface AppointmentsOverlayPanelProps {
   patientId: string
   patientName: string
   patientDOB?: string
+  currentAppointmentId?: string
 }
 
 export default function AppointmentsOverlayPanel({
@@ -123,7 +124,8 @@ export default function AppointmentsOverlayPanel({
   onClose,
   patientId,
   patientName,
-  patientDOB
+  patientDOB,
+  currentAppointmentId
 }: AppointmentsOverlayPanelProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(false)
@@ -144,39 +146,92 @@ export default function AppointmentsOverlayPanel({
   // Fetch appointments when panel opens
   useEffect(() => {
     if (isOpen && patientId) {
+      console.log('Fetching appointments for patient:', patientId, 'currentAppointmentId:', currentAppointmentId)
       fetchAppointments()
     }
-  }, [isOpen, patientId])
+  }, [isOpen, patientId, currentAppointmentId])
 
   const fetchAppointments = async () => {
     setLoading(true)
     try {
+      console.log('Querying appointments with patient_id:', patientId)
+      
+      // Simple query without joins first - matching the patients page query fields
       const { data, error } = await supabase
         .from('appointments')
         .select(`
           id,
-          visit_type,
-          requested_date_time,
           status,
+          service_type,
+          visit_type,
           created_at,
+          requested_date_time,
           chief_complaint,
-          doctor_notes,
-          doctors (
-            first_name,
-            last_name
-          )
+          doctor_notes
         `)
         .eq('patient_id', patientId)
-        .order('requested_date_time', { ascending: false })
+        .order('created_at', { ascending: false })
 
-      if (error) throw error
+      console.log('Appointments query result:', { data, error, count: data?.length })
+
+      if (error) {
+        console.error('Query error:', error)
+        throw error
+      }
       
-      // Transform data to handle Supabase returning doctors as array
-      const transformedData: Appointment[] = (data || []).map((appt: any) => ({
-        ...appt,
-        doctors: Array.isArray(appt.doctors) ? appt.doctors[0] || null : appt.doctors
+      let finalData = data || []
+      
+      // If no results and we have currentAppointmentId, try fetching via that appointment
+      if (finalData.length === 0 && currentAppointmentId) {
+        console.log('No appointments found by patient_id, fetching current appointment to get actual patient_id')
+        
+        // First get the actual patient_id from the current appointment
+        const { data: currentAppt, error: currentError } = await supabase
+          .from('appointments')
+          .select('patient_id')
+          .eq('id', currentAppointmentId)
+          .single()
+        
+        if (currentAppt && !currentError && currentAppt.patient_id) {
+          console.log('Found actual patient_id from appointment:', currentAppt.patient_id)
+          
+          // Now query with the correct patient_id
+          const { data: retryData, error: retryError } = await supabase
+            .from('appointments')
+            .select(`
+              id,
+              status,
+              service_type,
+              visit_type,
+              created_at,
+              requested_date_time,
+              chief_complaint,
+              doctor_notes
+            `)
+            .eq('patient_id', currentAppt.patient_id)
+            .order('created_at', { ascending: false })
+          
+          console.log('Retry query result:', { retryData, retryError, count: retryData?.length })
+          
+          if (retryData && retryData.length > 0) {
+            finalData = retryData
+          }
+        }
+      }
+      
+      // Transform data to match our interface (use service_type as chief_complaint if not set)
+      const transformedData: Appointment[] = finalData.map((appt: any) => ({
+        id: appt.id,
+        visit_type: appt.visit_type,
+        requested_date_time: appt.requested_date_time,
+        status: appt.status,
+        created_at: appt.created_at,
+        chief_complaint: appt.chief_complaint || appt.service_type?.replace(/_/g, ' ') || 'Appointment',
+        doctor_notes: appt.doctor_notes,
+        doctors: null
       }))
       
+      console.log('Final transformed appointments:', transformedData.length)
       setAppointments(transformedData)
     } catch (error) {
       console.error('Error fetching appointments:', error)
