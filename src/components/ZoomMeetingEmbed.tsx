@@ -425,6 +425,18 @@ export default function ZoomMeetingEmbed({
               allowFullScreen
             />
           </div>
+		  <a taregt="_blank" href={appointment?.zoom_start_url ?? ''}>Join in a new tab </a>{appointment?.zoom_meeting_id && (
+                <>
+                  <span className="text-sm text-gray-400">Meeting ID:</span>
+                  <span className="font-bold text-white">{appointment.zoom_meeting_id}</span>
+                </>
+              )}
+              {appointment?.zoom_meeting_password && (
+                <>
+                  <span className="text-sm text-gray-400">Password:</span>
+                  <span className="font-bold text-white">{appointment.zoom_meeting_password}</span>
+                </>
+              )}
         </FloatingWindow>
 		
         <hr className="border-white/10 my-4" />
