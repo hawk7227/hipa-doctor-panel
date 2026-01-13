@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 
@@ -32,6 +32,7 @@ import GmailStyleEmailPanel from './GmailStyleEmailPanel'
 import EnhancedSMSPanel from './EnhancedSMSPanel'
 import MakeCallFaxPanel from './MakeCallFaxPanel'
 import MedicationHistoryPanel from './MedicationHistoryPanel'
+import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 
 // Utils
 import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/utils/timezone-utils'
@@ -317,6 +318,7 @@ export default function AppointmentDetailModal({
   const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
   const [showOrdersPanel, setShowOrdersPanel] = useState(false)
   const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
+  const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
 
   // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
   // Also check and auto-generate CDSS if needed
@@ -1915,6 +1917,13 @@ const renderCurrentDaySlots = () => {
                     <FileText className="h-3.5 w-3.5" />
                     Prescription History
                   </button>
+                  <button
+                    onClick={() => setShowAppointmentsOverlay(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs font-medium"
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Appointments
+                  </button>
 
                   {/* Accept/Reject for pending appointments */}
                   {appointment.status === 'pending' && (
@@ -2243,6 +2252,17 @@ const renderCurrentDaySlots = () => {
             <p className="text-gray-400 text-sm">Internal prescription logs from this practice - Coming Soon</p>
           </div>
         </div>
+      )}
+
+      {/* Appointments Overlay Panel */}
+      {appointment?.patient_id && (
+        <AppointmentsOverlayPanel
+          isOpen={showAppointmentsOverlay}
+          onClose={() => setShowAppointmentsOverlay(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+        />
       )}
     </>
   )
