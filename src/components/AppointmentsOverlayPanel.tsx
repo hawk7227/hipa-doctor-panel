@@ -170,7 +170,14 @@ export default function AppointmentsOverlayPanel({
         .order('requested_date_time', { ascending: false })
 
       if (error) throw error
-      setAppointments(data || [])
+      
+      // Transform data to handle Supabase returning doctors as array
+      const transformedData: Appointment[] = (data || []).map((appt: any) => ({
+        ...appt,
+        doctors: Array.isArray(appt.doctors) ? appt.doctors[0] || null : appt.doctors
+      }))
+      
+      setAppointments(transformedData)
     } catch (error) {
       console.error('Error fetching appointments:', error)
       setAppointments([])
@@ -284,8 +291,15 @@ export default function AppointmentsOverlayPanel({
         }
       }
 
-      setSelectedAppointment({
+      // Transform doctors and patients arrays to objects (Supabase join behavior)
+      const transformedAppointment = {
         ...appointmentData,
+        doctors: Array.isArray(appointmentData.doctors) ? appointmentData.doctors[0] || null : appointmentData.doctors,
+        patients: Array.isArray(appointmentData.patients) ? appointmentData.patients[0] || null : appointmentData.patients
+      }
+
+      setSelectedAppointment({
+        ...transformedAppointment,
         clinical_notes: notesData || [],
         prescriptions: rxData || [],
         problems: problemsData || [],
@@ -1195,3 +1209,4 @@ export default function AppointmentsOverlayPanel({
     </div>
   )
 }
+
