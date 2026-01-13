@@ -361,7 +361,43 @@ export default function ZoomMeetingEmbed({
             <div className="text-sm text-gray-400">Meeting link will be available after appointment is accepted.</div>
           )}
         </div>
+		
 
+        {/* Start Meeting Button */}
+        <div className="mb-4">
+          {appointment?.zoom_start_url ? (
+            <div className="flex items-center gap-4 flex-wrap">
+              <button 
+                onClick={handleStartMeeting}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Video className="h-4 w-4" />
+                <span>Start Meeting</span>
+              </button>
+              {appointment?.zoom_meeting_id && (
+                <>
+                  <span className="text-sm text-gray-400">Meeting ID:</span>
+                  <span className="font-bold text-white">{appointment.zoom_meeting_id}</span>
+                </>
+              )}
+              {appointment?.zoom_meeting_password && (
+                <>
+                  <span className="text-sm text-gray-400">Password:</span>
+                  <span className="font-bold text-white">{appointment.zoom_meeting_password}</span>
+                </>
+              )}
+            </div>
+          ) : appointment?.zoom_start_url ? (
+            <div className="text-sm text-amber-400 bg-amber-900/20 border border-amber-500/30 rounded-lg p-3">
+              ⚠️ Start meeting link is not available. The meeting was created but the start URL is missing. Please contact support or recreate the meeting.
+            </div>
+          ) : (
+            <div className="text-sm text-gray-400">
+              Meeting link will be available after appointment is accepted.
+            </div>
+          )}
+        </div>
+		
        
 	{/* ✅ Floating resizable window with iframe */}
         <FloatingWindow
