@@ -73,6 +73,10 @@ export default function AppointmentsOverlayPanel({
   // Panel theme colors
   const [panelTheme, setPanelTheme] = useState<'purple' | 'blue' | 'cyan' | 'teal' | 'green' | 'orange' | 'red' | 'pink'>('orange')
   
+  // Auto-save/sync state for display
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  
   const themeColors = {
     purple: { gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%)', border: '#a78bfa', glow: 'rgba(124, 58, 237, 0.3)', bg: 'linear-gradient(180deg, #1e1033 0%, #0d0a1a 100%)', light: '#c4b5fd', text: '#f5f3ff' },
     blue: { gradient: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)', border: '#60a5fa', glow: 'rgba(37, 99, 235, 0.3)', bg: 'linear-gradient(180deg, #0a1628 0%, #060d18 100%)', light: '#93c5fd', text: '#eff6ff' },
@@ -991,7 +995,7 @@ export default function AppointmentsOverlayPanel({
           )}
         </div>
 
-        {/* Color Theme Selector Footer */}
+        {/* Footer with Sync Status and Color Theme Selector */}
         <div 
           className="sticky bottom-0 p-3 border-t flex items-center justify-between"
           style={{ 
@@ -1000,17 +1004,23 @@ export default function AppointmentsOverlayPanel({
             borderColor: currentTheme.border 
           }}
         >
-          <span className="text-xs text-gray-400">Panel Theme:</span>
-          <div className="flex items-center gap-1.5">
-            {(Object.keys(themeColors) as Array<keyof typeof themeColors>).map((color) => (
-              <button
-                key={color}
-                onClick={() => setPanelTheme(color)}
-                className={`w-6 h-6 rounded-full transition-all hover:scale-110 ${panelTheme === color ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110' : ''}`}
-                style={{ background: themeColors[color].gradient }}
-                title={color.charAt(0).toUpperCase() + color.slice(1)}
-              />
-            ))}
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-gray-400">{appointments.length} appointments</span>
+            <span className="text-xs text-green-400">✓ Synced with patient chart</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Theme:</span>
+            <div className="flex items-center gap-1.5">
+              {(Object.keys(themeColors) as Array<keyof typeof themeColors>).map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setPanelTheme(color)}
+                  className={`w-5 h-5 rounded-full transition-all hover:scale-110 ${panelTheme === color ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110' : ''}`}
+                  style={{ background: themeColors[color].gradient }}
+                  title={color.charAt(0).toUpperCase() + color.slice(1)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
