@@ -2262,11 +2262,13 @@ const renderCurrentDaySlots = () => {
           patientId={appointment.patient_id}
           patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
           patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          currentAppointmentId={appointmentId ?? undefined}
         />
       )}
     </>
   )
 }
+
 
 
 
