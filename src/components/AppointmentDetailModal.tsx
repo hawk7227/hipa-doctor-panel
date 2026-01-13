@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
+import OrdersPanel from './OrdersPanel'
+import PrescriptionHistoryPanel from './PrescriptionHistoryPanel'
 
 // Hooks
 import { useAppointmentData } from './appointment/hooks/useAppointmentData'
@@ -2128,70 +2130,26 @@ const renderCurrentDaySlots = () => {
         />
       )}
 
-      {/* Orders Panel - Placeholder - BLUE THEME */}
-      {showOrdersPanel && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
-          <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl"
-            style={{ 
-              background: 'linear-gradient(180deg, #0a1628 0%, #060d18 100%)', 
-              boxShadow: '0 12px 60px rgba(37, 99, 235, 0.3), inset 0 0 0 2px #2563eb' 
-            }}
-          >
-            <div 
-              className="flex items-center justify-between p-4 rounded-t-2xl"
-              style={{
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)',
-                borderBottom: '2px solid #60a5fa'
-              }}
-            >
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <ClipboardList className="h-5 w-5 text-white" />
-                Orders
-              </h2>
-              <button onClick={() => setShowOrdersPanel(false)} className="text-blue-200 hover:text-white p-2">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-blue-200 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
-            </div>
-          </div>
-        </div>
+      {/* Orders Panel - BLUE THEME */}
+      {appointment?.patient_id && (
+        <OrdersPanel
+          isOpen={showOrdersPanel}
+          onClose={() => setShowOrdersPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment.patients?.first_name || ''} ${appointment.patients?.last_name || ''}`}
+          appointmentId={appointment.id}
+        />
       )}
 
-      {/* Prescription History Panel - Placeholder - TEAL THEME */}
-      {showPrescriptionHistoryPanel && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
-          <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl"
-            style={{ 
-              background: 'linear-gradient(180deg, #0a1a1a 0%, #060d0d 100%)', 
-              boxShadow: '0 12px 60px rgba(20, 184, 166, 0.3), inset 0 0 0 2px #14b8a6' 
-            }}
-          >
-            <div 
-              className="flex items-center justify-between p-4 rounded-t-2xl"
-              style={{
-                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)',
-                borderBottom: '2px solid #5eead4'
-              }}
-            >
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <FileText className="h-5 w-5 text-white" />
-                Prescription History
-              </h2>
-              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-teal-200 hover:text-white p-2">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-teal-200 text-sm">Internal prescription logs from this practice - Coming Soon</p>
-            </div>
-          </div>
-        </div>
+      {/* Prescription History Panel - TEAL THEME */}
+      {appointment?.patient_id && (
+        <PrescriptionHistoryPanel
+          isOpen={showPrescriptionHistoryPanel}
+          onClose={() => setShowPrescriptionHistoryPanel(false)}
+          patientId={appointment.patient_id}
+          patientName={`${appointment.patients?.first_name || ''} ${appointment.patients?.last_name || ''}`}
+          appointmentId={appointment.id}
+        />
       )}
 
       {/* Appointments Overlay Panel */}
@@ -2244,6 +2202,7 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
 
 
 
