@@ -2128,46 +2128,68 @@ const renderCurrentDaySlots = () => {
         />
       )}
 
-      {/* Orders Panel - Placeholder */}
+      {/* Orders Panel - Placeholder - BLUE THEME */}
       {showOrdersPanel && (
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowOrdersPanel(false)} />
           <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
-            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl"
+            style={{ 
+              background: 'linear-gradient(180deg, #0a1628 0%, #060d18 100%)', 
+              boxShadow: '0 12px 60px rgba(37, 99, 235, 0.3), inset 0 0 0 2px #2563eb' 
+            }}
           >
-            <div className="flex items-center justify-between mb-4">
+            <div 
+              className="flex items-center justify-between p-4 rounded-t-2xl"
+              style={{
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)',
+                borderBottom: '2px solid #60a5fa'
+              }}
+            >
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <ClipboardList className="h-5 w-5 text-blue-400" />
+                <ClipboardList className="h-5 w-5 text-white" />
                 Orders
               </h2>
-              <button onClick={() => setShowOrdersPanel(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setShowOrdersPanel(false)} className="text-blue-200 hover:text-white p-2">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="text-gray-400 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
+            <div className="p-6">
+              <p className="text-blue-200 text-sm">Lab Orders, Imaging, Referrals, Procedures - Coming Soon</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Prescription History Panel - Placeholder */}
+      {/* Prescription History Panel - Placeholder - TEAL THEME */}
       {showPrescriptionHistoryPanel && (
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowPrescriptionHistoryPanel(false)} />
           <div 
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl p-6"
-            style={{ background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 12px 60px rgba(0,0,0,.45), inset 0 0 0 1px #1b2b4d' }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[95vw] max-h-[90vh] overflow-auto rounded-2xl"
+            style={{ 
+              background: 'linear-gradient(180deg, #0a1a1a 0%, #060d0d 100%)', 
+              boxShadow: '0 12px 60px rgba(20, 184, 166, 0.3), inset 0 0 0 2px #14b8a6' 
+            }}
           >
-            <div className="flex items-center justify-between mb-4">
+            <div 
+              className="flex items-center justify-between p-4 rounded-t-2xl"
+              style={{
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)',
+                borderBottom: '2px solid #5eead4'
+              }}
+            >
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <FileText className="h-5 w-5 text-teal-400" />
+                <FileText className="h-5 w-5 text-white" />
                 Prescription History
               </h2>
-              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setShowPrescriptionHistoryPanel(false)} className="text-teal-200 hover:text-white p-2">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="text-gray-400 text-sm">Internal prescription logs from this practice - Coming Soon</p>
+            <div className="p-6">
+              <p className="text-teal-200 text-sm">Internal prescription logs from this practice - Coming Soon</p>
+            </div>
           </div>
         </div>
       )}
@@ -2222,6 +2244,7 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
 
 
 
