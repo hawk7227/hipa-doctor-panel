@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity, Minimize2, Maximize2 } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
@@ -331,6 +331,9 @@ export default function AppointmentDetailModal({
   const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
+  
+  // Minimize/restore state for panel
+  const [isMinimized, setIsMinimized] = useState(false)
   
   const [patientAppointments, setPatientAppointments] = useState<Array<{
     id: string
@@ -1733,58 +1736,225 @@ const renderCurrentDaySlots = () => {
 
   return (
     <>
-      <div 
-        className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
-        onClick={onClose}
-      />
+      {/* Backdrop - hide when minimized */}
+      {!isMinimized && (
+        <div 
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
+          onClick={onClose}
+        />
+      )}
       
-      {/* Main container with calendar sidebar + panel */}
-      <div className="fixed top-0 right-0 h-full w-full z-50 flex">
-        {/* Left Calendar Sidebar - Updated styling */}
-        <div style={{
-          width: '12%',
-          minWidth: '140px',
-          maxWidth: '200px',
-          height: '100%',
-          borderRight: '1px solid #1b2b4d',
-          background: 'linear-gradient(180deg, #0d1424, #0b1222)',
-          boxShadow: '0 0 40px rgba(0,0,0,0.5)'
-        }}>
-          {renderCurrentDaySlots()}
+      {/* Main container - changes based on minimized state */}
+      {isMinimized ? (
+        /* MINIMIZED STATE - Fixed bottom bar */
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-t border-cyan-500/30 shadow-2xl">
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              {/* Left: Appointment info */}
+              <div className="flex items-center gap-3">
+                <h2 className="text-white font-bold text-sm">
+                  <span className="text-cyan-400">APPOINTMENT</span>
+                  {appointment?.requested_date_time && (
+                    <> • {(() => {
+                      const doctorTimezone = 'America/Phoenix'
+                      const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+                      return appointmentDate.toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit'
+                      })
+                    })()}</>
+                  )}
+                  {appointment?.status && (
+                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                      appointment.status === 'pending' ? 'bg-yellow-600' :
+                      appointment.status === 'accepted' ? 'bg-green-600' :
+                      appointment.status === 'completed' ? 'bg-blue-600' :
+                      appointment.status === 'cancelled' ? 'bg-gray-600' : 'bg-gray-600'
+                    }`}>
+                      {appointment.status.toUpperCase()}
+                    </span>
+                  )}
+                </h2>
+              </div>
+              
+              {/* Middle: Action buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* EHR Quick Access Buttons */}
+                <button
+                  onClick={() => { setIsMinimized(false); setShowMedicationHistoryPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
+                >
+                  <Pill className="h-3.5 w-3.5" />
+                  Medication History
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowOrdersPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-medium"
+                >
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  Orders
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowPrescriptionHistoryPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-xs font-medium"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Prescription History
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowAppointmentsOverlay(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs font-medium"
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Appointments
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowAllergiesPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs font-medium"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Allergies
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowVitalsPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-xs font-medium"
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                  Vitals
+                </button>
+                <button
+                  onClick={() => { setIsMinimized(false); setShowMedicationsPanel(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-xs font-medium"
+                >
+                  <Pill className="h-3.5 w-3.5" />
+                  Medications
+                </button>
+                
+                {/* Status action buttons */}
+                {appointment && appointment.status === 'pending' && (
+                  <>
+                    <button
+                      onClick={() => handleAppointmentAction('accept')}
+                      disabled={actionLoading === 'accept'}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleAppointmentAction('reject')}
+                      disabled={actionLoading === 'reject'}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                      Reject
+                    </button>
+                  </>
+                )}
+                
+                {/* Move/Reschedule/Cancel buttons */}
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs"
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  Move
+                </button>
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reschedule
+                </button>
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Cancel Appt
+                </button>
+                
+                {/* Customize button */}
+                <button
+                  onClick={() => { setIsMinimized(false); layout.setIsCustomizeMode(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"
+                >
+                  <Edit className="h-3.5 w-3.5" />
+                  Customize
+                </button>
+              </div>
+              
+              {/* Right: Restore and Close buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs font-medium"
+                  title="Restore panel"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-        
-        {/* Right Panel - 90% width */}
-        <div className={`flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl transform transition-transform duration-300 ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
-      } flex flex-col overflow-hidden`}>
-        {/* Header */}
-        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 flex-shrink-0 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-white font-bold text-sm sm:text-base">
-              <span className="text-cyan-400">APPOINTMENT</span>
-              {appointment?.requested_date_time && (
-                <> • {(() => {
-                  // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
-                  // This must match the main calendar which always uses Phoenix timezone
-                  const doctorTimezone = 'America/Phoenix'
-                  const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-                  return appointmentDate.toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit'
-                  })
-                })()}</>
-              )}
-              {appointment?.status && (
-                <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
-                  appointment.status === 'pending' ? 'bg-yellow-600' :
-                  appointment.status === 'accepted' ? 'bg-green-600' :
-                  appointment.status === 'completed' ? 'bg-blue-600' :
-                  appointment.status === 'cancelled' ? 'bg-gray-600' : 'bg-gray-600'
-                }`}>
-                  {appointment.status.toUpperCase()}
+      ) : (
+        /* EXPANDED STATE - Original full panel */
+        <div className="fixed top-0 right-0 h-full w-full z-50 flex">
+          {/* Left Calendar Sidebar - Updated styling */}
+          <div style={{
+            width: '12%',
+            minWidth: '140px',
+            maxWidth: '200px',
+            height: '100%',
+            borderRight: '1px solid #1b2b4d',
+            background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+            boxShadow: '0 0 40px rgba(0,0,0,0.5)'
+          }}>
+            {renderCurrentDaySlots()}
+          </div>
+          
+          {/* Right Panel - 90% width */}
+          <div className={`flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl transform transition-transform duration-300 ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        } flex flex-col overflow-hidden`}>
+          {/* Header */}
+          <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 flex-shrink-0 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-bold text-sm sm:text-base">
+                <span className="text-cyan-400">APPOINTMENT</span>
+                {appointment?.requested_date_time && (
+                  <> • {(() => {
+                    // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                    // This must match the main calendar which always uses Phoenix timezone
+                    const doctorTimezone = 'America/Phoenix'
+                    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+                    return appointmentDate.toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    })
+                  })()}</>
+                )}
+                {appointment?.status && (
+                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                    appointment.status === 'pending' ? 'bg-yellow-600' :
+                    appointment.status === 'accepted' ? 'bg-green-600' :
+                    appointment.status === 'completed' ? 'bg-blue-600' :
+                    appointment.status === 'cancelled' ? 'bg-gray-600' : 'bg-gray-600'
+                  }`}>
+                    {appointment.status.toUpperCase()}
                 </span>
               )}
             </h2>
@@ -1960,6 +2130,14 @@ const renderCurrentDaySlots = () => {
                     <span className="hidden sm:inline">Customize</span>
                     <span className="sm:hidden">Edit</span>
                   </button>
+                  {/* Minimize button */}
+                  <button
+                    onClick={() => setIsMinimized(true)}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs sm:text-sm"
+                    title="Minimize panel"
+                  >
+                    <Minimize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  </button>
                   <button
                     onClick={onClose}
                     className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm"
@@ -2097,6 +2275,7 @@ const renderCurrentDaySlots = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Document Viewer Modal */}
       {documentUpload.selectedDocument && (
@@ -2202,6 +2381,30 @@ const renderCurrentDaySlots = () => {
     </>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
