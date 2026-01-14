@@ -4,6 +4,42 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
 
+const ZoomMeeting: React.FC = () => {
+
+  const joinMeeting = async () => {
+    const signature = await fetch("http://localhost:8000/api/zoom-signature")
+      .then(res => res.text());
+
+    ZoomMtg.init({
+      leaveUrl: "http://localhost:3000",
+      success: () => {
+        ZoomMtg.join({
+          signature: signature,
+          sdkKey: "YOUR_SDK_KEY",
+          meetingNumber: "86216608352",
+          userName: "React User",
+          passWord: "123456",
+          success: () => {
+            console.log("Joined meeting");
+          },
+          error: (err) => {
+            console.error(err);
+          }
+        });
+      },
+      error: (err) => {
+        console.error(err);
+      }
+    });
+  };
+
+  return (
+    <div>
+      <button onClick={joinMeeting}>Join Zoom Meeting</button>
+      <div id="zmmtg-root"></div>
+    </div>
+  );
+};
 
 
 
