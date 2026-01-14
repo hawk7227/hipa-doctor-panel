@@ -687,6 +687,47 @@ export default function DoctorPatients() {
           .limit(1)
           .single()
 
+        // Fetch allergies from normalized patient_allergies table
+        const { data: allergiesData } = await supabase
+          .from('patient_allergies')
+          .select('allergen_name, severity, reaction, status')
+          .eq('patient_id', patientId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+
+        // Build allergies text from normalized table or fallback to old field
+        let allergiesText = ''
+        if (allergiesData && allergiesData.length > 0) {
+          allergiesText = allergiesData.map(a => {
+            let text = a.allergen_name
+            if (a.reaction) text += ` (${a.reaction})`
+            return text
+          }).join(', ')
+        } else if (data.allergies) {
+          allergiesText = data.allergies
+        }
+
+        // Fetch current medications from medication_orders (active)
+        const { data: currentMedsData } = await supabase
+          .from('medication_orders')
+          .select('medication_name, dosage, frequency')
+          .eq('patient_id', patientId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+
+        // Build current medications text from normalized table or fallback
+        let currentMedsText = ''
+        if (currentMedsData && currentMedsData.length > 0) {
+          currentMedsText = currentMedsData.map(m => {
+            let text = m.medication_name
+            if (m.dosage) text += ` ${m.dosage}`
+            if (m.frequency) text += ` ${m.frequency}`
+            return text
+          }).join(', ')
+        } else if (data.current_medications) {
+          currentMedsText = data.current_medications
+        }
+
         // Fetch medical issues from problems table (active problems)
         const medicalIssuesText = parsedActiveProblems.length > 0
           ? parsedActiveProblems.map(p => p.problem).filter(Boolean).join(', ')
@@ -708,6 +749,9 @@ export default function DoctorPatients() {
             requested_date_time: apt.requested_date_time
           })) || selectedPatient?.appointments || [],
           // Use normalized data with fallback to old fields
+          allergies: allergiesText || data.allergies || '',
+          current_medications: currentMedsText || data.current_medications || '',
+          active_problems: medicalIssuesText || data.active_problems || '',
           recent_surgeries_details: surgeriesData?.content || data.recent_surgeries_details || '',
           ongoing_medical_issues_details: medicalIssuesText || data.ongoing_medical_issues_details || ''
         })
@@ -2344,6 +2388,10 @@ export default function DoctorPatients() {
     </div>
   )
 }
+
+
+
+
 
 
 
