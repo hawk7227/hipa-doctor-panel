@@ -6,14 +6,14 @@ import { ZoomMtg } from "@zoom/meetingsdk";
 
 
 
-const Meeting = ({ '84736033581' , 'HAWK7227@YAHOO.COM', 'Money129', '1' }) => {
+const Meeting = ({ meetingNumber, userName, password, role }) => {
   useEffect(() => {
     // Fetch JWT signature from your backend server securely
     const getSignature = async () => {
-      const response = await fetch("https://zoom.us/oauth/token", {
+      const response = await fetch("YOUR_BACKEND_AUTH_ENDPOINT", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 84736033581, 1 }),
+        body: JSON.stringify({ meetingNumber, role }),
       });
       const data = await response.json();
       return data.signature;
