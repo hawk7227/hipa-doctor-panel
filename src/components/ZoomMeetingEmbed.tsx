@@ -4,6 +4,66 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import { ZoomMtg } from "@zoom/meetingsdk";
 
+
+
+const Meeting = ({ 84736033581 , 'HAWK7227@YAHOO.COM', 'Money129', 1 }) => {
+  useEffect(() => {
+    // Fetch JWT signature from your backend server securely
+    const getSignature = async () => {
+      const response = await fetch("https://zoom.us/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 84736033581, 1 }),
+      });
+      const data = await response.json();
+      return data.signature;
+    };
+
+    const joinMeeting = async () => {
+      const signature = await getSignature();
+
+      ZoomMtg.set
+      ZoomMtg.init({
+        leaveUrl: "YOUR_LEAVE_URL", // URL to redirect to after meeting
+        success: (success) => {
+          console.log(success);
+          ZoomMtg.join({
+            signature: signature,
+            meetingNumber: meetingNumber,
+            userName: userName,
+            passWord: password,
+            success: (success) => {
+              console.log(success);
+            },
+            error: (error) => {
+              console.log(error);
+            },
+          });
+        },
+        error: (error) => {
+          console.log(error);
+        },
+      });
+    };
+
+    joinMeeting();
+
+    // Cleanup function for when component unmounts
+    return () => {
+      ZoomMtg.leaveMeeting({});
+    };
+  }, [meetingNumber, userName, password, role]);
+
+  return <div id="zmmtg-root" />;
+};
+
+export default Meeting;
+
+
+
+
+
+
 interface ZoomMeetingEmbedProps {
   appointment: {
     id: string
@@ -407,7 +467,7 @@ export default function ZoomMeetingEmbed({
               allowFullScreen
             />
           </div>
-		  <a target="_blank" href={appointment?.zoom_start_url ?? ''}>Join in a new tab </a>{appointment?.zoom_meeting_id && (
+		  <a taregt="_blank" href={appointment?.zoom_start_url ?? ''}>Join in a new tab </a>{appointment?.zoom_meeting_id && (
                 <>
                   <span className="text-sm text-gray-400">Meeting ID:</span>
                   <span className="font-bold text-white">{appointment.zoom_meeting_id}</span>
