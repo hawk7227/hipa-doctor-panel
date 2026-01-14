@@ -2,67 +2,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
-import { ZoomMtg } from "@zoom/meetingsdk";
-
-
-
-const Meeting = ({ meetingNumber, userName, password, role }) => {
-  useEffect(() => {
-    // Fetch JWT signature from your backend server securely
-    const getSignature = async () => {
-      const response = await fetch("YOUR_BACKEND_AUTH_ENDPOINT", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingNumber, role }),
-      });
-      const data = await response.json();
-      return data.signature;
-    };
-
-    const joinMeeting = async () => {
-      const signature = await getSignature();
-
-      ZoomMtg.set
-      ZoomMtg.init({
-        leaveUrl: "YOUR_LEAVE_URL", // URL to redirect to after meeting
-        success: (success) => {
-          console.log(success);
-          ZoomMtg.join({
-            signature: signature,
-            meetingNumber: meetingNumber,
-            userName: userName,
-            passWord: password,
-            success: (success) => {
-              console.log(success);
-            },
-            error: (error) => {
-              console.log(error);
-            },
-          });
-        },
-        error: (error) => {
-          console.log(error);
-        },
-      });
-    };
-
-    joinMeeting();
-
-    // Cleanup function for when component unmounts
-    return () => {
-      ZoomMtg.leaveMeeting({});
-    };
-  }, [meetingNumber, userName, password, role]);
-
-  return <div id="zmmtg-root" />;
-};
-
-export default Meeting;
-
-
-
-
-
 
 interface ZoomMeetingEmbedProps {
   appointment: {
@@ -441,7 +380,7 @@ export default function ZoomMeetingEmbed({
         </div>
 		
        
-	{/* ✅ Floating resizable window with iframe */}
+        {/* ✅ Floating resizable window with iframe */}
         <FloatingWindow
           open={openZoomModal && !!zoomWebClientUrl}
           onClose={closeZoomModal}
@@ -459,26 +398,25 @@ export default function ZoomMeetingEmbed({
             </button>
 
             <iframe
-              // You can switch between start_url or join_url:
-              // src={appointment?.zoom_start_url ?? ''}
               src={appointment?.zoom_start_url ?? ''}
               className="w-full h-full border-0"
               allow="camera; microphone; fullscreen"
               allowFullScreen
             />
           </div>
-		  <a taregt="_blank" href={appointment?.zoom_start_url ?? ''}>Join in a new tab </a>{appointment?.zoom_meeting_id && (
-                <>
-                  <span className="text-sm text-gray-400">Meeting ID:</span>
-                  <span className="font-bold text-white">{appointment.zoom_meeting_id}</span>
-                </>
-              )}
-              {appointment?.zoom_meeting_password && (
-                <>
-                  <span className="text-sm text-gray-400">Password:</span>
-                  <span className="font-bold text-white">{appointment.zoom_meeting_password}</span>
-                </>
-              )}
+          <a target="_blank" href={appointment?.zoom_start_url ?? ''}>Join in a new tab </a>
+          {appointment?.zoom_meeting_id && (
+            <>
+              <span className="text-sm text-gray-400">Meeting ID:</span>
+              <span className="font-bold text-white">{appointment.zoom_meeting_id}</span>
+            </>
+          )}
+          {appointment?.zoom_meeting_password && (
+            <>
+              <span className="text-sm text-gray-400">Password:</span>
+              <span className="font-bold text-white">{appointment.zoom_meeting_password}</span>
+            </>
+          )}
         </FloatingWindow>
 		
         <hr className="border-white/10 my-4" />
@@ -522,5 +460,6 @@ export default function ZoomMeetingEmbed({
     </div>
   )
 }
+
 
  
