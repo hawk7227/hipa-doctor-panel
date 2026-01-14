@@ -47,7 +47,7 @@ const MeetingComponent = ({ meetingConfig, signature }) => {
   );
 };
 
-export default MeetingComponent;
+export function MeetingComponent;
 
 interface ZoomMeetingEmbedProps {
   appointment: {
