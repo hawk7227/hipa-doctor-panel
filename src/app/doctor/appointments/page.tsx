@@ -87,6 +87,22 @@ type CalendarViewType = 'week' | 'month' | '3month'
 // STYLES
 // ============================================
 const styles = `
+/* Override parent layout - make this page full screen */
+.appointments-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: linear-gradient(-45deg, #0a0a1a, #1a0a2e, #0a1a2e, #0a0a1a);
+  background-size: 400% 400%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -230,6 +246,45 @@ body {
 }
 
 .header-spacer { flex: 1; }
+
+.patient-search-container {
+  flex: 1;
+  max-width: 500px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  font-size: 16px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.patient-search-input {
+  width: 100%;
+  padding: 12px 16px 12px 45px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.3s ease;
+}
+
+.patient-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.patient-search-input:focus {
+  outline: none;
+  border-color: #00f5ff;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+}
 
 .back-btn {
   background: transparent;
@@ -1637,13 +1692,13 @@ export default function DoctorAppointments() {
   // ============================================
   if (loading) {
     return (
-      <>
+      <div className="appointments-page">
         <style>{styles}</style>
         <div className="loading-overlay">
           <div className="spinner"></div>
           <p className="loading-text">Loading appointments...</p>
         </div>
-      </>
+      </div>
     )
   }
 
@@ -1651,7 +1706,7 @@ export default function DoctorAppointments() {
   // RENDER
   // ============================================
   return (
-    <>
+    <div className="appointments-page">
       <style>{styles}</style>
       
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -1701,7 +1756,17 @@ export default function DoctorAppointments() {
             <span className="logo-text">Doctor Appointments Calendar</span>
           </div>
           <div className="date-pill">{dateRange.header}</div>
-          <div className="header-spacer"></div>
+          
+          {/* Patient Search Bar */}
+          <div className="patient-search-container">
+            <span className="search-icon">🔍</span>
+            <input 
+              type="text" 
+              className="patient-search-input" 
+              placeholder="Search patient by name, DOB, email, or phone"
+            />
+          </div>
+          
           <a href="/doctor/dashboard" className="back-btn" onClick={() => playSound('click')}>← Back to Dashboard</a>
         </div>
       </header>
@@ -2024,7 +2089,6 @@ export default function DoctorAppointments() {
               fetchAppointments(currentDoctorId)
             }
             setFollowUpPatientData(null)
-            showNotification('success', '✨ BOOKED!', 'New appointment created successfully')
           }}
           doctorId={currentDoctorId}
           selectedDate={selectedSlotDate}
@@ -2032,6 +2096,6 @@ export default function DoctorAppointments() {
           patientData={followUpPatientData}
         />
       )}
-    </>
+    </div>
   )
 }
