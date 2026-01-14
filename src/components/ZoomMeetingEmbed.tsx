@@ -196,7 +196,7 @@ export function FloatingWindow({
   )
 }
 
-export default function ZoomMeetingEmbed({
+export function ZoomMeetingEmbed({
   appointment,
   currentUser,
   isCustomizeMode = false,
