@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search, ExternalLink } from 'lucide-react'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
@@ -48,6 +49,8 @@ interface Patient {
 }
 
 export default function DoctorPatients() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -123,6 +126,34 @@ export default function DoctorPatients() {
     fetchCurrentDoctor()
     fetchPatients()
   }, [])
+
+  // Handle openChart URL parameter from sidebar search
+  useEffect(() => {
+    const openChartId = searchParams.get('openChart')
+    if (openChartId && patients.length > 0) {
+      // Find the patient in the loaded list
+      const patient = patients.find(p => p.id === openChartId)
+      if (patient) {
+        // Open the patient chart
+        setSelectedPatient(patient)
+        setEditForm({
+          first_name: patient.first_name,
+          last_name: patient.last_name,
+          email: patient.email,
+          mobile_phone: patient.mobile_phone,
+          date_of_birth: patient.date_of_birth,
+          address: patient.address
+        })
+        setIsEditing(false)
+        setActiveTab('overview')
+        setShowPatientModal(true)
+        fetchPatientChart(patient.id)
+        
+        // Clear the URL parameter to avoid re-opening on refresh
+        router.replace('/doctor/patients', { scroll: false })
+      }
+    }
+  }, [searchParams, patients])
 
   useEffect(() => {
     if (currentDoctor) {
@@ -808,19 +839,24 @@ export default function DoctorPatients() {
   }, [])
 
   const handleSuggestionClick = (patient: Patient) => {
-    setSearchTerm(`${patient.first_name} ${patient.last_name}`)
+    // Clear search and close dropdown
+    setSearchTerm('')
     setShowSuggestions(false)
-    // Optionally scroll to the patient in the list
-    setTimeout(() => {
-      const element = document.getElementById(`patient-${patient.id}`)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        element.classList.add('bg-teal-500/20')
-        setTimeout(() => {
-          element.classList.remove('bg-teal-500/20')
-        }, 2000)
-      }
-    }, 100)
+    
+    // Open the patient chart directly
+    setSelectedPatient(patient)
+    setEditForm({
+      first_name: patient.first_name,
+      last_name: patient.last_name,
+      email: patient.email,
+      mobile_phone: patient.mobile_phone,
+      date_of_birth: patient.date_of_birth,
+      address: patient.address
+    })
+    setIsEditing(false)
+    setActiveTab('overview')
+    setShowPatientModal(true)
+    fetchPatientChart(patient.id)
   }
 
   const filteredPatients = patients.filter(patient => {
@@ -1323,14 +1359,14 @@ export default function DoctorPatients() {
                     ref={suggestionsRef}
                     className="absolute z-50 w-full mt-2 bg-[#0d2626] border border-[#1a3d3d] rounded-lg shadow-xl max-h-80 overflow-y-auto"
                   >
-                    {searchSuggestions.map((patient) => (
+                    {searchSuggestions.map((patient, index) => (
                       <div
                         key={patient.id}
                         onClick={() => handleSuggestionClick(patient)}
-                        className="px-4 py-3 hover:bg-[#164e4e] cursor-pointer transition-colors border-b border-[#1a3d3d] last:border-b-0"
+                        className="px-4 py-3 cursor-pointer transition-all duration-150 border-b border-[#1a3d3d] last:border-b-0 hover:bg-teal-600/30 hover:border-l-2 hover:border-l-teal-400"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#164e4e] flex items-center justify-center flex-shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-[#164e4e] hover:bg-teal-500 transition-colors flex items-center justify-center flex-shrink-0">
                             <span className="text-sm font-medium text-white">
                               {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                             </span>
@@ -1346,6 +1382,9 @@ export default function DoctorPatients() {
                         </div>
                       </div>
                     ))}
+                    <div className="px-3 py-2 bg-[#0a1f1f] text-xs text-gray-500 border-t border-[#1a3d3d]">
+                      Click to open patient chart
+                    </div>
                   </div>
                 )}
               </div>
@@ -2388,6 +2427,10 @@ export default function DoctorPatients() {
     </div>
   )
 }
+
+
+
+
 
 
 
