@@ -1627,7 +1627,7 @@ export default function DoctorAppointments() {
   const stats = useMemo(() => {
     const total = appointments.length
     const completed = appointments.filter(a => a.status === 'completed').length
-    const pending = appointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length
+    const pending = appointments.filter(a => a.status === 'accepted').length
     const revenue = appointments.filter(a => a.status === 'completed').length * 59 // $59 per appointment
     return { total, completed, pending, revenue }
   }, [appointments])
