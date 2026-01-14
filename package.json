@@ -26,6 +26,7 @@
     "next": "^16.0.7",
     "nodemailer": "^7.0.9",
     "openai": "^4.104.0",
+    "pnpm": "^10.28.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "socket.io-client": "^4.8.1",
