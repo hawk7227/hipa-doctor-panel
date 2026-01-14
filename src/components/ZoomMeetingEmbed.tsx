@@ -3,6 +3,51 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 
+const MeetingComponent = ({ meetingConfig, signature }) => {
+  useEffect(() => {
+    // Required to prepare the SDK
+    ZoomMtg.preLoadWasm();
+    ZoomMtg.prepareWebSDK();
+
+    // The SDK needs the following path for its assets
+    ZoomMtg.setZoomJSLib('source.zoom.us', '/av'); // Replace 2.2.0 with the current version
+
+    ZoomMtg.init({
+      leaveUrl: 'https://medazonhealth.com/', // URL to redirect after meeting
+      success: (success) => {
+        console.log(success);
+        // Once initialized, join the meeting
+        ZoomMtg.join({
+          signature: signature,
+          meetingNumber: 84736033581,
+          userName: 'HAWK7227@YAHOO.COM',
+          passWord: 'Money129',
+          sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
+          success: (success) => {
+            console.log(success);
+          },
+          error: (error) => {
+            console.log(error);
+          }
+        });
+      },
+      error: (error) => {
+        console.log(error);
+      }
+    });
+  }, [meetingConfig, signature]);
+
+  return (
+    <div>
+      <noscript>You need to enable JavaScript to run this app.</noscript>
+	  <div id="zmmtg-root"></div>
+	  <div id="root"></div>
+    </div>
+  );
+};
+
+export default function MeetingComponent;
+
 interface ZoomMeetingEmbedProps {
   appointment: {
     id: string
