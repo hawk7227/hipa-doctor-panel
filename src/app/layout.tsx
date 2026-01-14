@@ -29,6 +29,12 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         {children}
+		
+     <script src="https://source.zoom.us/2.15.0/lib/vendor/react.min.js"></script>
+<script src="https://source.zoom.us/2.15.0/lib/vendor/react-dom.min.js"></script>
+<script src="https://source.zoom.us/2.15.0/lib/vendor/redux.min.js"></script>
+<script src="https://source.zoom.us/2.15.0/lib/vendor/redux-thunk.min.js"></script>
+<script src="https://source.zoom.us/2.15.0/zoom-meeting-2.15.0.min.js"></script>
       </body>
     </html>
   );
