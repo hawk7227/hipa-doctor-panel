@@ -6,7 +6,7 @@ import { ZoomMtg } from "@zoom/meetingsdk";
 
 
 
-const Meeting = ({ 84736033581 , 'HAWK7227@YAHOO.COM', 'Money129', 1 }) => {
+const Meeting = ({ '84736033581' , 'HAWK7227@YAHOO.COM', 'Money129', '1' }) => {
   useEffect(() => {
     // Fetch JWT signature from your backend server securely
     const getSignature = async () => {
