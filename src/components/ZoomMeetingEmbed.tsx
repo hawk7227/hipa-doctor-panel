@@ -2,51 +2,55 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
+import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
 
-interface MeetingComponent = ({ meetingConfig, signature }) => {
-  useEffect(() => {
-    // Required to prepare the SDK
-    ZoomMtg.preLoadWasm();
-    ZoomMtg.prepareWebSDK();
+ZoomMtg.setZoomJSLib("https://source.zoom.us/3.6.0/lib", "/av");
+ZoomMtg.preLoadWasm();
+ZoomMtg.prepareWebSDK();
+const ZoomMeeting: React.FC = () => {
 
-    // The SDK needs the following path for its assets
-    ZoomMtg.setZoomJSLib('source.zoom.us', '/av'); // Replace 2.2.0 with the current version
+  const joinMeeting = async () => {
+    const signature = await fetch("http://localhost:8000/api/zoom-signature")
+      .then(res => res.text());
 
     ZoomMtg.init({
-      leaveUrl: 'https://medazonhealth.com/', // URL to redirect after meeting
-      success: (success) => {
-        console.log(success);
-        // Once initialized, join the meeting
+      leaveUrl: "http://localhost:3000",
+      success: () => {
         ZoomMtg.join({
           signature: signature,
-          meetingNumber: 84736033581,
-          userName: 'HAWK7227@YAHOO.COM',
-          passWord: 'Money129',
-          sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
-          success: (success) => {
-            console.log(success);
+          sdkKey: "YOUR_SDK_KEY",
+          meetingNumber: "86216608352",
+          userName: "React User",
+          passWord: "123456",
+          success: () => {
+            console.log("Joined meeting");
           },
-          error: (error) => {
-            console.log(error);
+          error: (err) => {
+            console.error(err);
           }
         });
       },
-      error: (error) => {
-        console.log(error);
+      error: (err) => {
+        console.error(err);
       }
     });
-  }, [meetingConfig, signature]);
+  };
 
   return (
     <div>
-      <noscript>You need to enable JavaScript to run this app.</noscript>
-	  <div id="zmmtg-root"></div>
-	  <div id="root"></div>
+      <button onClick={joinMeeting}>Join Zoom Meeting</button>
+      <div id="zmmtg-root"></div>
     </div>
   );
 };
 
-export default function MeetingComponent();
+
+
+
+
+
+
+
 
 
 interface ZoomMeetingEmbedProps {
