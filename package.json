@@ -18,7 +18,7 @@
     "@supabase/supabase-js": "^2.75.0",
     "@twilio/voice-sdk": "^2.16.0",
     "@types/nodemailer": "^7.0.2",
-    "@zoom/meetingsdk": "^4.1.0",
+    "@zoom/meetingsdk": "^5.0.4",
     "@zoomus/websdk": "^2.18.3",
     "axios": "^1.12.2",
     "jsonwebtoken": "^9.0.2",
