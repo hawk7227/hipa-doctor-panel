@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 
 
-const MeetingComponent = ({ meetingConfig, signature }) => {
+interface MeetingComponent = ({ meetingConfig, signature }) => {
   useEffect(() => {
     /* // Required to prepare the SDK
     ZoomMtg.preLoadWasm();
@@ -44,7 +44,6 @@ const MeetingComponent = ({ meetingConfig, signature }) => {
   );
 };
 
-//export default function MeetingComponent;
 
 interface ZoomMeetingEmbedProps {
   appointment: {
