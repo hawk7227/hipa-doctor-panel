@@ -1,2427 +1,2690 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search, ExternalLink } from 'lucide-react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { supabase, Appointment } from '@/lib/supabase'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
-import MedicationHistoryPanel from '@/components/MedicationHistoryPanel'
+import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 
-interface Patient {
-  id: string
-  first_name: string
-  last_name: string
-  email: string
-  mobile_phone: string
-  date_of_birth: string
-  address: string
-  created_at: string
-  appointments_count: number
-  last_appointment: string
-  last_appointment_status: string
-  appointments: Array<{
-    id: string
-    status: string
-    service_type: string
-    visit_type: string
-    created_at: string
-    requested_date_time: string | null
-  }>
-  // Track merged patient IDs for data operations
-  merged_patient_ids?: string[]
-  // Medical chart fields
-  allergies?: string | null
-  current_medications?: string | null
-  active_problems?: string | null
-  recent_surgeries_details?: string | null
-  ongoing_medical_issues_details?: string | null
-  vitals_bp?: string | null
-  vitals_hr?: string | null
-  vitals_temp?: string | null
-  preferred_pharmacy?: string | null
-  chief_complaint?: string | null
-  ros_general?: string | null
-  resolved_problems?: any[] | null
-  medication_history?: any[] | null
-  active_medication_orders?: any[] | null
-  past_medication_orders?: any[] | null
-  prescription_logs?: any[] | null
+// ============================================
+// TIMEZONE UTILITIES
+// ============================================
+function convertToTimezone(dateString: string, timezone: string): Date {
+  const date = new Date(dateString)
+  
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', options)
+  const parts = formatter.formatToParts(date)
+  
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  const hour = parseInt(getValue('hour'))
+  const minute = parseInt(getValue('minute'))
+  const second = parseInt(getValue('second'))
+  
+  return new Date(Date.UTC(year, month, day, hour, minute, second))
 }
 
-export default function DoctorPatients() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [currentDoctor, setCurrentDoctor] = useState<any>(null)
-  const [searchSuggestions, setSearchSuggestions] = useState<Patient[]>([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [showAllRecords, setShowAllRecords] = useState(false)
-  const [recordFilter, setRecordFilter] = useState<'all' | 'prescription' | 'lab_result' | 'visit_summary'>('all')
-  const [recordCounts, setRecordCounts] = useState<{
-    all: number
-    prescription: number
-    lab_result: number
-    visit_summary: number
-  }>({
-    all: 0,
-    prescription: 0,
-    lab_result: 0,
-    visit_summary: 0
-  })
-  const [patientRecordMap, setPatientRecordMap] = useState<Map<string, {
-    prescription: number
-    lab_result: number
-    visit_summary: number
-  }>>(new Map())
-  const [upcomingAppointments, setUpcomingAppointments] = useState<Array<{
-    id: string
-    requested_date_time: string | null
-    status: string
-    visit_type: string | null
-    patient: {
-      first_name: string
-      last_name: string
-      email: string
-    } | null
-  }>>([])
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const suggestionsRef = useRef<HTMLDivElement>(null)
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
-  const [showPatientModal, setShowPatientModal] = useState(false)
-  const [showAppointmentModal, setShowAppointmentModal] = useState(false)
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [isLoadingChart, setIsLoadingChart] = useState(false)
-  const [patientChartData, setPatientChartData] = useState<Patient | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'chart'>('overview')
-  const [editForm, setEditForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    mobile_phone: '',
-    date_of_birth: '',
-    address: ''
-  })
-  
-  // Problems & Medications state
-  const [activeProblems, setActiveProblems] = useState<Array<{id: string, problem: string, since: string}>>([])
-  const [resolvedProblems, setResolvedProblems] = useState<Array<{id: string, problem: string, resolvedDate: string}>>([])
-  const [medicationHistory, setMedicationHistory] = useState<Array<{id: string, medication: string, provider: string, date: string}>>([])
-  const [activeMedOrders, setActiveMedOrders] = useState<Array<{id: string, medication: string, sig: string, status: string}>>([])
-  const [pastMedOrders, setPastMedOrders] = useState<Array<{id: string, medication: string, sig: string, date: string}>>([])
-  const [prescriptionLogs, setPrescriptionLogs] = useState<Array<{id: string, date: string, medication: string, quantity: string, pharmacy: string, status: string}>>([])
-  
-  // Form states for adding new items
-  const [newActiveProblem, setNewActiveProblem] = useState({problem: '', since: ''})
-  const [newResolvedProblem, setNewResolvedProblem] = useState({problem: '', resolvedDate: ''})
-  const [newMedHistory, setNewMedHistory] = useState({medication: '', provider: '', date: ''})
-  const [newPrescriptionLog, setNewPrescriptionLog] = useState({medication: '', quantity: '', pharmacy: '', date: ''})
-  const [savingProblems, setSavingProblems] = useState(false)
-  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
+function getDateString(date: Date, timezone?: string): string {
+  if (timezone) {
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-  useEffect(() => {
-    fetchCurrentDoctor()
-    fetchPatients()
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+interface ClinicalNote {
+  id: string
+  note_type: string
+  content: string | null
+}
+
+interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_date_time' | 'visit_type'> {
+  requested_date_time: string | null
+  visit_type: string | null
+  patients?: {
+    first_name?: string | null
+    last_name?: string | null
+    email?: string | null
+    phone?: string | null
+    chief_complaint?: string | null
+  } | null
+  doctors?: {
+    timezone: string
+  }
+  clinical_notes?: ClinicalNote[] | null
+  subjective_notes?: string | null
+  chief_complaint?: string | null
+  reason?: string | null
+}
+
+type ViewType = 'calendar' | 'list'
+type CalendarViewType = 'week' | 'month' | '3month'
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+// ============================================
+// STYLES
+// ============================================
+const styles = `
+/* Full screen layout with sidebar */
+.appointments-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: linear-gradient(180deg, #071018 0%, #0a1628 100%);
+  display: flex;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: linear-gradient(180deg, #061220 0%, #0a1a2e 100%);
+  border-right: 1px solid rgba(0, 245, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 20px 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  color: #8b9dc3;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.sidebar-item:hover {
+  background: rgba(0, 245, 255, 0.08);
+  color: #00f5ff;
+  border-left-color: #00f5ff;
+}
+
+.sidebar-item.active {
+  background: rgba(0, 245, 255, 0.12);
+  color: #00f5ff;
+  border-left-color: #00f5ff;
+}
+
+.sidebar-item-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 10px 20px;
+}
+
+.sidebar-footer {
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-signout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  color: #ff6b6b;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sidebar-signout:hover {
+  background: rgba(255, 107, 107, 0.15);
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: linear-gradient(-45deg, #0a0a1a, #1a0a2e, #0a1a2e, #0a0a1a);
+  background-size: 400% 400%;
+  color: #fff;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.particles-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  animation: float 20s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.6; }
+  25% { transform: translateY(-30px) translateX(20px) scale(1.1); opacity: 0.8; }
+  50% { transform: translateY(-10px) translateX(-20px) scale(0.9); opacity: 0.5; }
+  75% { transform: translateY(-40px) translateX(10px) scale(1.05); opacity: 0.7; }
+}
+
+.confetti-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10000;
+  overflow: hidden;
+  display: none;
+}
+
+.confetti-container.active {
+  display: block;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  animation: confettiFall 3s ease-out forwards;
+}
+
+@keyframes confettiFall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+/* ============================================
+   THIN ACTION BAR (Simplified)
+   ============================================ */
+.thin-action-bar {
+  background: linear-gradient(135deg, #0a1628 0%, #0d1e36 100%);
+  border-bottom: 1px solid rgba(0, 245, 255, 0.2);
+  padding: 10px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 50px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.action-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.action-tab {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.action-tab:hover {
+  background: rgba(0, 245, 255, 0.1);
+  color: #fff;
+}
+
+.action-tab.active {
+  background: rgba(0, 245, 255, 0.2);
+  color: #00f5ff;
+}
+
+.action-search {
+  position: relative;
+  width: 200px;
+  margin-left: auto;
+}
+
+.action-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+.action-search-input {
+  width: 100%;
+  padding: 6px 12px 6px 32px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.action-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.action-search-input:focus {
+  outline: none;
+  border-color: #00f5ff;
+}
+
+.back-to-dashboard {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 6px;
+  color: #00f5ff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.back-to-dashboard:hover {
+  background: rgba(0, 245, 255, 0.1);
+  border-color: #00f5ff;
+}
+
+/* Inline date navigation arrows */
+.inline-nav-btn {
+  background: transparent;
+  border: none;
+  color: #00f5ff;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+
+.inline-nav-btn:hover {
+  background: rgba(0, 245, 255, 0.2);
+}
+
+.calendar-header-cell.time-header,
+.calendar-header-cell.nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+}
+
+/* ============================================
+   TOP NAVIGATION BAR (DrChrono Style)
+   ============================================ */
+.top-nav-bar {
+  background: linear-gradient(135deg, #0a1628 0%, #0d1e36 100%);
+  border-bottom: 1px solid rgba(0, 245, 255, 0.2);
+  padding: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.nav-tabs-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 24px;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nav-tab {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-tab.schedule {
+  background: linear-gradient(135deg, #00f5ff, #00d4e6);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(0, 245, 255, 0.4);
+}
+
+.nav-tab.clinical {
+  background: linear-gradient(135deg, #ff00ff, #d400d4);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(255, 0, 255, 0.4);
+}
+
+.nav-tab.patients {
+  background: linear-gradient(135deg, #00ff88, #00d470);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+}
+
+.nav-tab.reports {
+  background: linear-gradient(135deg, #ffaa00, #e69500);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(255, 170, 0, 0.4);
+}
+
+.nav-tab.billing {
+  background: linear-gradient(135deg, #ff6b6b, #e05555);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+}
+
+.nav-tab.account {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+}
+
+.nav-tab.help {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+}
+
+.nav-tab:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+.nav-spacer {
+  flex: 1;
+}
+
+.nav-search {
+  position: relative;
+  width: 280px;
+}
+
+.nav-search-input {
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.nav-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-search-input:focus {
+  outline: none;
+  border-color: #00f5ff;
+  box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+}
+
+.nav-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+}
+
+.nav-icons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.nav-icon-btn {
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 18px;
+  position: relative;
+}
+
+.nav-icon-btn:hover {
+  background: rgba(0, 245, 255, 0.2);
+  border-color: #00f5ff;
+}
+
+.nav-icon-btn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ff6b6b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Action Bar */
+.action-bar {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.action-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btn:hover {
+  background: rgba(0, 245, 255, 0.2);
+  border-color: #00f5ff;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #00f5ff, #00d4e6);
+  color: #000;
+  border: none;
+  font-weight: 600;
+}
+
+.action-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 245, 255, 0.4);
+}
+
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.date-nav-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #00f5ff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.date-nav-btn:hover {
+  background: rgba(0, 245, 255, 0.2);
+  border-color: #00f5ff;
+}
+
+.date-display {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.15), rgba(255, 0, 255, 0.1));
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  border-radius: 8px;
+  color: #00f5ff;
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 140px;
+  text-align: center;
+}
+
+.view-toggles {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.view-toggle-btn {
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #888;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.view-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.view-toggle-btn.active {
+  background: linear-gradient(135deg, #00ff88, #00d470);
+  color: #000;
+  border: none;
+  font-weight: 600;
+}
+
+/* Old header - keeping for compatibility but hidden */
+.header {
+  display: none;
+}
+
+.header-old {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.2), rgba(236, 72, 153, 0.2), rgba(59, 130, 246, 0.2));
+  backdrop-filter: blur(20px);
+  border-bottom: 2px solid;
+  border-image: linear-gradient(90deg, #14b8a6, #ec4899, #3b82f6) 1;
+  padding: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  animation: headerGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes headerGlow {
+  0% { box-shadow: 0 0 20px rgba(20, 184, 166, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.3); }
+  100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-orb {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #00f5ff, #ff00ff);
+  border-radius: 50%;
+  animation: orbPulse 2s ease-in-out infinite;
+  box-shadow: 0 0 20px #00f5ff, 0 0 40px rgba(255, 0, 255, 0.5);
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 20px #00f5ff, 0 0 40px rgba(255, 0, 255, 0.5); }
+  50% { transform: scale(1.2); box-shadow: 0 0 30px #00f5ff, 0 0 60px rgba(255, 0, 255, 0.8); }
+}
+
+.logo-text {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00f5ff, #ff00ff, #14b8a6);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.date-pill {
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.2), rgba(255, 0, 255, 0.1));
+  border: 1px solid rgba(0, 245, 255, 0.5);
+  color: #00f5ff;
+  text-shadow: 0 0 10px rgba(0, 245, 255, 0.5);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.date-pill:hover {
+  background: linear-gradient(135deg, rgba(0, 245, 255, 0.4), rgba(255, 0, 255, 0.2));
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(0, 245, 255, 0.4);
+}
+
+.header-spacer { flex: 1; }
+
+.patient-search-container {
+  flex: 1;
+  max-width: 500px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  font-size: 16px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.patient-search-input {
+  width: 100%;
+  padding: 12px 16px 12px 45px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.3s ease;
+}
+
+.patient-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.patient-search-input:focus {
+  outline: none;
+  border-color: #00f5ff;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+}
+
+.back-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  color: #00f5ff;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.back-btn:hover {
+  background: rgba(0, 245, 255, 0.15);
+  border-color: #00f5ff;
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.toolbar {
+  background: rgba(15, 15, 35, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  transition: all 0.4s ease;
+}
+
+.toolbar:hover {
+  border-color: rgba(20, 184, 166, 0.5);
+  box-shadow: 0 10px 40px rgba(20, 184, 166, 0.2);
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.btn:active::after {
+  width: 300px;
+  height: 300px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  color: #000;
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 10px 30px rgba(20, 184, 166, 0.5), 0 0 20px rgba(20, 184, 166, 0.3);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #00f5ff;
+  border: 1px solid rgba(0, 245, 255, 0.3);
+}
+
+.btn-ghost:hover {
+  background: rgba(0, 245, 255, 0.15);
+  border-color: #00f5ff;
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.nav-arrow {
+  font-size: 20px;
+  min-width: 44px;
+}
+
+.nav-arrow:hover {
+  transform: scale(1.3);
+  text-shadow: 0 0 20px #00f5ff;
+}
+
+.toolbar-spacer { flex: 1; }
+
+.legend {
+  background: rgba(15, 15, 35, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ccc;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.8; }
+}
+
+.legend-dot.available {
+  background: linear-gradient(135deg, #00ff00, #00cc00);
+  box-shadow: 0 0 15px #00ff00;
+}
+
+.legend-dot.booked {
+  background: linear-gradient(135deg, #E53935, #C62828);
+  box-shadow: 0 0 15px #E53935;
+}
+
+.legend-dot.video {
+  background: linear-gradient(135deg, #00e6ff, #00b8d4);
+  box-shadow: 0 0 15px #00e6ff;
+}
+
+.legend-dot.async {
+  background: linear-gradient(135deg, #b07aff, #9c27b0);
+  box-shadow: 0 0 15px #b07aff;
+}
+
+.legend-dot.phone {
+  background: linear-gradient(135deg, #00c26e, #00a651);
+  box-shadow: 0 0 15px #00c26e;
+}
+
+/* Calendar Controls Bar */
+.calendar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(10, 20, 40, 0.8);
+  border-bottom: 1px solid rgba(0, 245, 255, 0.2);
+}
+
+.calendar-scroll-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scroll-btn {
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 245, 255, 0.15);
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  border-radius: 6px;
+  color: #00f5ff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scroll-btn:hover {
+  background: rgba(0, 245, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.scroll-btn:active {
+  transform: scale(0.95);
+}
+
+.view-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.view-mode-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #888;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-mode-btn:hover {
+  color: #fff;
+}
+
+.view-mode-btn.active {
+  background: linear-gradient(135deg, #00f5ff, #00d4e6);
+  color: #000;
+}
+
+.current-date-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #00f5ff;
+}
+
+.today-btn {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #00ff88, #00d470);
+  border: none;
+  border-radius: 6px;
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.today-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+}
+
+.calendar-card {
+  background: rgba(15, 15, 35, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-card:hover {
+  border-color: rgba(20, 184, 166, 0.5);
+  box-shadow: 0 10px 40px rgba(20, 184, 166, 0.2);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: 50px repeat(7, 1fr) 50px;
+  overflow: auto;
+  flex: 1;
+}
+
+.calendar-cell.nav-cell {
+  background: rgba(10, 20, 40, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.calendar-header-cell {
+  background: linear-gradient(180deg, rgba(10, 30, 50, 0.95), rgba(10, 25, 45, 0.9));
+  padding: 10px 6px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #00f5ff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(0, 245, 255, 0.2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.calendar-header-cell.today {
+  background: linear-gradient(180deg, rgba(0, 245, 255, 0.2), rgba(10, 25, 45, 0.9));
+  color: #00ff88;
+}
+
+.calendar-header-cell:first-child {
+  background: linear-gradient(180deg, rgba(15, 30, 50, 0.98), rgba(10, 25, 45, 0.95));
+  color: #ec4899;
+}
+
+.time-cell {
+  padding: 8px 6px;
+  text-align: right;
+  font-weight: 600;
+  font-size: 11px;
+  color: #ec4899;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(10, 20, 40, 0.5);
+}
+
+.time-cell.current-time {
+  background: rgba(236, 72, 153, 0.15);
+  color: #ff6b9d;
+}
+
+.calendar-cell {
+  padding: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  min-height: 80px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.calendar-cell:hover {
+  background: rgba(20, 184, 166, 0.1);
+  transform: scale(1.02);
+}
+
+.slot {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.slot::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: rotate(45deg);
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) rotate(45deg); }
+}
+
+.slot.available {
+  background: linear-gradient(135deg, rgba(0, 255, 0, 0.2), rgba(20, 184, 166, 0.3));
+  border: 1px solid rgba(0, 255, 0, 0.4);
+  animation: availablePulse 3s ease-in-out infinite;
+}
+
+@keyframes availablePulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(0, 255, 0, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(0, 255, 0, 0.5), 0 0 50px rgba(20, 184, 166, 0.3); }
+}
+
+.slot.available:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
+}
+
+.slot.booked {
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+}
+
+.slot.booked:hover {
+  transform: scale(1.05);
+  z-index: 100;
+}
+
+.slot-hover-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-5px);
+  background: linear-gradient(135deg, rgba(15, 15, 35, 0.98), rgba(25, 25, 50, 0.98));
+  border: 2px solid rgba(0, 245, 255, 0.5);
+  border-radius: 16px;
+  padding: 16px 20px;
+  min-width: 280px;
+  max-width: 320px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 245, 255, 0.2);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.slot.booked:hover .slot-hover-popup {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-10px);
+}
+
+.slot-hover-popup::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-top-color: rgba(0, 245, 255, 0.5);
+}
+
+.popup-header {
+  font-size: 16px;
+  font-weight: 700;
+  color: #00f5ff;
+  margin-bottom: 12px;
+  text-shadow: 0 0 10px rgba(0, 245, 255, 0.5);
+}
+
+.popup-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.popup-reason {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  color: #888;
+}
+
+.popup-reason strong {
+  color: #ff00ff;
+}
+
+.popup-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #14b8a6;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.slot.video {
+  background: linear-gradient(135deg, rgba(0, 230, 255, 0.25), rgba(0, 180, 255, 0.15));
+  border: 1px solid rgba(0, 230, 255, 0.5);
+  box-shadow: 0 0 20px rgba(0, 230, 255, 0.2);
+}
+
+.slot.phone {
+  background: linear-gradient(135deg, rgba(0, 194, 110, 0.25), rgba(0, 150, 80, 0.15));
+  border: 1px solid rgba(0, 194, 110, 0.5);
+  box-shadow: 0 0 20px rgba(0, 194, 110, 0.2);
+}
+
+.slot.async {
+  background: linear-gradient(135deg, rgba(176, 122, 255, 0.25), rgba(140, 90, 220, 0.15));
+  border: 1px solid rgba(176, 122, 255, 0.5);
+  box-shadow: 0 0 20px rgba(176, 122, 255, 0.2);
+}
+
+.slot-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.slot-time {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.slot-patient {
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.slot-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  animation: badgeGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes badgeGlow {
+  0% { filter: brightness(1); }
+  100% { filter: brightness(1.3); }
+}
+
+.slot-badge.video {
+  background: rgba(0, 230, 255, 0.3);
+  color: #00f5ff;
+  text-shadow: 0 0 10px #00f5ff;
+}
+
+.slot-badge.phone {
+  background: rgba(0, 194, 110, 0.3);
+  color: #00ff88;
+  text-shadow: 0 0 10px #00ff88;
+}
+
+.slot-badge.async {
+  background: rgba(176, 122, 255, 0.3);
+  color: #d4a5ff;
+  text-shadow: 0 0 10px #d4a5ff;
+}
+
+.slot-reason {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 4px;
+}
+
+.hint {
+  padding: 16px 20px;
+  text-align: center;
+  color: rgba(20, 184, 166, 0.8);
+  font-size: 14px;
+  text-shadow: 0 0 10px rgba(20, 184, 166, 0.3);
+  animation: hintPulse 3s ease-in-out infinite;
+}
+
+@keyframes hintPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  max-width: 450px;
+  border-radius: 16px;
+  padding: 20px;
+  z-index: 9999;
+  animation: notificationSlideIn 0.5s cubic-bezier(0.4, 0, 0.2, 1), notificationGlow 2s ease-in-out infinite;
+  backdrop-filter: blur(20px);
+  display: none;
+}
+
+.notification.active {
+  display: flex;
+}
+
+.notification.success {
+  background: linear-gradient(135deg, rgba(0, 50, 30, 0.95), rgba(0, 80, 50, 0.9));
+  border: 2px solid rgba(0, 255, 136, 0.5);
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.4), 0 20px 60px rgba(0, 0, 0, 0.3);
+  color: #00ff88;
+}
+
+.notification.error {
+  background: linear-gradient(135deg, rgba(50, 20, 25, 0.95), rgba(80, 30, 35, 0.9));
+  border: 2px solid rgba(255, 68, 68, 0.5);
+  box-shadow: 0 0 30px rgba(255, 68, 68, 0.4), 0 20px 60px rgba(0, 0, 0, 0.3);
+  color: #ff6b6b;
+}
+
+@keyframes notificationSlideIn {
+  0% { transform: translateX(100%) scale(0.8); opacity: 0; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+
+@keyframes notificationGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.1); }
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.notification-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  animation: iconPulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.notification.success .notification-icon {
+  background: linear-gradient(135deg, #00ff88, #00cc66);
+  box-shadow: 0 0 20px #00ff88;
+}
+
+.notification.error .notification-icon {
+  background: linear-gradient(135deg, #ff6b6b, #ff4444);
+  box-shadow: 0 0 20px #ff6b6b;
+}
+
+@keyframes iconPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.notification-text {
+  flex: 1;
+}
+
+.notification-title {
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: 0 0 10px currentColor;
+  margin-bottom: 4px;
+}
+
+.notification-message {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.notification-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 8px;
+  color: inherit;
+  transition: all 0.2s ease;
+  font-size: 18px;
+}
+
+.notification-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.stats-wrapper {
+  position: relative;
+  margin-bottom: 20px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.stats-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.stat-card {
+  background: rgba(15, 15, 35, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.4s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  transition: left 0.5s ease;
+}
+
+.stat-card:hover::before {
+  left: 100%;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(20, 184, 166, 0.5);
+  box-shadow: 0 15px 40px rgba(20, 184, 166, 0.3);
+}
+
+.stat-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #00f5ff, #ff00ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(10, 10, 26, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.spinner {
+  width: 64px;
+  height: 64px;
+  border: 4px solid transparent;
+  border-top: 4px solid #00f5ff;
+  border-right: 4px solid #ff00ff;
+  border-bottom: 4px solid #14b8a6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 30px rgba(0, 245, 255, 0.5), inset 0 0 30px rgba(255, 0, 255, 0.3);
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); filter: drop-shadow(0 0 10px #14b8a6); }
+  50% { filter: drop-shadow(0 0 25px #ec4899); }
+  100% { transform: rotate(360deg); filter: drop-shadow(0 0 10px #14b8a6); }
+}
+
+.loading-text {
+  margin-top: 20px;
+  color: #00f5ff;
+  font-size: 18px;
+  font-weight: 600;
+  text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+  animation: hintPulse 2s ease-in-out infinite;
+}
+
+/* Month View */
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.month-header {
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.2), transparent);
+  padding: 12px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #00f5ff;
+  text-transform: uppercase;
+}
+
+.month-cell {
+  background: rgba(15, 15, 35, 0.5);
+  min-height: 100px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.month-cell:hover {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.month-cell.empty {
+  background: rgba(0, 0, 0, 0.2);
+  cursor: default;
+}
+
+.month-day {
+  font-size: 14px;
+  font-weight: 700;
+  color: #00f5ff;
+  margin-bottom: 8px;
+}
+
+.month-appointment {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.month-appointment:hover {
+  transform: scale(1.05);
+}
+
+.month-appointment.video {
+  background: rgba(0, 230, 255, 0.2);
+  color: #00f5ff;
+  border: 1px solid rgba(0, 230, 255, 0.3);
+}
+
+.month-appointment.phone {
+  background: rgba(0, 194, 110, 0.2);
+  color: #00ff88;
+  border: 1px solid rgba(0, 194, 110, 0.3);
+}
+
+.month-appointment.async {
+  background: rgba(176, 122, 255, 0.2);
+  color: #d4a5ff;
+  border: 1px solid rgba(176, 122, 255, 0.3);
+}
+
+.month-more {
+  font-size: 10px;
+  color: #888;
+  padding: 2px 8px;
+}
+
+/* List View */
+.list-view {
+  overflow: auto;
+  max-height: 600px;
+}
+
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.list-table th {
+  padding: 12px 16px;
+  text-align: left;
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.2), transparent);
+  color: #00f5ff;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.list-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.list-table tr {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.list-table tr:hover {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.list-table .patient-name {
+  font-weight: 700;
+  color: #fff;
+}
+
+.list-table .date-time {
+  color: #888;
+  font-size: 13px;
+}
+
+.list-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.list-badge.video {
+  background: rgba(0, 230, 255, 0.15);
+  color: #00f5ff;
+}
+
+.list-badge.phone {
+  background: rgba(0, 194, 110, 0.15);
+  color: #00ff88;
+}
+
+.list-badge.async {
+  background: rgba(176, 122, 255, 0.15);
+  color: #d4a5ff;
+}
+
+.list-table .reason {
+  color: #888;
+  font-size: 13px;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-table .contact {
+  color: #888;
+  font-size: 13px;
+}
+
+.list-table .contact .phone {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.list-table .empty-state {
+  text-align: center;
+  color: #888;
+  padding: 40px;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .calendar-grid {
+    font-size: 11px;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #14b8a6, #ec4899);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #0d9488, #db2777);
+}
+`
+
+
+export default function DoctorAppointments() {
+  // State
+  const [appointments, setAppointments] = useState<CalendarAppointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', title: string, message: string } | null>(null)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null)
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [viewType, setViewType] = useState<ViewType>('calendar')
+  const [calendarViewType, setCalendarViewType] = useState<CalendarViewType>('week')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentDoctorId, setCurrentDoctorId] = useState<string | null>(null)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [selectedSlotDate, setSelectedSlotDate] = useState<Date | null>(null)
+  const [selectedSlotTime, setSelectedSlotTime] = useState<Date | null>(null)
+  const [followUpPatientData, setFollowUpPatientData] = useState<{
+    id: string
+    first_name: string
+    last_name: string
+    email: string
+    mobile_phone: string
+  } | null>(null)
+
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const particlesRef = useRef<HTMLDivElement | null>(null)
+
+  // Provider timezone is ALWAYS America/Phoenix
+  const DOCTOR_TIMEZONE = 'America/Phoenix'
+
+  // ============================================
+  // TIME SLOTS
+  // ============================================
+  const timeSlots = useMemo(() => {
+    const slots: Date[] = []
+    for (let hour = 5; hour <= 20; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const time = new Date()
+        time.setHours(hour, minute, 0, 0)
+        slots.push(time)
+      }
+    }
+    return slots
   }, [])
 
-  // Handle openChart URL parameter from sidebar search
-  useEffect(() => {
-    const openChartId = searchParams.get('openChart')
-    if (openChartId && patients.length > 0) {
-      // Find the patient in the loaded list
-      const patient = patients.find(p => p.id === openChartId)
-      if (patient) {
-        // Open the patient chart
-        setSelectedPatient(patient)
-        setEditForm({
-          first_name: patient.first_name,
-          last_name: patient.last_name,
-          email: patient.email,
-          mobile_phone: patient.mobile_phone,
-          date_of_birth: patient.date_of_birth,
-          address: patient.address
-        })
-        setIsEditing(false)
-        setActiveTab('overview')
-        setShowPatientModal(true)
-        fetchPatientChart(patient.id)
-        
-        // Clear the URL parameter to avoid re-opening on refresh
-        router.replace('/doctor/patients', { scroll: false })
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+  // ============================================
+  // CALENDAR UTILITIES
+  // ============================================
+  const getWeekDates = (date: Date) => {
+    const start = new Date(date)
+    const day = start.getDay()
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1)
+    start.setDate(diff)
+    
+    const dates: Date[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      dates.push(d)
+    }
+    return dates
+  }
+
+  const getMonthDates = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const lastDay = new Date(year, month + 1, 0)
+    
+    const dates: Date[] = []
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      dates.push(new Date(year, month, day))
+    }
+    return dates
+  }
+
+  const visibleDates = useMemo(() => {
+    return calendarViewType === 'week' ? getWeekDates(currentDate) : getMonthDates(currentDate)
+  }, [currentDate, calendarViewType])
+
+  const navigateCalendar = (direction: 'prev' | 'next') => {
+    playSound('whoosh')
+    const newDate = new Date(currentDate)
+    if (calendarViewType === 'week') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
+    } else {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
+    }
+    setCurrentDate(newDate)
+  }
+
+  // ============================================
+  // APPOINTMENT HELPERS
+  // ============================================
+  const getAppointmentActualTime = (appointment: CalendarAppointment): string => {
+    if (!appointment.requested_date_time) return ''
+    
+    const appointmentDate = convertToTimezone(appointment.requested_date_time, DOCTOR_TIMEZONE)
+    const hours = appointmentDate.getUTCHours()
+    const minutes = appointmentDate.getUTCMinutes()
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours % 12 || 12
+    const displayMinutes = minutes.toString().padStart(2, '0')
+    
+    return `${displayHours}:${displayMinutes} ${period}`
+  }
+
+  const getAppointmentReason = (appointment: CalendarAppointment): string => {
+    if (appointment.clinical_notes && appointment.clinical_notes.length > 0) {
+      const reasonNote = appointment.clinical_notes.find(
+        note => note.note_type === 'chief_complaint' || note.note_type === 'subjective'
+      )
+      if (reasonNote?.content) {
+        return reasonNote.content
       }
     }
-  }, [searchParams, patients])
+    
+    return appointment.chief_complaint || 
+           appointment.patients?.chief_complaint || 
+           appointment.reason || 
+           ''
+  }
 
-  useEffect(() => {
-    if (currentDoctor) {
-      fetchUpcomingAppointmentsForDoctor(currentDoctor.id)
-      fetchPatientRecordCounts()
+  const roundToNearestSlot = (appointmentDate: Date): Date => {
+    const rounded = new Date(appointmentDate)
+    const minutes = appointmentDate.getUTCMinutes()
+    const hours = appointmentDate.getUTCHours()
+    
+    if (minutes < 15) {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours)
+    } else if (minutes < 45) {
+      rounded.setUTCMinutes(30, 0, 0)
+      rounded.setUTCHours(hours)
+    } else {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours + 1)
     }
-  }, [currentDoctor])
+    
+    return rounded
+  }
 
-  const fetchPatientRecordCounts = async () => {
-    if (!currentDoctor || patients.length === 0) return
+  // Filtered appointments based on search query
+  const filteredAppointments = useMemo(() => {
+    if (!searchQuery.trim()) return appointments
+    const query = searchQuery.toLowerCase().trim()
+    return appointments.filter(apt => {
+      const firstName = apt.patients?.first_name?.toLowerCase() || ''
+      const lastName = apt.patients?.last_name?.toLowerCase() || ''
+      const email = apt.patients?.email?.toLowerCase() || ''
+      const phone = apt.patients?.phone?.toLowerCase() || ''
+      const fullName = `${firstName} ${lastName}`
+      return (
+        firstName.includes(query) ||
+        lastName.includes(query) ||
+        fullName.includes(query) ||
+        email.includes(query) ||
+        phone.includes(query)
+      )
+    })
+  }, [appointments, searchQuery])
 
-    try {
-      // Get all patient IDs
-      const patientIds = patients.map(p => p.id)
+  // Appointment lookup map for O(1) access
+  const appointmentMap = useMemo(() => {
+    const map = new Map<string, CalendarAppointment>()
+    
+    filteredAppointments.forEach(appointment => {
+      if (!appointment.requested_date_time) return
       
-      if (patientIds.length === 0) return
+      const appointmentDate = convertToTimezone(appointment.requested_date_time, DOCTOR_TIMEZONE)
+      const dateStr = getDateString(appointmentDate, DOCTOR_TIMEZONE)
+      const roundedSlot = roundToNearestSlot(appointmentDate)
+      
+      const hour = roundedSlot.getUTCHours()
+      const minute = roundedSlot.getUTCMinutes()
+      const key = `${dateStr}_${hour}_${minute}`
+      
+      map.set(key, appointment)
+    })
+    
+    return map
+  }, [filteredAppointments])
 
-      // Batch queries to avoid very long URLs (chunk size: 50)
-      const BATCH_SIZE = 50
-      const batches: string[][] = []
-      for (let i = 0; i < patientIds.length; i += BATCH_SIZE) {
-        batches.push(patientIds.slice(i, i + BATCH_SIZE))
+  const getAppointmentForSlot = useCallback((date: Date, time: Date) => {
+    const dateInPhoenix = convertToTimezone(date.toISOString(), DOCTOR_TIMEZONE)
+    const slotDateStr = getDateString(dateInPhoenix, DOCTOR_TIMEZONE)
+    
+    const phoenixYear = dateInPhoenix.getUTCFullYear()
+    const phoenixMonth = dateInPhoenix.getUTCMonth()
+    const phoenixDay = dateInPhoenix.getUTCDate()
+    const phoenixHour = time.getHours()
+    const phoenixMinute = time.getMinutes()
+    
+    const timeSlotAsPhoenix = new Date(Date.UTC(phoenixYear, phoenixMonth, phoenixDay, phoenixHour, phoenixMinute, 0))
+    const hour = timeSlotAsPhoenix.getUTCHours()
+    const minute = timeSlotAsPhoenix.getUTCMinutes()
+    
+    const key = `${slotDateStr}_${hour}_${minute}`
+    return appointmentMap.get(key) || null
+  }, [appointmentMap])
+
+  // ============================================
+  // AUDIO SYSTEM
+  // ============================================
+  const getAudioContext = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    return audioContextRef.current
+  }
+
+  const playSound = (type: string) => {
+    try {
+      const ctx = getAudioContext()
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+      
+      switch (type) {
+        case 'success':
+          oscillator.frequency.setValueAtTime(523.25, ctx.currentTime)
+          oscillator.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1)
+          oscillator.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2)
+          gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4)
+          oscillator.start(ctx.currentTime)
+          oscillator.stop(ctx.currentTime + 0.4)
+          break
+          
+        case 'error':
+          oscillator.type = 'sawtooth'
+          oscillator.frequency.setValueAtTime(400, ctx.currentTime)
+          oscillator.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.3)
+          gainNode.gain.setValueAtTime(0.2, ctx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+          oscillator.start(ctx.currentTime)
+          oscillator.stop(ctx.currentTime + 0.3)
+          break
+          
+        case 'click':
+          oscillator.frequency.setValueAtTime(800, ctx.currentTime)
+          gainNode.gain.setValueAtTime(0.15, ctx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05)
+          oscillator.start(ctx.currentTime)
+          oscillator.stop(ctx.currentTime + 0.05)
+          break
+          
+        case 'notification':
+          oscillator.type = 'sine'
+          oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+          oscillator.frequency.setValueAtTime(1108.73, ctx.currentTime + 0.15)
+          gainNode.gain.setValueAtTime(0.25, ctx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
+          oscillator.start(ctx.currentTime)
+          oscillator.stop(ctx.currentTime + 0.5)
+          break
+          
+        case 'hover':
+          oscillator.frequency.setValueAtTime(1200, ctx.currentTime)
+          gainNode.gain.setValueAtTime(0.03, ctx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.02)
+          oscillator.start(ctx.currentTime)
+          oscillator.stop(ctx.currentTime + 0.02)
+          break
+          
+        case 'whoosh':
+          const noise = ctx.createOscillator()
+          noise.type = 'sawtooth'
+          noise.frequency.setValueAtTime(100, ctx.currentTime)
+          noise.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 0.15)
+          const noiseGain = ctx.createGain()
+          noise.connect(noiseGain)
+          noiseGain.connect(ctx.destination)
+          noiseGain.gain.setValueAtTime(0.1, ctx.currentTime)
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+          noise.start(ctx.currentTime)
+          noise.stop(ctx.currentTime + 0.15)
+          break
       }
-
-      // Fetch medical records for this doctor's patients (using user_id) - batched
-      let medicalRecords: any[] = []
-      let recordsError: any = null
-      for (const batch of batches) {
-        const { data, error } = await supabase
-          .from('medical_records')
-          .select('user_id, record_type')
-          .eq('is_shared', true)
-          .in('user_id', batch)
-        if (data) medicalRecords.push(...data)
-        if (error && !recordsError) recordsError = error
-      }
-
-      // Fetch prescriptions for this doctor's patients (using patient_id) - batched
-      let prescriptions: any[] = []
-      let prescriptionsError: any = null
-      for (const batch of batches) {
-        const { data, error } = await supabase
-          .from('prescriptions')
-          .select('patient_id')
-          .eq('doctor_id', currentDoctor.id)
-          .in('patient_id', batch)
-        if (data) prescriptions.push(...data)
-        if (error && !prescriptionsError) prescriptionsError = error
-      }
-
-      // Fetch appointments for this doctor's patients (for visit summaries) - batched
-      let appointments: any[] = []
-      let appointmentsError: any = null
-      for (const batch of batches) {
-        const { data, error } = await supabase
-          .from('appointments')
-          .select('id, patient_id')
-          .eq('doctor_id', currentDoctor.id)
-          .in('patient_id', batch)
-        if (data) appointments.push(...data)
-        if (error && !appointmentsError) appointmentsError = error
-      }
-
-      if (recordsError) {
-        console.error('Error fetching medical records:', recordsError.message || recordsError.code || recordsError)
-      }
-      if (prescriptionsError) {
-        console.error('Error fetching prescriptions:', prescriptionsError.message || prescriptionsError.code || prescriptionsError)
-      }
-      if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError.message || appointmentsError.code || appointmentsError)
-      }
-
-      // Count records by type and patient
-      const recordMap = new Map<string, {
-        prescription: number
-        lab_result: number
-        visit_summary: number
-      }>()
-
-      // Initialize all patients in the map
-      patientIds.forEach(id => {
-        recordMap.set(id, { prescription: 0, lab_result: 0, visit_summary: 0 })
-      })
-
-      // Process medical records (user_id maps to patient id)
-      if (medicalRecords && Array.isArray(medicalRecords)) {
-        medicalRecords.forEach((record: any) => {
-          const patientId = record?.user_id
-          if (!patientId || !recordMap.has(patientId)) return
-
-          const counts = recordMap.get(patientId)!
-          if (record.record_type === 'prescription') counts.prescription++
-          if (record.record_type === 'lab_result') counts.lab_result++
-          if (record.record_type === 'visit_summary') counts.visit_summary++
-        })
-      }
-
-      // Process prescriptions (prescriptions table uses patient_id)
-      if (prescriptions && Array.isArray(prescriptions)) {
-        prescriptions.forEach((prescription: any) => {
-          const patientId = prescription?.patient_id
-          if (!patientId || !recordMap.has(patientId)) return
-
-          const counts = recordMap.get(patientId)!
-          counts.prescription++
-        })
-      }
-
-      // Process appointment documents for visit summaries - batched
-      if (appointments && Array.isArray(appointments) && appointments.length > 0) {
-        const appointmentIds = appointments.map((a: any) => a?.id).filter(Boolean)
-        const appointmentToPatient = new Map(appointments.map((a: any) => [a?.id, a?.patient_id]))
-        
-        if (appointmentIds.length > 0) {
-          // Batch appointment IDs too
-          const appointmentBatches: string[][] = []
-          for (let i = 0; i < appointmentIds.length; i += BATCH_SIZE) {
-            appointmentBatches.push(appointmentIds.slice(i, i + BATCH_SIZE))
-          }
-
-          let appointmentDocs: any[] = []
-          let docsError: any = null
-          for (const batch of appointmentBatches) {
-            const { data, error } = await supabase
-              .from('files')
-              .select('appointment_id, file_type')
-              .eq('is_shared', true)
-              .in('appointment_id', batch)
-              .or('file_type.eq.visit_summary,file_type.eq.summary')
-            if (data) appointmentDocs.push(...data)
-            if (error && !docsError) docsError = error
-          }
-
-          if (docsError) {
-            console.error('Error fetching appointment documents:', docsError.message || docsError.code || docsError)
-          }
-
-          if (!docsError && appointmentDocs && Array.isArray(appointmentDocs)) {
-            appointmentDocs.forEach((doc: any) => {
-              const patientId = appointmentToPatient.get(doc?.appointment_id)
-              if (patientId && recordMap.has(patientId)) {
-                const counts = recordMap.get(patientId)!
-                counts.visit_summary++
-              }
-            })
-          }
-        }
-      }
-
-      setPatientRecordMap(recordMap)
-
-      // Calculate total counts - count actual number of records, not patients
-      let totalPrescriptions = 0
-      let totalLabResults = 0
-      let totalVisitSummaries = 0
-
-      recordMap.forEach((counts) => {
-        totalPrescriptions += counts.prescription
-        totalLabResults += counts.lab_result
-        totalVisitSummaries += counts.visit_summary
-      })
-
-      // Total all records count
-      const totalAllRecords = totalPrescriptions + totalLabResults + totalVisitSummaries
-
-      const counts = {
-        all: totalAllRecords, // Total number of all records
-        prescription: totalPrescriptions, // Total number of prescription records
-        lab_result: totalLabResults, // Total number of lab result records
-        visit_summary: totalVisitSummaries // Total number of visit summary records
-      }
-
-      setRecordCounts(counts)
-    } catch (error: any) {
-      console.error('Unexpected error in fetchPatientRecordCounts:', error?.message || error?.toString() || error)
-      console.error('Error fetching patient record counts:', error)
+    } catch (e) {
+      console.log('Audio not supported')
     }
   }
 
+  // ============================================
+  // NOTIFICATION SYSTEM
+  // ============================================
+  const showNotification = (type: 'success' | 'error', title: string, message: string) => {
+    setNotification({ type, title, message })
+    playSound(type === 'success' ? 'notification' : 'error')
+    
+    if (type === 'success') {
+      triggerConfetti()
+    }
+    
+    setTimeout(() => setNotification(null), 5000)
+  }
+
+  const triggerConfetti = () => {
+    setShowConfetti(true)
+    setTimeout(() => setShowConfetti(false), 4000)
+  }
+
+  // ============================================
+  // PARTICLES
+  // ============================================
+  const createParticles = () => {
+    if (!particlesRef.current) return
+    const container = particlesRef.current
+    container.innerHTML = ''
+    
+    const colors = [
+      'rgba(0,245,255,0.15)',
+      'rgba(255,0,255,0.1)',
+      'rgba(20,184,166,0.15)',
+      'rgba(236,72,153,0.1)'
+    ]
+    
+    for (let i = 0; i < 20; i++) {
+      const particle = document.createElement('div')
+      particle.className = 'particle'
+      particle.style.left = Math.random() * 100 + '%'
+      particle.style.top = Math.random() * 100 + '%'
+      const size = 20 + Math.random() * 60
+      particle.style.width = size + 'px'
+      particle.style.height = size + 'px'
+      particle.style.background = `radial-gradient(circle, ${colors[Math.floor(Math.random() * colors.length)]}, transparent)`
+      particle.style.animationDuration = (10 + Math.random() * 20) + 's'
+      particle.style.animationDelay = (Math.random() * 10) + 's'
+      container.appendChild(particle)
+    }
+  }
+
+  // ============================================
+  // DATA FETCHING
+  // ============================================
   const fetchCurrentDoctor = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: doctor, error } = await supabase
-          .from('doctors')
-          .select('*')
-          .eq('email', user.email)
-          .single()
-        
-        if (doctor) {
-          setCurrentDoctor(doctor)
-          // Fetch upcoming appointments after doctor is set
-          fetchUpcomingAppointmentsForDoctor(doctor.id)
-        }
+      
+      if (!user) {
+        console.error('No authenticated user found')
+        setLoading(false)
+        return
+      }
+
+      const { data: doctor, error } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('email', user.email)
+        .single()
+
+      if (error) {
+        console.error('Error fetching doctor:', error)
+        setLoading(false)
+        return
+      }
+
+      if (doctor) {
+        setCurrentDoctorId(doctor.id)
+        fetchAppointments(doctor.id)
       }
     } catch (error) {
       console.error('Error fetching current doctor:', error)
-    }
-  }
-
-  const fetchUpcomingAppointmentsForDoctor = async (doctorId: string) => {
-    try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const todayEnd = new Date(today)
-      todayEnd.setHours(23, 59, 59, 999)
-
-      const { data: appointments, error } = await supabase
-        .from('appointments')
-        .select(`
-          id,
-          requested_date_time,
-          status,
-          visit_type,
-          patients!appointments_patient_id_fkey(
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('doctor_id', doctorId)
-        .in('status', ['accepted', 'pending'])
-        .gte('requested_date_time', todayEnd.toISOString())
-        .order('requested_date_time', { ascending: true })
-        .limit(10)
-
-      if (error) {
-        console.error('Error fetching upcoming appointments:', error)
-        return
-      }
-
-      const formattedAppointments = (appointments || []).map((apt: any) => ({
-        id: apt.id,
-        requested_date_time: apt.requested_date_time,
-        status: apt.status,
-        visit_type: apt.visit_type,
-        patient: apt.patients ? {
-          first_name: apt.patients.first_name || '',
-          last_name: apt.patients.last_name || '',
-          email: apt.patients.email || ''
-        } : null
-      }))
-
-      setUpcomingAppointments(formattedAppointments)
-    } catch (error) {
-      console.error('Error fetching upcoming appointments:', error)
-    }
-  }
-
-  // Consolidate patients by email - merges duplicates into single records
-  const consolidatePatientsByEmail = (patients: Patient[]): Patient[] => {
-    const emailMap = new Map<string, Patient>()
-    
-    patients.forEach(patient => {
-      const email = patient.email?.toLowerCase().trim()
-      if (!email) {
-        // Keep patients without email as-is
-        emailMap.set(patient.id, patient)
-        return
-      }
-      
-      const existing = emailMap.get(email)
-      if (!existing) {
-        emailMap.set(email, {
-          ...patient,
-          merged_patient_ids: [patient.id]
-        })
-      } else {
-        // Merge appointments from duplicate patient
-        const mergedAppointments = [...(existing.appointments || []), ...(patient.appointments || [])]
-        // Sort by created_at descending
-        mergedAppointments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        
-        // Keep the most complete/recent patient info
-        const useNewer = new Date(patient.created_at) > new Date(existing.created_at)
-        
-        emailMap.set(email, {
-          ...existing,
-          // Use newer patient's basic info if available
-          first_name: (useNewer && patient.first_name) ? patient.first_name : existing.first_name,
-          last_name: (useNewer && patient.last_name) ? patient.last_name : existing.last_name,
-          mobile_phone: patient.mobile_phone || existing.mobile_phone,
-          date_of_birth: patient.date_of_birth || existing.date_of_birth,
-          address: patient.address || existing.address,
-          // Merge appointments
-          appointments: mergedAppointments,
-          appointments_count: mergedAppointments.length,
-          // Use most recent appointment info
-          last_appointment: mergedAppointments[0]?.created_at || existing.last_appointment,
-          last_appointment_status: mergedAppointments[0]?.status || existing.last_appointment_status,
-          // Track all merged patient IDs
-          merged_patient_ids: [...(existing.merged_patient_ids || [existing.id]), patient.id]
-        })
-      }
-    })
-    
-    return Array.from(emailMap.values())
-  }
-
-  const fetchPatients = async () => {
-    try {
-      // Get all patients with their appointments
-      const { data: patientsData, error: patientsError } = await supabase
-        .from('patients')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          date_of_birth,
-          location,
-          created_at,
-          appointments:appointments!appointments_patient_id_fkey (
-            id,
-            status,
-            service_type,
-            visit_type,
-            created_at,
-            requested_date_time
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      if (patientsError) {
-        console.error('Error fetching patients:', patientsError)
-        return
-      }
-
-      // Process patients with their appointments
-      const processedPatients = (patientsData || []).map(patient => {
-        const appointments = (patient.appointments as any[]) || []
-        const sortedAppointments = appointments.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )
-        
-        return {
-          id: patient.id,
-          first_name: patient.first_name || '',
-          last_name: patient.last_name || '',
-          email: patient.email || '',
-          mobile_phone: patient.phone || '',
-          date_of_birth: patient.date_of_birth || '',
-          address: patient.location || '',
-          created_at: patient.created_at || '',
-          appointments_count: appointments.length,
-          last_appointment: sortedAppointments[0]?.created_at || patient.created_at,
-          last_appointment_status: sortedAppointments[0]?.status || '',
-          appointments: sortedAppointments.map(apt => ({
-            id: apt.id,
-            status: apt.status,
-            service_type: apt.service_type,
-            visit_type: apt.visit_type,
-            created_at: apt.created_at,
-            requested_date_time: apt.requested_date_time
-          }))
-        }
-      })
-
-      // Consolidate patients by email to merge duplicates
-      const consolidatedPatients = consolidatePatientsByEmail(processedPatients)
-      setPatients(consolidatedPatients)
-    } catch (error) {
-      console.error('Error fetching patients:', error)
-    } finally {
       setLoading(false)
     }
   }
 
-  // Fetch record counts when patients or doctor changes
-  useEffect(() => {
-    if (currentDoctor && patients.length > 0) {
-      const timer = setTimeout(() => {
-        fetchPatientRecordCounts()
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [currentDoctor?.id, patients.length])
-
-  // Refresh record counts when filter changes
-  useEffect(() => {
-    if (showAllRecords && currentDoctor && patients.length > 0) {
-      fetchPatientRecordCounts()
-    }
-  }, [recordFilter, showAllRecords])
-
-  const fetchPatientChart = async (patientId: string) => {
-    setIsLoadingChart(true)
+  const fetchAppointments = useCallback(async (doctorId: string, skipLoading = false) => {
     try {
+      if (!skipLoading) {
+        setLoading(true)
+      }
+      
       const { data, error } = await supabase
-        .from('patients')
+        .from('appointments')
         .select(`
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          date_of_birth,
-          location,
-          created_at,
-          allergies,
-          current_medications,
-          active_problems,
-          recent_surgeries_details,
-          ongoing_medical_issues_details,
-          vitals_bp,
-          vitals_hr,
-          vitals_temp,
-          preferred_pharmacy,
-          chief_complaint,
-          ros_general
+          *,
+          doctors!appointments_doctor_id_fkey(timezone),
+          patients!appointments_patient_id_fkey(first_name, last_name, email, phone, chief_complaint),
+          clinical_notes(id, note_type, content)
         `)
-        .eq('id', patientId)
-        .single()
+        .eq('doctor_id', doctorId)
+        .neq('status', 'cancelled')
+        .order('requested_date_time', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('Error fetching appointments:', error)
+        return
+      }
 
-      if (data) {
-        // Fetch ALL appointments for this patient (complete history)
-        const { data: allAppointmentsData } = await supabase
-          .from('appointments')
-          .select('*')
-          .eq('patient_id', patientId)
-          .order('created_at', { ascending: false })
-
-        // Fetch active problems from normalized table
-        const { data: activeProblemsData } = await supabase
-          .from('problems')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-
-        let parsedActiveProblems: Array<{id: string, problem: string, since: string}> = []
-        if (activeProblemsData && activeProblemsData.length > 0) {
-          parsedActiveProblems = activeProblemsData.map((p, idx) => ({
-            id: p.id || `ap-${idx}`,
-            problem: p.problem_name || '',
-            since: p.onset_date ? new Date(p.onset_date).toISOString().split('T')[0] : ''
-          }))
-        } else if (data.active_problems) {
-          // Fallback to old field for backward compatibility
-          try {
-            const parsed = typeof data.active_problems === 'string' ? JSON.parse(data.active_problems) : data.active_problems
-            if (Array.isArray(parsed)) {
-              parsedActiveProblems = parsed.map((p: any, idx: number) => ({
-                id: p.id || `ap-${idx}`,
-                problem: typeof p === 'string' ? p : p.problem || p,
-                since: typeof p === 'string' ? '' : p.since || ''
-              }))
-            } else if (typeof parsed === 'string') {
-              parsedActiveProblems = [{id: 'ap-0', problem: parsed, since: ''}]
-            }
-          } catch {
-            parsedActiveProblems = [{id: 'ap-0', problem: data.active_problems, since: ''}]
-          }
-        }
-
-        // Fetch resolved problems
-        const { data: resolvedProblemsData } = await supabase
-          .from('problems')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('status', 'resolved')
-          .order('created_at', { ascending: false })
-
-        const parsedResolvedProblems = resolvedProblemsData?.map((p, idx) => ({
-          id: p.id || `rp-${idx}`,
-          problem: p.problem_name || '',
-          resolvedDate: p.resolved_date ? new Date(p.resolved_date).toISOString().split('T')[0] : ''
-        })) || []
-
-        // Fetch ALL medication history
-        const { data: medHistoryData } = await supabase
-          .from('medication_history')
-          .select('*')
-          .eq('patient_id', patientId)
-          .order('start_date', { ascending: false })
-
-        const parsedMedHistory = medHistoryData?.map((m, idx) => ({
-          id: m.id || `mh-${idx}`,
-          medication: m.medication_name || '',
-          provider: m.prescriber || 'External Provider',
-          date: m.start_date ? new Date(m.start_date).toISOString().split('T')[0] : ''
-        })) || []
-
-        // Fetch active medication orders
-        const { data: activeOrdersData } = await supabase
-          .from('medication_orders')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-
-        const parsedActiveOrders = activeOrdersData?.map((m, idx) => ({
-          id: m.id || `amo-${idx}`,
-          medication: m.medication_name || '',
-          sig: m.dosage || '',
-          status: m.status || 'Sent'
-        })) || []
-
-        // Fetch ALL past/completed medication orders
-        const { data: pastOrdersData } = await supabase
-          .from('medication_orders')
-          .select('*')
-          .eq('patient_id', patientId)
-          .in('status', ['completed', 'discontinued', 'expired'])
-          .order('created_at', { ascending: false })
-
-        const parsedPastOrders = pastOrdersData?.map((m, idx) => ({
-          id: m.id || `pmo-${idx}`,
-          medication: m.medication_name || '',
-          sig: m.dosage || '',
-          date: m.created_at ? new Date(m.created_at).toISOString().split('T')[0] : ''
-        })) || []
-
-        // Fetch ALL prescription logs from ALL appointments (not just latest)
-        let parsedPrescriptionLogs: Array<any> = []
-        if (allAppointmentsData && allAppointmentsData.length > 0) {
-          const appointmentIds = allAppointmentsData.map(apt => apt.id)
-          
-          const { data: allPrescriptionLogsData } = await supabase
-            .from('prescription_logs')
-            .select('*')
-            .in('appointment_id', appointmentIds)
-            .order('action_at', { ascending: false })
-
-          if (allPrescriptionLogsData && allPrescriptionLogsData.length > 0) {
-            parsedPrescriptionLogs = allPrescriptionLogsData.map((p, idx) => {
-              const notes = p.notes || ''
-              const medMatch = notes.match(/(.+?)\s*-\s*Qty:/)
-              const qtyMatch = notes.match(/Qty:\s*(.+?)\s*-/)
-              const pharmMatch = notes.match(/Pharmacy:\s*(.+)/)
-              
-              return {
-                id: p.id || `pl-${idx}`,
-                date: p.action_at ? new Date(p.action_at).toISOString().split('T')[0] : '',
-                medication: medMatch ? medMatch[1].trim() : notes,
-                quantity: qtyMatch ? qtyMatch[1].trim() : '',
-                pharmacy: pharmMatch ? pharmMatch[1].trim() : '',
-                status: p.action || 'Sent'
-              }
-            })
-          }
-        }
-
-        setActiveProblems(parsedActiveProblems)
-        setResolvedProblems(parsedResolvedProblems)
-        setMedicationHistory(parsedMedHistory)
-        setActiveMedOrders(parsedActiveOrders)
-        setPastMedOrders(parsedPastOrders)
-        setPrescriptionLogs(parsedPrescriptionLogs)
-
-        // Fetch surgeries from clinical_notes (normalized table)
-        const { data: surgeriesData } = await supabase
-          .from('clinical_notes')
-          .select('content')
-          .eq('patient_id', patientId)
-          .eq('note_type', 'surgeries')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        // Fetch allergies from normalized patient_allergies table
-        const { data: allergiesData } = await supabase
-          .from('patient_allergies')
-          .select('allergen_name, severity, reaction, status')
-          .eq('patient_id', patientId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-
-        // Build allergies text from normalized table or fallback to old field
-        let allergiesText = ''
-        if (allergiesData && allergiesData.length > 0) {
-          allergiesText = allergiesData.map(a => {
-            let text = a.allergen_name
-            if (a.reaction) text += ` (${a.reaction})`
-            return text
-          }).join(', ')
-        } else if (data.allergies) {
-          allergiesText = data.allergies
-        }
-
-        // Fetch current medications from medication_orders (active)
-        const { data: currentMedsData } = await supabase
-          .from('medication_orders')
-          .select('medication_name, dosage, frequency')
-          .eq('patient_id', patientId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-
-        // Build current medications text from normalized table or fallback
-        let currentMedsText = ''
-        if (currentMedsData && currentMedsData.length > 0) {
-          currentMedsText = currentMedsData.map(m => {
-            let text = m.medication_name
-            if (m.dosage) text += ` ${m.dosage}`
-            if (m.frequency) text += ` ${m.frequency}`
-            return text
-          }).join(', ')
-        } else if (data.current_medications) {
-          currentMedsText = data.current_medications
-        }
-
-        // Fetch medical issues from problems table (active problems)
-        const medicalIssuesText = parsedActiveProblems.length > 0
-          ? parsedActiveProblems.map(p => p.problem).filter(Boolean).join(', ')
-          : ''
-
-        setPatientChartData({
-          ...data,
-          mobile_phone: data.phone || '',
-          address: data.location || '',
-          appointments_count: allAppointmentsData?.length || selectedPatient?.appointments_count || 0,
-          last_appointment: allAppointmentsData?.[0]?.created_at || selectedPatient?.last_appointment || '',
-          last_appointment_status: allAppointmentsData?.[0]?.status || selectedPatient?.last_appointment_status || '',
-          appointments: allAppointmentsData?.map(apt => ({
-            id: apt.id,
-            status: apt.status,
-            service_type: apt.service_type,
-            visit_type: apt.visit_type,
-            created_at: apt.created_at,
-            requested_date_time: apt.requested_date_time
-          })) || selectedPatient?.appointments || [],
-          // Use normalized data with fallback to old fields
-          allergies: allergiesText || data.allergies || '',
-          current_medications: currentMedsText || data.current_medications || '',
-          active_problems: medicalIssuesText || data.active_problems || '',
-          recent_surgeries_details: surgeriesData?.content || data.recent_surgeries_details || '',
-          ongoing_medical_issues_details: medicalIssuesText || data.ongoing_medical_issues_details || ''
-        })
+      setAppointments((data || []) as any)
+      
+      // Show welcome notification on first load
+      if (!skipLoading && data && data.length >= 0) {
+        setTimeout(() => {
+          const todayAppointments = (data || []).filter((apt: any) => {
+            if (!apt.requested_date_time) return false
+            const aptDate = new Date(apt.requested_date_time)
+            const today = new Date()
+            return aptDate.toDateString() === today.toDateString()
+          }).length
+          showNotification('success', '👋 WELCOME!', `Your appointment calendar is ready. You have ${todayAppointments} appointments today!`)
+        }, 500)
       }
     } catch (error) {
-      console.error('Error fetching patient chart:', error)
+      console.error('Error fetching appointments:', error)
     } finally {
-      setIsLoadingChart(false)
-    }
-  }
-
-  // Debounced search for suggestions
-  useEffect(() => {
-    if (searchTerm.trim().length === 0) {
-      setSearchSuggestions([])
-      setShowSuggestions(false)
-      return
-    }
-
-    const timeoutId = setTimeout(() => {
-      const searchLower = searchTerm.toLowerCase()
-      const matches = patients.filter(patient => {
-        const fullName = `${patient.first_name} ${patient.last_name}`.toLowerCase()
-        return (
-          fullName.includes(searchLower) ||
-          patient.first_name.toLowerCase().includes(searchLower) ||
-          patient.last_name.toLowerCase().includes(searchLower) ||
-          patient.email.toLowerCase().includes(searchLower)
-        )
-      }).slice(0, 10) // Limit to 10 suggestions
-      
-      setSearchSuggestions(matches)
-      setShowSuggestions(matches.length > 0)
-    }, 200) // 200ms debounce
-
-    return () => clearTimeout(timeoutId)
-  }, [searchTerm, patients])
-
-  // Close suggestions when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(event.target as Node) &&
-        searchInputRef.current &&
-        !searchInputRef.current.contains(event.target as Node)
-      ) {
-        setShowSuggestions(false)
+      if (!skipLoading) {
+        setLoading(false)
       }
     }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSuggestionClick = (patient: Patient) => {
-    // Clear search and close dropdown
-    setSearchTerm('')
-    setShowSuggestions(false)
-    
-    // Open the patient chart directly
-    setSelectedPatient(patient)
-    setEditForm({
-      first_name: patient.first_name,
-      last_name: patient.last_name,
-      email: patient.email,
-      mobile_phone: patient.mobile_phone,
-      date_of_birth: patient.date_of_birth,
-      address: patient.address
-    })
-    setIsEditing(false)
-    setActiveTab('overview')
-    setShowPatientModal(true)
-    fetchPatientChart(patient.id)
-  }
-
-  const filteredPatients = patients.filter(patient => {
-    // First filter by search term
-    const matchesSearch = 
-      patient.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      patient.email.toLowerCase().includes(searchTerm.toLowerCase())
-
-    if (!matchesSearch) return false
-
-    // Then filter by record type if not 'all'
-    if (recordFilter === 'all') return true
-
-    const patientRecords = patientRecordMap.get(patient.id)
-    if (!patientRecords) return false
-
-    // Filter by specific record type - show patients that have at least one record of that type
-    if (recordFilter === 'prescription' && patientRecords.prescription > 0) return true
-    if (recordFilter === 'lab_result' && patientRecords.lab_result > 0) return true
-    if (recordFilter === 'visit_summary' && patientRecords.visit_summary > 0) return true
-
-    return false
-  })
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
-  }
-
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  const handleViewPatient = (patient: Patient) => {
-    setSelectedPatient(patient)
-    setEditForm({
-      first_name: patient.first_name,
-      last_name: patient.last_name,
-      email: patient.email,
-      mobile_phone: patient.mobile_phone,
-      date_of_birth: patient.date_of_birth,
-      address: patient.address
-    })
-    setIsEditing(false)
-    setActiveTab('overview')
-    setShowPatientModal(true)
-    fetchPatientChart(patient.id)
-  }
-
-  const handleEditPatient = async () => {
-    if (!selectedPatient) return
-
+  // ============================================
+  // APPOINTMENT ACTIONS
+  // ============================================
+  const handleAppointmentAction = async (appointmentId: string, action: 'accept' | 'reject' | 'complete') => {
     try {
-      // Update patient information in patients table
-      const { error } = await supabase
-        .from('patients')
-        .update({
-          first_name: editForm.first_name,
-          last_name: editForm.last_name,
-          email: editForm.email,
-          phone: editForm.mobile_phone,
-          date_of_birth: editForm.date_of_birth,
-          location: editForm.address
+      playSound('click')
+      
+      if (action === 'complete') {
+        const { error } = await supabase
+          .from('appointments')
+          .update({ status: 'completed' })
+          .eq('id', appointmentId)
+
+        if (error) {
+          showNotification('error', '❌ ERROR', 'Failed to mark appointment as complete')
+          return
+        }
+
+        showNotification('success', '🎉 COMPLETED!', 'Appointment marked as complete')
+        if (currentDoctorId) fetchAppointments(currentDoctorId)
+        return
+      }
+
+      const endpoint = action === 'accept' ? '/api/appointments/accept' : '/api/appointments/reject'
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId,
+          reason: action === 'reject' ? 'Doctor unavailable at this time' : undefined
         })
-        .eq('id', selectedPatient.id)
+      })
 
-      if (error) throw error
+      const result = await response.json()
 
-      // Refresh patients list
-      await fetchPatients()
-      setIsEditing(false)
-      setShowPatientModal(false)
-      alert('Patient information updated successfully')
-    } catch (error: any) {
-      console.error('Error updating patient:', error)
-      alert('Failed to update patient: ' + error.message)
+      if (!response.ok) {
+        showNotification('error', '❌ ERROR', result.error || `Failed to ${action} appointment`)
+        return
+      }
+
+      let successMessage = `Appointment ${action}ed successfully`
+      
+      if (action === 'accept') {
+        if (result.data.paymentCaptured) successMessage += ' • Payment captured'
+        if (result.data.zoomMeeting) successMessage += ' • Zoom meeting created'
+      } else if (action === 'reject') {
+        if (result.data.paymentRefunded) {
+          successMessage += ` • Payment refunded ($${(result.data.refundAmount / 100).toFixed(2)})`
+        }
+      }
+
+      showNotification('success', action === 'accept' ? '✨ ACCEPTED!' : '❌ REJECTED', successMessage)
+      if (currentDoctorId) fetchAppointments(currentDoctorId)
+    } catch (error) {
+      console.error('Error updating appointment:', error)
+      showNotification('error', '❌ ERROR', 'An unexpected error occurred')
     }
   }
 
-  const handleDeletePatient = async () => {
-    if (!selectedPatient) return
+  // ============================================
+  // EFFECTS
+  // ============================================
+  useEffect(() => {
+    fetchCurrentDoctor()
+    createParticles()
+  }, [])
 
-    if (!confirm(`Are you sure you want to delete patient ${selectedPatient.first_name} ${selectedPatient.last_name}? This will delete the patient record. Note: Appointments will remain but will have no patient reference.`)) {
-      return
-    }
-
-    setIsDeleting(true)
-    try {
-      // Delete patient record (appointments will remain with null patient_id due to ON DELETE SET NULL)
-      const { error } = await supabase
-        .from('patients')
-        .delete()
-        .eq('id', selectedPatient.id)
-
-      if (error) throw error
-
-      // Refresh patients list
-      await fetchPatients()
-      setShowPatientModal(false)
-      setSelectedPatient(null)
-      alert('Patient deleted successfully')
-    } catch (error: any) {
-      console.error('Error deleting patient:', error)
-      alert('Failed to delete patient: ' + error.message)
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  const handleViewAppointment = (appointmentId: string) => {
-    setSelectedAppointmentId(appointmentId)
-    setShowAppointmentModal(true)
-    setShowPatientModal(false)
-  }
-
-  // Open clinical panel for any patient - creates appointment if needed
-  const handleOpenClinicalPanel = async (patient: Patient) => {
-    if (patient.appointments && patient.appointments.length > 0) {
-      // Patient has appointments - open the most recent one
-      const sortedAppointments = [...patient.appointments].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-      handleViewAppointment(sortedAppointments[0].id)
+  // ============================================
+  // COMPUTED VALUES
+  // ============================================
+  const dateRange = useMemo(() => {
+    if (visibleDates.length === 0) return { toolbar: '', header: '' }
+    
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+    const optionsYear: Intl.DateTimeFormatOptions = { ...options, year: 'numeric' }
+    
+    if (calendarViewType === 'week') {
+      return {
+        toolbar: `Week of ${visibleDates[0].toLocaleDateString('en-US', options)}`,
+        header: `${visibleDates[0].toLocaleDateString('en-US', options)} - ${visibleDates[visibleDates.length - 1].toLocaleDateString('en-US', optionsYear)}`
+      }
     } else {
-      // No appointments - create a pending General Consultation
-      try {
-        const { data: newAppointment, error } = await supabase
-          .from('appointments')
-          .insert({
-            patient_id: patient.id,
-            doctor_id: currentDoctor?.id,
-            status: 'pending',
-            service_type: 'General Consultation',
-            visit_type: 'video',
-            requested_date_time: new Date().toISOString()
-          })
-          .select()
-          .single()
-
-        if (error) throw error
-
-        if (newAppointment) {
-          // Update local state with new appointment
-          const updatedPatient = {
-            ...patient,
-            appointments: [{
-              id: newAppointment.id,
-              status: newAppointment.status,
-              service_type: newAppointment.service_type,
-              visit_type: newAppointment.visit_type,
-              created_at: newAppointment.created_at,
-              requested_date_time: newAppointment.requested_date_time
-            }],
-            appointments_count: 1,
-            last_appointment: newAppointment.created_at,
-            last_appointment_status: newAppointment.status
-          }
-          setSelectedPatient(updatedPatient)
-          
-          // Open the clinical panel with the new appointment
-          handleViewAppointment(newAppointment.id)
-        }
-      } catch (error) {
-        console.error('Error creating appointment for clinical panel:', error)
-        alert('Failed to open clinical panel. Please try again.')
+      return {
+        toolbar: currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        header: currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
       }
     }
+  }, [visibleDates, calendarViewType, currentDate])
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
   }
 
-  const handleAppointmentStatusChange = () => {
-    fetchPatients()
-  }
+  const confettiColors = ['#00f5ff', '#ff00ff', '#ffff00', '#00ff00', '#ff6b35', '#14b8a6', '#ec4899']
 
-  // Problems & Medications handlers
-  const handleAddActiveProblem = () => {
-    if (!newActiveProblem.problem.trim() || !selectedPatient) return
-    const newProblem = {
-      id: `ap-${Date.now()}`,
-      problem: newActiveProblem.problem,
-      since: newActiveProblem.since
-    }
-    setActiveProblems([...activeProblems, newProblem])
-    setNewActiveProblem({problem: '', since: ''})
-    saveProblemsAndMedications()
-  }
+  // Stats
+  const stats = useMemo(() => {
+    const total = appointments.length
+    const completed = appointments.filter(a => a.status === 'completed').length
+    const pending = appointments.filter(a => a.status === 'accepted').length
+    const revenue = appointments.filter(a => a.status === 'completed').length * 59 // $59 per appointment
+    return { total, completed, pending, revenue }
+  }, [appointments])
 
-  const handleRemoveActiveProblem = (id: string) => {
-    setActiveProblems(activeProblems.filter(p => p.id !== id))
-    saveProblemsAndMedications()
-  }
-
-  const handleAddResolvedProblem = () => {
-    if (!newResolvedProblem.problem.trim() || !selectedPatient) return
-    const newProblem = {
-      id: `rp-${Date.now()}`,
-      problem: newResolvedProblem.problem,
-      resolvedDate: newResolvedProblem.resolvedDate
-    }
-    setResolvedProblems([...resolvedProblems, newProblem])
-    setNewResolvedProblem({problem: '', resolvedDate: ''})
-    saveProblemsAndMedications()
-  }
-
-  const handleRemoveResolvedProblem = (id: string) => {
-    setResolvedProblems(resolvedProblems.filter(p => p.id !== id))
-    saveProblemsAndMedications()
-  }
-
-  const handleAddMedicationHistory = () => {
-    if (!newMedHistory.medication.trim() || !selectedPatient) return
-    const newMed = {
-      id: `mh-${Date.now()}`,
-      medication: newMedHistory.medication,
-      provider: newMedHistory.provider,
-      date: newMedHistory.date
-    }
-    setMedicationHistory([...medicationHistory, newMed])
-    setNewMedHistory({medication: '', provider: '', date: ''})
-    saveProblemsAndMedications()
-  }
-
-  const handleRemoveMedicationHistory = (id: string) => {
-    setMedicationHistory(medicationHistory.filter(m => m.id !== id))
-    saveProblemsAndMedications()
-  }
-
-  const handleAddPrescriptionLog = () => {
-    if (!newPrescriptionLog.medication.trim() || !selectedPatient) return
-    const newLog = {
-      id: `pl-${Date.now()}`,
-      date: newPrescriptionLog.date,
-      medication: newPrescriptionLog.medication,
-      quantity: newPrescriptionLog.quantity,
-      pharmacy: newPrescriptionLog.pharmacy,
-      status: 'sent'
-    }
-    setPrescriptionLogs([...prescriptionLogs, newLog])
-    setNewPrescriptionLog({medication: '', quantity: '', pharmacy: '', date: ''})
-    saveProblemsAndMedications()
-  }
-
-  const handleRemovePrescriptionLog = (id: string) => {
-    setPrescriptionLogs(prescriptionLogs.filter(l => l.id !== id))
-    saveProblemsAndMedications()
-  }
-
-  const saveProblemsAndMedications = async () => {
-    if (!selectedPatient) return
-    setSavingProblems(true)
-    try {
-      const patientId = selectedPatient.id
-
-      // 1. Save Active Problems
-      // Delete existing active problems for this patient
-      await supabase
-        .from('problems')
-        .delete()
-        .eq('patient_id', patientId)
-        .eq('status', 'active')
-
-      // Insert new active problems
-      if (activeProblems.length > 0) {
-        const { error: problemsError } = await supabase
-          .from('problems')
-          .insert(activeProblems.map(p => ({
-            patient_id: patientId,
-            problem_name: p.problem,
-            status: 'active'
-          })))
-        
-        if (problemsError) throw problemsError
-      }
-
-      // 2. Save Resolved Problems
-      // Delete existing resolved problems for this patient
-      await supabase
-        .from('problems')
-        .delete()
-        .eq('patient_id', patientId)
-        .eq('status', 'resolved')
-
-      // Insert new resolved problems
-      if (resolvedProblems.length > 0) {
-        const { error: resolvedError } = await supabase
-          .from('problems')
-          .insert(resolvedProblems.map(p => ({
-            patient_id: patientId,
-            problem_name: p.problem || '',
-            status: 'resolved'
-          })))
-        
-        if (resolvedError) throw resolvedError
-      }
-
-      // 3. Save Medication History
-      if (medicationHistory.length > 0) {
-        // Delete existing medication history for this patient
-        await supabase
-          .from('medication_history')
-          .delete()
-          .eq('patient_id', patientId)
-
-        // Insert new medication history
-        const { error: medHistoryError } = await supabase
-          .from('medication_history')
-          .insert(medicationHistory.map(med => ({
-            patient_id: patientId,
-            medication_name: med.medication || '',
-            start_date: med.date ? new Date(med.date).toISOString().split('T')[0] : null
-          })))
-        
-        if (medHistoryError) throw medHistoryError
-      }
-
-      // 4. Save Active Medication Orders
-      // Delete existing active orders for this patient
-      await supabase
-        .from('medication_orders')
-        .delete()
-        .eq('patient_id', patientId)
-        .eq('status', 'active')
-
-      // Insert new active orders
-      if (activeMedOrders.length > 0) {
-        // Get latest appointment for appointment_id
-      const { data: latestAppointment } = await supabase
-        .from('appointments')
-        .select('id')
-          .eq('patient_id', patientId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-        const { error: activeOrdersError } = await supabase
-          .from('medication_orders')
-          .insert(activeMedOrders.map(order => ({
-            patient_id: patientId,
-            appointment_id: latestAppointment?.id || null,
-            medication_name: order.medication || '',
-            dosage: order.sig || '',
-            frequency: '',
-            status: 'active'
-          })))
-        
-        if (activeOrdersError) throw activeOrdersError
-      }
-
-      // 5. Save Past Medication Orders
-      if (pastMedOrders.length > 0) {
-        // Get latest appointment for appointment_id
-        const { data: latestAppointment } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        const { error: pastOrdersError } = await supabase
-          .from('medication_orders')
-          .insert(pastMedOrders.map(order => ({
-            patient_id: patientId,
-            appointment_id: latestAppointment?.id || null,
-            medication_name: order.medication || '',
-            dosage: order.sig || '',
-            frequency: '',
-            status: 'completed'
-          })))
-        
-        if (pastOrdersError) throw pastOrdersError
-      }
-
-      // 6. Save Prescription Logs (if latest appointment exists)
-      if (prescriptionLogs.length > 0) {
-        const { data: latestAppointment } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        if (latestAppointment) {
-          const { error: logsError } = await supabase
-            .from('prescription_logs')
-            .insert(prescriptionLogs.map(log => ({
-              prescription_id: null,
-              appointment_id: latestAppointment.id,
-              action: log.status || 'created',
-              action_at: log.date ? new Date(log.date).toISOString() : new Date().toISOString(),
-              notes: `${log.medication || ''} - Qty: ${log.quantity || ''} - Pharmacy: ${log.pharmacy || ''}`
-            })))
-          
-          if (logsError) throw logsError
-        }
-      }
-
-      // Refresh chart data
-      await fetchPatientChart(selectedPatient.id)
-    } catch (error: any) {
-      console.error('Error saving problems and medications:', error)
-      alert('Failed to save: ' + error.message)
-    } finally {
-      setSavingProblems(false)
-    }
-  }
-
+  // ============================================
+  // LOADING STATE
+  // ============================================
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="appointments-page">
+        <style>{styles}</style>
+        <div className="loading-overlay">
+          <div className="spinner"></div>
+          <p className="loading-text">Loading appointments...</p>
+        </div>
       </div>
     )
   }
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
-    <div className="w-full max-w-none">
-      <div className="space-y-4 sm:space-y-6">
-        {/* Header Card */}
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl lg:text-3xl font-bold text-white">Patient Records</h1>
-              <p className="text-gray-400 mt-2">
-                {currentDoctor ? 
-                  `View and manage patients for Dr. ${currentDoctor.first_name} ${currentDoctor.last_name}` :
-                  'View and manage your patient information'
-                }
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <button
-                onClick={() => {
-                  setShowAllRecords(!showAllRecords)
-                  if (!showAllRecords) {
-                    setRecordFilter('all')
-                  }
-                }}
-                className="px-6 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                {showAllRecords ? (
-                  <>
-                    <X className="w-4 h-4" />
-                    Show Appointments
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-4 h-4" />
-                    Show All Records
-                  </>
-                )}
-              </button>
-              {currentDoctor && (
-                <div className="bg-blue-50 rounded-lg p-2 text-left lg:text-right">
-                  <p className="text-xs text-black">Current Doctor</p>
-                  <p className="text-sm font-semibold text-black">
-                    Dr. {currentDoctor.first_name} {currentDoctor.last_name}
-                  </p>
-                  <p className="text-xs text-black">{currentDoctor.specialty}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="appointments-page">
+      <style>{styles}</style>
+      
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-        {/* Search Card */}
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-            <div className="flex-1 relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search patients by name or email..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value)
-                    setShowSuggestions(true)
-                  }}
-                  onFocus={() => {
-                    if (searchSuggestions.length > 0) {
-                      setShowSuggestions(true)
-                    }
-                  }}
-                  className="w-full pl-10 pr-4 py-2 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-colors"
-                />
-                {showSuggestions && searchSuggestions.length > 0 && (
-                  <div
-                    ref={suggestionsRef}
-                    className="absolute z-50 w-full mt-2 bg-[#0d2626] border border-[#1a3d3d] rounded-lg shadow-xl max-h-80 overflow-y-auto"
-                  >
-                    {searchSuggestions.map((patient, index) => (
-                      <div
-                        key={patient.id}
-                        onClick={() => handleSuggestionClick(patient)}
-                        className="px-4 py-3 cursor-pointer transition-all duration-150 border-b border-[#1a3d3d] last:border-b-0 hover:bg-teal-600/30 hover:border-l-2 hover:border-l-teal-400"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#164e4e] hover:bg-teal-500 transition-colors flex items-center justify-center flex-shrink-0">
-                            <span className="text-sm font-medium text-white">
-                              {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-white font-medium truncate">
-                              {patient.first_name} {patient.last_name}
-                            </div>
-                            <div className="text-sm text-gray-400 truncate">
-                              {patient.email}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="px-3 py-2 bg-[#0a1f1f] text-xs text-gray-500 border-t border-[#1a3d3d]">
-                      Click to open patient chart
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <button 
-              onClick={() => setShowSuggestions(false)}
-              className="px-6 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors whitespace-nowrap"
-            >
-              Search
-            </button>
-          </div>
-        </div>
-
-        {/* Patient Summary Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                </svg>
-              </div>
-              <div className="ml-3 sm:ml-4">
-                <p className="text-xs sm:text-sm font-medium text-gray-400">Total Patients</p>
-                <p className="text-xl sm:text-2xl font-semibold text-white">{patients.length}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="ml-3 sm:ml-4">
-                <p className="text-xs sm:text-sm font-medium text-gray-400">Active Patients</p>
-                <p className="text-xl sm:text-2xl font-semibold text-white">
-                  {patients.filter(p => {
-                    const lastVisit = new Date(p.last_appointment)
-                    const thirtyDaysAgo = new Date()
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-                    return lastVisit >= thirtyDaysAgo
-                  }).length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-3 sm:ml-4">
-                <p className="text-xs sm:text-sm font-medium text-gray-400">New This Month</p>
-                <p className="text-xl sm:text-2xl font-semibold text-white">
-                  {patients.filter(p => {
-                    const created = new Date(p.created_at)
-                    const thirtyDaysAgo = new Date()
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-                    return created >= thirtyDaysAgo
-                  }).length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-              <div className="ml-3 sm:ml-4">
-                <p className="text-xs sm:text-sm font-medium text-gray-400">Avg. Appointments</p>
-                <p className="text-xl sm:text-2xl font-semibold text-white">
-                  {patients.length > 0 ? 
-                    (patients.reduce((sum, p) => sum + p.appointments_count, 0) / patients.length).toFixed(1) : 
-                    '0'
-                  }
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Record Filter Tabs - Only show when All Records is visible */}
-        {showAllRecords && (
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 sm:p-6">
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={() => setRecordFilter('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  recordFilter === 'all'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-[#164e4e] text-gray-300 hover:bg-[#1a5a5a]'
-                }`}
-              >
-                All Records ({recordCounts.all})
-              </button>
-              <button
-                onClick={() => setRecordFilter('prescription')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  recordFilter === 'prescription'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-[#164e4e] text-gray-300 hover:bg-[#1a5a5a]'
-                }`}
-              >
-                Prescriptions ({recordCounts.prescription})
-              </button>
-              <button
-                onClick={() => setRecordFilter('lab_result')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  recordFilter === 'lab_result'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-[#164e4e] text-gray-300 hover:bg-[#1a5a5a]'
-                }`}
-              >
-                Lab Records ({recordCounts.lab_result})
-              </button>
-              <button
-                onClick={() => setRecordFilter('visit_summary')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  recordFilter === 'visit_summary'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-[#164e4e] text-gray-300 hover:bg-[#1a5a5a]'
-                }`}
-              >
-                Visit Summaries ({recordCounts.visit_summary})
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Upcoming Appointments Section */}
-        {!showAllRecords && (
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d]">
-            <div className="p-4 sm:p-6 border-b border-[#1a3d3d]">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
-                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-teal-400" />
-                  Upcoming Appointments
-                </h2>
-              </div>
-            </div>
-            <div className="p-4 sm:p-6">
-              {upcomingAppointments.length === 0 ? (
-                <div className="text-center text-gray-400 py-8">
-                  No upcoming appointments
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {upcomingAppointments.map((appointment) => (
-                    <div
-                      key={appointment.id}
-                      className="p-3 sm:p-4 bg-[#164e4e] rounded-lg border border-[#1a5a5a] hover:border-teal-500 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setSelectedAppointmentId(appointment.id)
-                        setShowAppointmentModal(true)
-                      }}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-full bg-[#0d2626] flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-medium text-white">
-                                {appointment.patient 
-                                  ? `${appointment.patient.first_name.charAt(0)}${appointment.patient.last_name.charAt(0)}`
-                                  : 'P'
-                                }
-                              </span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-white font-medium truncate">
-                                {appointment.patient
-                                  ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
-                                  : 'Unknown Patient'}
-                              </p>
-                              <p className="text-xs sm:text-sm text-gray-400 truncate">
-                                {appointment.patient?.email || 'No email'}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-xs sm:text-sm text-gray-300 ml-0 sm:ml-12">
-                            {appointment.requested_date_time ? (
-                              <p>
-                                {new Date(appointment.requested_date_time).toLocaleString('en-US', {
-                                  weekday: 'short',
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </p>
-                            ) : (
-                              <p>Date TBD</p>
-                            )}
-                            {appointment.visit_type && (
-                              <p className="text-xs text-gray-400 mt-1">
-                                Visit Type: {appointment.visit_type}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 flex-shrink-0">
-                          <span className={`px-2 sm:px-3 py-1 rounded text-xs font-medium whitespace-nowrap ${
-                            appointment.status === 'accepted'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-yellow-600 text-white'
-                          }`}>
-                            {appointment.status}
-                          </span>
-                          <button className="text-teal-400 hover:text-teal-300 text-xs sm:text-sm whitespace-nowrap">
-                            View Details →
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Patients List Card */}
-        {showAllRecords && (
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d]">
-            <div className="p-4 sm:p-6 border-b border-[#1a3d3d]">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <h2 className="text-lg font-semibold text-white">
-                  {recordFilter === 'all' && 'All Medical Records'}
-                  {recordFilter === 'prescription' && 'Prescriptions'}
-                  {recordFilter === 'lab_result' && 'Lab Records'}
-                  {recordFilter === 'visit_summary' && 'Visit Summaries'}
-                  {' '}({filteredPatients.length} {filteredPatients.length === 1 ? 'patient' : 'patients'})
-                </h2>
-                <div className="text-sm text-gray-400">
-                  {recordFilter === 'all' && `Total Records: ${recordCounts.all}`}
-                  {recordFilter === 'prescription' && `Total Prescriptions: ${recordCounts.prescription}`}
-                  {recordFilter === 'lab_result' && `Total Lab Results: ${recordCounts.lab_result}`}
-                  {recordFilter === 'visit_summary' && `Total Visit Summaries: ${recordCounts.visit_summary}`}
-                </div>
-              </div>
-            </div>
-          <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-[#1a3d3d]">
-              <thead className="bg-[#0a1f1f]">
-                <tr>
-                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Patient
-                  </th>
-                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider hidden sm:table-cell">
-                    Contact
-                  </th>
-                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">
-                    Appointments
-                  </th>
-                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-32">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-[#0d2626] divide-y divide-[#1a3d3d]">
-                {filteredPatients.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-400">
-                      <div className="flex flex-col items-center">
-                        <svg className="w-12 h-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                        </svg>
-                        <p className="text-lg font-medium text-white">No medical records found</p>
-                        <p className="text-sm text-gray-400">
-                          {recordFilter === 'all' 
-                            ? 'No patients match your search criteria'
-                            : `No patients found with ${recordFilter === 'prescription' ? 'prescriptions' : recordFilter === 'lab_result' ? 'lab records' : 'visit summaries'}`
-                          }
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPatients.map((patient) => (
-                    <tr 
-                      id={`patient-${patient.id}`}
-                      key={patient.id} 
-                      className="hover:bg-[#164e4e] transition-colors"
-                    >
-                      <td className="px-4 sm:px-6 py-4">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-[#164e4e] flex items-center justify-center">
-                              <span className="text-sm font-medium text-white">
-                                {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="ml-4 min-w-0 flex-1">
-                            <div className="text-sm font-medium text-white truncate">
-                              {patient.first_name} {patient.last_name}
-                            </div>
-                            <div className="text-sm text-gray-400 truncate">
-                              ID: {patient.id.slice(0, 8)}...
-                            </div>
-                            <div className="text-xs text-gray-400 sm:hidden truncate">
-                              {patient.email}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 hidden sm:table-cell">
-                        <div className="text-sm text-white truncate">{patient.email}</div>
-                        <div className="text-sm text-gray-400 truncate">{patient.mobile_phone}</div>
-                      </td>
-                      <td className="px-4 sm:px-6 py-4 hidden lg:table-cell">
-                        <div className="text-sm text-white">{patient.appointments_count}</div>
-                        {(() => {
-                          const records = patientRecordMap.get(patient.id)
-                          if (!records) return null
-                          return (
-                            <div className="flex gap-2 mt-1 flex-wrap">
-                              {records.prescription > 0 && (
-                                <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">
-                                  Rx: {records.prescription}
-                                </span>
-                              )}
-                              {records.lab_result > 0 && (
-                                <span className="text-xs px-2 py-0.5 bg-green-600 text-white rounded">
-                                  Lab: {records.lab_result}
-                                </span>
-                              )}
-                              {records.visit_summary > 0 && (
-                                <span className="text-xs px-2 py-0.5 bg-yellow-600 text-white rounded">
-                                  Visit: {records.visit_summary}
-                                </span>
-                              )}
-                            </div>
-                          )
-                        })()}
-                      </td>
-                      <td className="px-4 sm:px-6 py-4">
-                        <button 
-                          onClick={() => handleViewPatient(patient)}
-                          className="flex items-center gap-1 text-white hover:text-cyan-400 text-xs sm:text-sm whitespace-nowrap px-2 py-1 rounded hover:bg-cyan-500/20 transition-colors"
-                          title="View Patient Details"
-                        >
-                          <Eye className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
-                          <span className="hidden sm:inline">View</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        )}
+      {/* Floating Particles Background */}
+      <div className="particles-container" ref={particlesRef}></div>
+      
+      {/* Confetti Container */}
+      <div className={`confetti-container ${showConfetti ? 'active' : ''}`}>
+        {showConfetti && Array.from({ length: 50 }).map((_, i) => (
+          <div
+            key={i}
+            className="confetti-piece"
+            style={{
+              left: `${Math.random() * 100}%`,
+              width: `${8 + Math.random() * 8}px`,
+              height: `${8 + Math.random() * 8}px`,
+              background: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+              animationDelay: `${Math.random() * 0.5}s`,
+              animationDuration: `${2 + Math.random() * 2}s`,
+              boxShadow: `0 0 10px ${confettiColors[Math.floor(Math.random() * confettiColors.length)]}`
+            }}
+          />
+        ))}
       </div>
 
-      {/* Patient Detail Modal */}
-      {showPatientModal && selectedPatient && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/20 shadow-2xl rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 p-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">
-                  Patient Details: {selectedPatient.first_name} {selectedPatient.last_name}
-                </h2>
-                <div className="flex items-center gap-3">
-                  {/* View Details Button - Opens Clinical Panel */}
-                  <button
-                    onClick={() => handleOpenClinicalPanel(selectedPatient)}
-                    className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium"
-                  >
-                    <Activity className="h-4 w-4" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowPatientModal(false)
-                      setIsEditing(false)
-                      setSelectedPatient(null)
-                    }}
-                    className="text-gray-400 hover:text-white transition-colors p-2"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
+      {/* Notification */}
+      {notification && (
+        <div className={`notification active ${notification.type}`}>
+          <div className="notification-content">
+            <div className="notification-icon">{notification.type === 'success' ? '✓' : '✗'}</div>
+            <div className="notification-text">
+              <div className="notification-title">{notification.title}</div>
+              <div className="notification-message">{notification.message}</div>
             </div>
-
-            {/* Tabs */}
-            <div className="border-b border-white/10 bg-slate-800/50">
-              <div className="flex">
-                <button
-                  onClick={() => setActiveTab('overview')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'overview'
-                      ? 'text-cyan-400 border-b-2 border-cyan-400'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Overview
-                </button>
-                <button
-                  onClick={() => setActiveTab('chart')}
-                  className={`px-6 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'chart'
-                      ? 'text-cyan-400 border-b-2 border-cyan-400'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Patient Chart
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {isLoadingChart && activeTab === 'chart' ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
-                </div>
-              ) : isEditing ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">First Name</label>
-                      <input
-                        type="text"
-                        value={editForm.first_name}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, first_name: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">Last Name</label>
-                      <input
-                        type="text"
-                        value={editForm.last_name}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, last_name: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">Email</label>
-                      <input
-                        type="email"
-                        value={editForm.email}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, email: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">Phone</label>
-                      <input
-                        type="tel"
-                        value={editForm.mobile_phone}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, mobile_phone: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">Date of Birth</label>
-                      <input
-                        type="date"
-                        value={editForm.date_of_birth}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, date_of_birth: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-400 mb-2">Address</label>
-                      <input
-                        type="text"
-                        value={editForm.address}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, address: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={handleEditPatient}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      <Edit className="h-4 w-4" />
-                      Save Changes
-                    </button>
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : activeTab === 'overview' ? (
-                <div className="space-y-6">
-                  {/* Patient Information */}
-                  <div className="bg-slate-800/50 rounded-lg p-6 border border-white/10">
-                    <h3 className="text-lg font-semibold text-white mb-4">Patient Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm text-gray-400">First Name</label>
-                        <p className="text-white font-medium">{selectedPatient.first_name}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Last Name</label>
-                        <p className="text-white font-medium">{selectedPatient.last_name}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Email</label>
-                        <p className="text-white">{selectedPatient.email || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Phone</label>
-                        <p className="text-white">{selectedPatient.mobile_phone || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Date of Birth</label>
-                        <p className="text-white">{selectedPatient.date_of_birth ? formatDate(selectedPatient.date_of_birth) : 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Address</label>
-                        <p className="text-white">{selectedPatient.address || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Total Appointments</label>
-                        <p className="text-white font-semibold">{selectedPatient.appointments_count}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-400">Last Appointment</label>
-                        <p className="text-white">{formatDate(selectedPatient.last_appointment)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Appointments List */}
-                  <div className="bg-slate-800/50 rounded-lg p-6 border border-white/10">
-                    <h3 className="text-lg font-semibold text-white mb-4">Appointments ({selectedPatient.appointments.length})</h3>
-                    {selectedPatient.appointments.length === 0 ? (
-                      <p className="text-gray-400">No appointments found</p>
-                    ) : (
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {selectedPatient.appointments.map((appointment) => (
-                          <div
-                            key={appointment.id}
-                            className="bg-slate-700/50 rounded-lg p-4 border border-white/10 hover:border-cyan-500/50 transition-colors cursor-pointer"
-                            onClick={() => handleViewAppointment(appointment.id)}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-white font-semibold">
-                                    {appointment.service_type?.replace('_', ' ') || 'Appointment'}
-                                  </span>
-                                  <span className={`px-2 py-1 text-xs rounded-full ${
-                                    appointment.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                                    appointment.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                                    appointment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                    appointment.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                    'bg-gray-100 text-gray-800'
-                                  }`}>
-                                    {appointment.status}
-                                  </span>
-                                </div>
-                                <div className="text-sm text-gray-400">
-                                  <p>Visit Type: {appointment.visit_type || 'N/A'}</p>
-                                  {appointment.requested_date_time && (
-                                    <p>Date: {formatDateTime(appointment.requested_date_time)}</p>
-                                  )}
-                                  <p>Created: {formatDateTime(appointment.created_at)}</p>
-                                </div>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleViewAppointment(appointment.id)
-                                }}
-                                className="ml-4 px-3 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm"
-                              >
-                                View Details
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      <Edit className="h-4 w-4" />
-                      Edit Patient
-                    </button>
-                    <button
-                      onClick={handleDeletePatient}
-                      disabled={isDeleting}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-                    >
-                      {isDeleting ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="h-4 w-4" />
-                          Delete Patient
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Patient Header */}
-                  {patientChartData && (
-                    <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-2xl p-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">Name</div>
-                          <div className="font-bold text-white text-base">
-                            {patientChartData.first_name} {patientChartData.last_name}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">Email</div>
-                          <div className="text-white text-sm break-all">{patientChartData.email || 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">Phone</div>
-                          <div className="text-white text-sm">{patientChartData.mobile_phone || 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">DOB</div>
-                          <div className="text-white text-sm">{patientChartData.date_of_birth ? formatDate(patientChartData.date_of_birth) : 'N/A'}</div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="sm:col-span-2 lg:col-span-2">
-                          <div className="text-xs text-gray-400 mb-1">Address</div>
-                          <div className="text-white text-sm break-words">{patientChartData.address || 'N/A'}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">Preferred Pharmacy</div>
-                          <div className="text-white font-bold text-sm">
-                            {patientChartData.preferred_pharmacy || 'Not specified'}
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2 lg:col-span-3">
-                          <div className="text-xs text-gray-400 mb-3">Patient Intake</div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">Allergies</div>
-                              <div className="text-white text-sm">{patientChartData.allergies || 'NKDA'}</div>
-                            </div>
-                            {patientChartData.active_problems && (
-                              <div>
-                                <div className="text-xs text-gray-500 mb-1">Active Problems</div>
-                                <div className="text-white text-sm">{patientChartData.active_problems}</div>
-                              </div>
-                            )}
-                            {patientChartData.current_medications && (
-                              <div>
-                                <div className="text-xs text-gray-500 mb-1">Current Medications</div>
-                                <div className="text-white text-sm">{patientChartData.current_medications}</div>
-                              </div>
-                            )}
-                            {patientChartData.recent_surgeries_details && (
-                              <div>
-                                <div className="text-xs text-gray-500 mb-1">Recent Surgeries</div>
-                                <div className="text-white text-sm">{patientChartData.recent_surgeries_details}</div>
-                              </div>
-                            )}
-                            {patientChartData.ongoing_medical_issues_details && (
-                              <div>
-                                <div className="text-xs text-gray-500 mb-1">Ongoing Medical Issues</div>
-                                <div className="text-white text-sm">{patientChartData.ongoing_medical_issues_details}</div>
-                              </div>
-                            )}
-                            {(patientChartData.vitals_bp || patientChartData.vitals_hr || patientChartData.vitals_temp) && (
-                              <div>
-                                <div className="text-xs text-gray-500 mb-1">Vitals</div>
-                                <div className="text-white text-sm">
-                                  {patientChartData.vitals_bp && `BP: ${patientChartData.vitals_bp}`}
-                                  {patientChartData.vitals_hr && ` HR: ${patientChartData.vitals_hr}`}
-                                  {patientChartData.vitals_temp && ` Temp: ${patientChartData.vitals_temp}`}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Problems & Medications */}
-                  <div className="bg-slate-800/50 rounded-2xl p-6 border border-white/10">
-                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                      <Activity className="h-5 w-5 text-cyan-400" />
-                      Problems & Medications
-                    </h3>
-                    
-                    <div className="space-y-6">
-                      {/* Active Problems */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-white">Active Problems</label>
-                          <button
-                            onClick={handleAddActiveProblem}
-                            disabled={!newActiveProblem.problem.trim() || savingProblems}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Add
-                          </button>
-                        </div>
-                        <div className="flex gap-2 mb-2">
-                          <input
-                            type="text"
-                            value={newActiveProblem.problem}
-                            onChange={(e) => setNewActiveProblem(prev => ({ ...prev, problem: e.target.value }))}
-                            placeholder="e.g., Type 2 Diabetes Mellitus"
-                            className="flex-1 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newActiveProblem.since}
-                            onChange={(e) => setNewActiveProblem(prev => ({ ...prev, since: e.target.value }))}
-                            placeholder="since 2019"
-                            className="w-32 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          {activeProblems.map((problem) => (
-                            <div key={problem.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {problem.problem}{problem.since && ` — since ${problem.since}`}
-                              </span>
-                              <button
-                                onClick={() => handleRemoveActiveProblem(problem.id)}
-                                className="text-red-400 hover:text-red-300 transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                          {activeProblems.length === 0 && (
-                            <p className="text-xs text-gray-400">No active problems</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Resolved Problems */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-white">Resolved Problems</label>
-                          <button
-                            onClick={handleAddResolvedProblem}
-                            disabled={!newResolvedProblem.problem.trim() || savingProblems}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Add
-                          </button>
-                        </div>
-                        <div className="flex gap-2 mb-2">
-                          <input
-                            type="text"
-                            value={newResolvedProblem.problem}
-                            onChange={(e) => setNewResolvedProblem(prev => ({ ...prev, problem: e.target.value }))}
-                            placeholder="e.g., Acne"
-                            className="flex-1 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newResolvedProblem.resolvedDate}
-                            onChange={(e) => setNewResolvedProblem(prev => ({ ...prev, resolvedDate: e.target.value }))}
-                            placeholder="resolved 2023"
-                            className="w-36 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          {resolvedProblems.map((problem) => (
-                            <div key={problem.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {problem.problem}{problem.resolvedDate && ` — resolved ${problem.resolvedDate}`}
-                              </span>
-                              <button
-                                onClick={() => handleRemoveResolvedProblem(problem.id)}
-                                className="text-red-400 hover:text-red-300 transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                          {resolvedProblems.length === 0 && (
-                            <p className="text-xs text-gray-400">No resolved problems</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Medication History */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-semibold text-white">Medication History (Surescripts)</label>
-                            <button
-                              onClick={() => setShowMedicationHistoryPanel(true)}
-                              className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 px-2 py-0.5 bg-cyan-500/10 rounded border border-cyan-500/20"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Open Full View
-                            </button>
-                          </div>
-                          <button
-                            onClick={handleAddMedicationHistory}
-                            disabled={!newMedHistory.medication.trim() || savingProblems}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Add
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 mb-2">
-                          <input
-                            type="text"
-                            value={newMedHistory.medication}
-                            onChange={(e) => setNewMedHistory(prev => ({ ...prev, medication: e.target.value }))}
-                            placeholder="e.g., Atorvastatin 20mg"
-                            className="col-span-2 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newMedHistory.provider}
-                            onChange={(e) => setNewMedHistory(prev => ({ ...prev, provider: e.target.value }))}
-                            placeholder="Provider"
-                            className="h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="date"
-                            value={newMedHistory.date}
-                            onChange={(e) => setNewMedHistory(prev => ({ ...prev, date: e.target.value }))}
-                            className="col-span-3 h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          {medicationHistory.map((med) => (
-                            <div key={med.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {med.medication} — {med.provider}{med.date && ` — ${med.date}`}
-                              </span>
-                              <button
-                                onClick={() => handleRemoveMedicationHistory(med.id)}
-                                className="text-red-400 hover:text-red-300 transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                          {medicationHistory.length === 0 && (
-                            <p className="text-xs text-gray-400">No medication history</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Active Medication Orders */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-white">Active Medication Orders</label>
-                          <button
-                            onClick={() => setShowMedicationHistoryPanel(true)}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 px-2 py-0.5 bg-cyan-500/10 rounded border border-cyan-500/20"
-                          >
-                            <Pill className="h-3 w-3" />
-                            View Recent Prescriptions
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-400 mb-2">Prescriptions sent from eRx Composer will appear here.</p>
-                        <div className="space-y-2">
-                          {activeMedOrders.map((order) => (
-                            <div key={order.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {order.medication}{order.sig && ` — ${order.sig}`} — {order.status}
-                              </span>
-                            </div>
-                          ))}
-                          {activeMedOrders.length === 0 && (
-                            <p className="text-xs text-gray-400">No active orders. Prescriptions sent from eRx Composer will appear here.</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Past Medication Orders */}
-                      <div>
-                        <label className="text-sm font-semibold text-white block mb-2">Past Medication Orders</label>
-                        <div className="space-y-2">
-                          {pastMedOrders.map((order) => (
-                            <div key={order.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {order.medication}{order.sig && ` — ${order.sig}`}{order.date && ` — ${order.date}`}
-                              </span>
-                            </div>
-                          ))}
-                          {pastMedOrders.length === 0 && (
-                            <p className="text-xs text-gray-400">No past orders</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Prescription Logs */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-white">Prescription Logs</label>
-                          <button
-                            onClick={handleAddPrescriptionLog}
-                            disabled={!newPrescriptionLog.medication.trim() || savingProblems}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Add
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2 mb-2">
-                          <input
-                            type="date"
-                            value={newPrescriptionLog.date}
-                            onChange={(e) => setNewPrescriptionLog(prev => ({ ...prev, date: e.target.value }))}
-                            className="h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newPrescriptionLog.medication}
-                            onChange={(e) => setNewPrescriptionLog(prev => ({ ...prev, medication: e.target.value }))}
-                            placeholder="Medication"
-                            className="h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newPrescriptionLog.quantity}
-                            onChange={(e) => setNewPrescriptionLog(prev => ({ ...prev, quantity: e.target.value }))}
-                            placeholder="Quantity"
-                            className="h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                          <input
-                            type="text"
-                            value={newPrescriptionLog.pharmacy}
-                            onChange={(e) => setNewPrescriptionLog(prev => ({ ...prev, pharmacy: e.target.value }))}
-                            placeholder="Pharmacy"
-                            className="h-8 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          {prescriptionLogs.map((log) => (
-                            <div key={log.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg border border-white/10">
-                              <span className="text-sm text-white">
-                                {log.date} — {log.medication} #{log.quantity} — {log.pharmacy} — {log.status}
-                              </span>
-                              <button
-                                onClick={() => handleRemovePrescriptionLog(log.id)}
-                                className="text-red-400 hover:text-red-300 transition-colors"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                          {prescriptionLogs.length === 0 && (
-                            <p className="text-xs text-gray-400">No prescription logs</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {savingProblems && (
-                        <div className="flex items-center gap-2 text-xs text-cyan-400">
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-cyan-400"></div>
-                          <span>Saving...</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button className="notification-close" onClick={() => setNotification(null)}>×</button>
           </div>
         </div>
       )}
 
+      {/* Thin Action Bar */}
+      <nav className="thin-action-bar">
+        <h1 className="page-title">Your Appointments</h1>
+        
+        {/* Left Panel Tabs */}
+        <div className="action-tabs">
+          <button 
+            className={`action-tab ${calendarViewType === 'week' && viewType === 'calendar' ? 'active' : ''}`}
+            onClick={() => { playSound('click'); setViewType('calendar'); setCalendarViewType('week'); }}
+          >
+            Week
+          </button>
+          <button 
+            className={`action-tab ${calendarViewType === 'month' && viewType === 'calendar' ? 'active' : ''}`}
+            onClick={() => { playSound('click'); setViewType('calendar'); setCalendarViewType('month'); }}
+          >
+            Month
+          </button>
+          <button 
+            className={`action-tab ${viewType === 'list' ? 'active' : ''}`}
+            onClick={() => { playSound('click'); setViewType('list'); }}
+          >
+            List
+          </button>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="action-search">
+          <span className="action-search-icon">🔍</span>
+          <input 
+            type="text" 
+            className="action-search-input" 
+            placeholder="Search patients..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        
+        {/* Back to Dashboard */}
+        <a href="/doctor/dashboard" className="back-to-dashboard" onClick={() => playSound('click')}>
+          ← Back to Dashboard
+        </a>
+      </nav>
+
+      {/* Main Container */}
+      <div className="container">
+        {/* Calendar / List View */}
+        {viewType === 'calendar' ? (
+          <div className="calendar-card">
+            {calendarViewType === 'week' ? (
+              <>
+                <div className="calendar-grid">
+                  {/* Header Row with Date Navigation */}
+                  <div className="calendar-header-cell time-header">
+                    <button className="inline-nav-btn" onClick={() => navigateCalendar('prev')}>◀</button>
+                  </div>
+                  {visibleDates.map((date, idx) => (
+                    <div key={`header-${idx}`} className="calendar-header-cell">
+                      {date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} {date.getDate()}
+                    </div>
+                  ))}
+                  <div className="calendar-header-cell nav-header">
+                    <button className="inline-nav-btn" onClick={() => navigateCalendar('next')}>▶</button>
+                  </div>
+                  
+                  {/* Calendar Rows */}
+                  {timeSlots.map((time, timeIndex) => [
+                    <div key={`time-${timeIndex}`} className="time-cell">{formatTime(time)}</div>,
+                    ...visibleDates.map((date, dayIndex) => {
+                      const apt = getAppointmentForSlot(date, time)
+                      const isAvailable = !apt
+                      
+                      return (
+                        <div 
+                          key={`cell-${timeIndex}-${dayIndex}`} 
+                          className="calendar-cell" 
+                          onMouseEnter={() => playSound('hover')}
+                          onClick={() => {
+                            if (isAvailable) {
+                              playSound('click')
+                              setSelectedSlotDate(date)
+                              setSelectedSlotTime(time)
+                              setShowCreateDialog(true)
+                            } else {
+                              playSound('click')
+                              setSelectedAppointmentId(apt.id)
+                            }
+                          }}
+                        >
+                          {apt ? (
+                            <div className={`slot booked ${apt.visit_type || 'video'}`}>
+                              <div className="slot-patient">{apt.patients?.first_name} {apt.patients?.last_name}</div>
+                              <span className={`slot-badge ${apt.visit_type || 'video'}`}>
+                                {apt.visit_type === 'video' ? '📹 VIDEO' : apt.visit_type === 'phone' ? '📞 PHONE' : apt.visit_type === 'async' ? '📝 ASYNC' : '🏥 VISIT'}
+                              </span>
+                              <div className="slot-reason">
+                                {(() => {
+                                  const reason = getAppointmentReason(apt)
+                                  if (!reason) return null
+                                  const words = reason.trim().split(/\s+/)
+                                  return words.slice(0, 2).join(' ')
+                                })()}
+                              </div>
+                              
+                              {/* Hover Popup */}
+                              <div className="slot-hover-popup">
+                                <div className="popup-header">📋 {apt.patients?.first_name} {apt.patients?.last_name}</div>
+                                <div className="popup-detail">
+                                  <span>🏥</span>
+                                  <span>{(apt.visit_type || 'video').charAt(0).toUpperCase() + (apt.visit_type || 'video').slice(1)} Visit</span>
+                                </div>
+                                <div className="popup-detail">
+                                  <span>📅</span>
+                                  <span>{date.toLocaleDateString('en-US', { weekday: 'long' })} at {formatTime(time)}</span>
+                                </div>
+                                <div className="popup-detail">
+                                  <span>📧</span>
+                                  <span>{apt.patients?.email || 'No email'}</span>
+                                </div>
+                                <div className="popup-detail">
+                                  <span>📱</span>
+                                  <span>{apt.patients?.phone || 'No phone'}</span>
+                                </div>
+                                <div className="popup-reason">
+                                  <strong>Reason:</strong> {getAppointmentReason(apt) || 'Not specified'}
+                                </div>
+                                <div className="popup-hint">🖱️ Click to open appointment details</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="slot available">
+                              <div className="slot-title">✨ Available</div>
+                              <div className="slot-time">{formatTime(time)}</div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }),
+                    <div key={`nav-${timeIndex}`} className="calendar-cell nav-cell"></div>
+                  ])}
+                </div>
+                <div className="hint">💡 Tip: Click a slot to schedule or view appointment details.</div>
+              </>
+            ) : (
+              /* Month View */
+              <>
+                <div className="month-grid">
+                  {/* Day headers */}
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className="month-header">{day}</div>
+                  ))}
+                  
+                  {/* Empty cells for days before first of month */}
+                  {Array.from({ length: visibleDates[0]?.getDay() || 0 }).map((_, i) => (
+                    <div key={`empty-${i}`} className="month-cell empty"></div>
+                  ))}
+                  
+                  {/* Day cells */}
+                  {visibleDates.map((date, index) => {
+                    const dayAppointments = filteredAppointments.filter(apt => {
+                      if (!apt.requested_date_time) return false
+                      const aptDate = convertToTimezone(apt.requested_date_time, DOCTOR_TIMEZONE)
+                      const aptDateStr = getDateString(aptDate, DOCTOR_TIMEZONE)
+                      const calendarDateStr = getDateString(convertToTimezone(date.toISOString(), DOCTOR_TIMEZONE), DOCTOR_TIMEZONE)
+                      return aptDateStr === calendarDateStr
+                    })
+                    
+                    return (
+                      <div key={index} className="month-cell" onMouseEnter={() => playSound('hover')}>
+                        <div className="month-day">{date.getDate()}</div>
+                        {dayAppointments.slice(0, 3).map((apt) => (
+                          <div 
+                            key={apt.id} 
+                            className={`month-appointment ${apt.visit_type || 'video'}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              playSound('click')
+                              setSelectedAppointmentId(apt.id)
+                            }}
+                          >
+                            {apt.patients?.first_name} {apt.patients?.last_name?.charAt(0)}.
+                          </div>
+                        ))}
+                        {dayAppointments.length > 3 && (
+                          <div className="month-more">+{dayAppointments.length - 3} more</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="hint">💡 Tip: Click an appointment to view details.</div>
+              </>
+            )}
+          </div>
+        ) : (
+          /* List View */
+          <div className="calendar-card">
+            <div className="list-view">
+              <table className="list-table">
+                <thead>
+                  <tr>
+                    <th>Patient</th>
+                    <th>Date & Time</th>
+                    <th>Type</th>
+                    <th>Reason</th>
+                    <th>Contact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAppointments.length > 0 ? (
+                    filteredAppointments.map((apt) => {
+                      const aptDate = apt.requested_date_time 
+                        ? convertToTimezone(apt.requested_date_time, DOCTOR_TIMEZONE)
+                        : null
+                      
+                      return (
+                        <tr
+                          key={apt.id}
+                          onClick={() => { playSound('click'); setSelectedAppointmentId(apt.id); }}
+                          onMouseEnter={() => playSound('hover')}
+                        >
+                          <td className="patient-name">
+                            {apt.patients?.first_name || ''} {apt.patients?.last_name || ''}
+                          </td>
+                          <td className="date-time">
+                            {aptDate ? (
+                              <>
+                                {aptDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' • '}
+                                {aptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                              </>
+                            ) : '—'}
+                          </td>
+                          <td>
+                            <span className={`list-badge ${apt.visit_type || 'video'}`}>
+                              {apt.visit_type === 'video' ? 'Video' :
+                               apt.visit_type === 'phone' ? 'Phone' :
+                               apt.visit_type === 'async' ? 'Async' : 'Visit'}
+                            </span>
+                          </td>
+                          <td className="reason">{getAppointmentReason(apt) || '—'}</td>
+                          <td className="contact">
+                            <div>{apt.patients?.email || '—'}</div>
+                            <div className="phone">{apt.patients?.phone || ''}</div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="empty-state">No appointments found</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Appointment Detail Modal */}
-      <AppointmentDetailModal
+      <AppointmentDetailModal 
         appointmentId={selectedAppointmentId}
-        isOpen={showAppointmentModal}
-        onClose={() => {
-          setShowAppointmentModal(false)
+        isOpen={!!selectedAppointmentId}
+        appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+        currentDate={currentDate}
+        onClose={() => setSelectedAppointmentId(null)}
+        onStatusChange={() => {
+          if (currentDoctorId) {
+            fetchAppointments(currentDoctorId, true)
+          }
+        }}
+        onAppointmentSwitch={(appointmentId) => {
+          setSelectedAppointmentId(appointmentId)
+        }}
+        onFollowUp={(patientData, date, time) => {
+          setFollowUpPatientData(patientData)
+          setSelectedSlotDate(date)
+          setSelectedSlotTime(time)
+          setShowCreateDialog(true)
           setSelectedAppointmentId(null)
         }}
-        onStatusChange={handleAppointmentStatusChange}
+        onSmsSent={(message) => {
+          showNotification('success', '📱 SMS SENT', message)
+        }}
       />
 
-      {/* Medication History Panel */}
-      {selectedPatient && (
-        <MedicationHistoryPanel
-          isOpen={showMedicationHistoryPanel}
-          onClose={() => setShowMedicationHistoryPanel(false)}
-          patientId={selectedPatient.id}
-          patientName={`${selectedPatient.first_name} ${selectedPatient.last_name}`}
-          patientDOB={selectedPatient.date_of_birth}
-          onReconcile={(medications) => {
-            // Add reconciled medications to the medication history state
-            const newMeds = medications.map((med, idx) => ({
-              id: `reconciled-${Date.now()}-${idx}`,
-              medication: med.medication_name,
-              provider: med.prescriber || 'Surescripts',
-              date: med.start_date || new Date().toISOString().split('T')[0]
-            }))
-            setMedicationHistory(prev => [...newMeds, ...prev])
-            saveProblemsAndMedications()
+      {/* Create Appointment Dialog */}
+      {currentDoctorId && selectedSlotDate && selectedSlotTime && (
+        <CreateAppointmentDialog
+          isOpen={showCreateDialog}
+          appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+          onClose={() => {
+            setShowCreateDialog(false)
+            setSelectedSlotDate(null)
+            setSelectedSlotTime(null)
+            setFollowUpPatientData(null)
           }}
-          onMedicationAdded={() => {
-            // Refresh chart data when medication is added/edited
-            if (selectedPatient) {
-              fetchPatientChart(selectedPatient.id)
+          onSuccess={() => {
+            if (currentDoctorId) {
+              fetchAppointments(currentDoctorId)
             }
+            setFollowUpPatientData(null)
           }}
+          doctorId={currentDoctorId}
+          selectedDate={selectedSlotDate}
+          selectedTime={selectedSlotTime}
+          patientData={followUpPatientData}
         />
       )}
     </div>
