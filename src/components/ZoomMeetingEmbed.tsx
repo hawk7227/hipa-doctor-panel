@@ -494,7 +494,7 @@ interface ZoomMeetingProps {
         return
       }
 
-        const response = await fetch(`/api/zoom/token/${accessToken}`, {
+        const response = await fetch('/api/zoom/token/${accessToken}', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ meetingNumber, role })
