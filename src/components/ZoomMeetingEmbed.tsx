@@ -462,53 +462,75 @@ export default function ZoomMeetingEmbed({
     </div>
   )
   
- 
-ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
+ ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
 ZoomMtg.preLoadWasm();
 ZoomMtg.prepareWebSDK();
 
 interface ZoomMeetingProps {
   meetingNumber: number;
   userName: string;
-  signature: string;
-  sdkKey: string;
+  userEmail?: string;
   password?: string;
-} => {
+}
+
+const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
+  meetingNumber,
+  userName,
+  userEmail,
+  password,
+}) => {
   useEffect(() => {
-	   const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    const getSignatureAndJoin = async () => {
+      try {
+        // ✅ Get Supabase session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      if (!accessToken) {
-        console.error('No access token found in session')
-        setCallStatus('Session expired. Please refresh and login again.')
-        return
+        const accessToken = session?.access_token;
+
+        if (!accessToken) {
+          console.error("No access token found");
+          return;
+        }
+
+        // ✅ Fetch signature from backend
+        const response = await fetch(
+          `/api/zoom/token/${accessToken}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              meetingNumber,
+              role: 0,
+            }),
+          }
+        );
+
+        const data = await response.json();
+        const signature = data.signature;
+
+        // ✅ Initialize & Join Zoom
+        ZoomMtg.init({
+          leaveUrl: "http://localhost:3000",
+          success: () => {
+            ZoomMtg.join({
+              sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
+              signature,
+              meetingNumber,
+              userName,
+              userEmail,
+              passWord: password,
+            });
+          },
+        });
+      } catch (error) {
+        console.error("Zoom join error:", error);
       }
-
-        const response = await fetch('/api/zoom/token/${accessToken}', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ meetingNumber, role })
-        })
-	  
-        const { signature } = response.data;
-
-      ZoomMtg.init({
-        leaveUrl: "http://localhost:3000",
-        success: () => {
-          ZoomMtg.join({
-            sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY,
-            signature,
-            meetingNumber,
-            userName,
-            userEmail,
-            passWord,
-          });
-        },
-      });
     };
 
     getSignatureAndJoin();
-  }, []);
+  }, [meetingNumber, userName, userEmail, password]);
 
   return <div id="zmmtg-root" />;
 };
