@@ -16,12 +16,6 @@ interface ZoomMeetingProps {
   userEmail?: string;
   password?: string;
 }
-interface ZoomMeetingProps {
-  meetingNumber: number;
-  userName: string;
-  userEmail?: string;
-  password?: string;
-}
 
 export const joinZoomMeeting = async ({
   meetingNumber,
@@ -539,7 +533,7 @@ export default function ZoomMeetingEmbed({
               Close
             </button>
 <ZoomMeeting
-  meetingNumber="88447926175"
+  meetingNumber=88447926175
   userName="Medazone Health"
   password="123456"
 />
