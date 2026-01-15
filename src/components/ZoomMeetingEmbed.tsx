@@ -513,21 +513,21 @@ const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
 
         // ✅ Initialize & Join Zoom
         ZoomMtg.join({
-  sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
-  signature,
-  meetingNumber,
-  userName,
-  userEmail,
-  passWord: password,
+		  sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
+		  signature,
+		  meetingNumber,
+		  userName,
+		  userEmail,
+		  passWord: password,
 
-  success: (res: any) => {
-    console.log("Zoom joined successfully", res);
-  },
+		  success: (res: any) => {
+			console.log("Zoom joined successfully", res);
+		  },
 
-  error: (err: any) => {
-    console.error("Zoom join failed", err);
-  },
-});
+		  error: (err: any) => {
+			console.error("Zoom join failed", err);
+		  },
+		});
       } catch (error) {
         console.error("Zoom join error:", error);
       }
