@@ -476,15 +476,31 @@ interface ZoomMeetingProps {
 } => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
-      const response = await axios.post<ZoomTokenResponse>(
-  "/api/zoom/token",
-  {
-    meetingNumber,
-    role: 0,
-  } as ZoomTokenRequest
-);
+	  const response = await fetch('/api/zoom/token', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        credentials: 'include', // Ensure cookies are sent
+        body: JSON.stringify({ identity: user.email })
+      })
+	   const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
 
-      const { signature } = response.data;
+      if (!accessToken) {
+        console.error('No access token found in session')
+        setCallStatus('Session expired. Please refresh and login again.')
+        return
+      }
+
+        const response = await fetch(`/api/zoom/token/${accessToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ meetingNumber, role })
+        })
+	  
+        const { signature } = response.data;
 
       ZoomMtg.init({
         leaveUrl: "http://localhost:3000",
