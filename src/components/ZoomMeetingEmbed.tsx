@@ -466,7 +466,7 @@ const MeetingComponent = ({ 84736033581,'HAWK7227@YAHOO.COM','Money129','cFUT3CE
   useEffect(() => {
     const getSignatureAndJoin = async () => {
       try {
-        const response = await axios.post('${this.baseUrl}/zoom/token', {
+        const response = await axios.post('/api/zoom/token', {
         // Fetch signature from your backend server endpoint
           meetingNumber: meetingNumber,
           role: role
