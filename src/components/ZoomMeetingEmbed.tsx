@@ -470,21 +470,13 @@ const MeetingComponent = () => {
   useEffect(() => {
     const client = ZoomMtgEmbedded.createClient();
 
-    client.init({
-      // Initialize with language and the element where the SDK should render
-      zoomAppRoot: "zmmtg-root", // Matches the div ID in index.html
-      language: "en-US",
-      // ... other initialization parameters ...
-    }).then(() => {
-      // Once initialized, join the meeting
-      client.join({
+    client.join({
         // Parameters for joining the meeting (get these securely from your backend)
         sdkKey: "YOUR_SDK_KEY",
         meetingNumber: "MEETING_NUMBER",
         userName: "YOUR_USER_NAME",
         // ... other parameters like signature (JWT), password, etc. ...
       });
-    });
   }, []);
 
   return (
