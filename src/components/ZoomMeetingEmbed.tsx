@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
-/* 
+ 
 const ZoomMeeting: React.FC = () => {
 
   const joinMeeting = async () => {
@@ -42,7 +42,6 @@ const ZoomMeeting: React.FC = () => {
 };
 
 
- */
 
 
 
