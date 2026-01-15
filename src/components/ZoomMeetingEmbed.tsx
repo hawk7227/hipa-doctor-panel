@@ -4,43 +4,71 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
  
-const ZoomMeeting: React.FC = () => {
 
-  const joinMeeting = async () => {
-    const signature = await fetch("http://localhost:8000/api/zoom-signature")
-      .then(res => res.text());
+const ZoomMeeting = ({ meetingNumber, userName, userEmail, passWord, role, authEndpoint }) => {
+  const client = ZoomMtgEmbedded.createClient();
 
-    ZoomMtg.init({
-      leaveUrl: "http://localhost:3000",
-      success: () => {
-        ZoomMtg.join({
-          signature: signature,
-          sdkKey: "YOUR_SDK_KEY",
-          meetingNumber: "86216608352",
-          userName: "React User",
-          passWord: "123456",
-          success: () => {
-            console.log("Joined meeting");
-          },
-          error: (err) => {
-            console.error(err);
-          }
-        });
-      },
-      error: (err) => {
-        console.error(err);
-      }
-    });
+  // Function to get the signature from your backend
+  const getSignature = async () => {
+    try {
+      const req = await fetch(authEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meetingNumber, role }),
+      });
+      const res = await req.json();
+      return res.signature as string;
+    } catch (e) {
+      console.error(e);
+      return '';
+    }
   };
 
+  // Function to initialize and join the meeting
+  const startMeeting = async (signature: string) => {
+    const meetingSDKElement = document.getElementById('meetingSDKElement');
+    if (!meetingSDKElement) return;
+
+    try {
+      await client.init({
+        zoomAppRoot: meetingSDKElement,
+        language: 'en-US',
+      });
+      await client.join({
+        signature,
+        meetingNumber,
+        password: passWord,
+        userName,
+        userEmail,
+        // Optional parameters: tk (registrant token), zak (ZAK token)
+      });
+      console.log('Joined successfully');
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  useEffect(() => {
+    // Dynamically load the SDK assets if needed, then get signature and start meeting
+    getSignature().then(signature => {
+      if (signature) {
+        startMeeting(signature);
+      }
+    });
+
+    return () => {
+      // Clean up when the component unmounts (optional, depending on application flow)
+      client.leaveMeeting();
+    };
+  }, []);
+
   return (
-    <div>
-      <button onClick={joinMeeting}>Join Zoom Meeting</button>
-      <div id="zmmtg-root"></div>
-    </div>
+    // The div where the Zoom meeting UI will be rendered
+    <div id="meetingSDKElement" style={{ width: '100%', height: '500px' }} />
   );
 };
 
+export default ZoomMeeting;
 
 
 
