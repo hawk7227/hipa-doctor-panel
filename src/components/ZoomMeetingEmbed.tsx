@@ -17,61 +17,69 @@ interface ZoomMeetingProps {
   password?: string;
 }
 
-export const joinZoomMeeting = async ({
+const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
   meetingNumber,
   userName,
   userEmail,
   password,
-}: ZoomMeetingProps): Promise<void> => {
-  try {
-    // Get Supabase session
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+}) => {
+  useEffect(() => {
+    const getSignatureAndJoin = async () => {
+      try {
+        // ✅ Get Supabase session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-    const accessToken = session?.access_token;
+        const accessToken = session?.access_token;
 
-    if (!accessToken) {
-      throw new Error("No access token found");
-    }
+        if (!accessToken) {
+          console.error("No access token found");
+          return;
+        }
 
-    // Fetch Zoom signature
-    const response = await fetch(`/api/zoom/token/${accessToken}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        meetingNumber,
-        role: 0,
-      }),
-    });
+        // ✅ Fetch signature from backend
+        const response = await fetch(
+          `/api/zoom/token/${accessToken}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              meetingNumber,
+              role: 0,
+            }),
+          }
+        );
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch Zoom signature");
-    }
+        const data = await response.json();
+        const signature = data.signature;
 
-    const data = await response.json();
-    const signature: string = data.signature;
+        // ✅ Initialize & Join Zoom
+        ZoomMtg.join({
+		  sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
+		  signature,
+		  meetingNumber,
+		  userName,
+		  userEmail,
+		  passWord: password,
 
-    // Join Zoom meeting
-    ZoomMtg.join({
-      sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
-      signature,
-      meetingNumber,
-      userName,
-      userEmail,
-      passWord: password,
+		  success: (res: any) => {
+			console.log("Zoom joined successfully", res);
+		  },
 
-      success: (res: any) => {
-        console.log("Zoom joined successfully", res);
-      },
+		  error: (err: any) => {
+			console.error("Zoom join failed", err);
+		  },
+		});
+      } catch (error) {
+        console.error("Zoom join error:", error);
+      }
+    };
 
-      error: (err: any) => {
-        console.error("Zoom join failed", err);
-      },
-    });
-  } catch (error) {
-    console.error("Zoom join error:", error);
-  }
+    getSignatureAndJoin();
+  }, [meetingNumber, userName, userEmail, password]);
+
+  return <div id="zmmtg-root" />;
 };
 
 interface ZoomMeetingEmbedProps {
@@ -468,7 +476,7 @@ export default function ZoomMeetingEmbed({
               Close
             </button>
 			
-		<joinZoomMeeting
+		<ZoomMeeting
 		  meetingNumber="86216608352"
 		  userName="React User"
 		  password="123456"
