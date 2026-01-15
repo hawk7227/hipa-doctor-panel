@@ -463,45 +463,33 @@ export default function ZoomMeetingEmbed({
   
   
 
-const App = () => {
-  const meetingNumber = "YOUR_MEETING_NUMBER";
-  const passWord = "YOUR_MEETING_PASSWORD"; // Optional, if set
-  const userName = "John Doe";
-  const [signature, setSignature] = useState(null);
+const MeetingComponent = () => {
+  // ... component logic to generate a secure JWT and meeting parameters ...
 
+  // Use a useEffect hook to initialize and join the meeting
   useEffect(() => {
-    const getSignature = async () => {
-      // Replace with your actual auth endpoint URL
-      const authEndpoint = "http://localhost:4000/api/get-signature";
+    const client = ZoomMtgEmbedded.createClient();
 
-      try {
-        const req = await fetch(authEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            meetingNumber: meetingNumber,
-            role: 0,
-          }),
-        });
-        const res = await req.json();
-        setSignature(res.signature as string);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-
-    getSignature();
-  }, [meetingNumber]);
-
-  if (!signature) return <div>Loading Zoom meeting...</div>;
+    client.init({
+      // Initialize with language and the element where the SDK should render
+      zoomAppRoot: "zmmtg-root", // Matches the div ID in index.html
+      language: "en-US",
+      // ... other initialization parameters ...
+    }).then(() => {
+      // Once initialized, join the meeting
+      client.join({
+        // Parameters for joining the meeting (get these securely from your backend)
+        sdkKey: "YOUR_SDK_KEY",
+        meetingNumber: "MEETING_NUMBER",
+        userName: "YOUR_USER_NAME",
+        // ... other parameters like signature (JWT), password, etc. ...
+      });
+    });
+  }, []);
 
   return (
-    <ZoomMeeting
-      meetingNumber={meetingNumber}
-      userName={userName}
-      signature={signature}
-      password={passWord}
-    />
+    // The SDK will render within the div you specified
+    <div id="zmmtg-root" style={{ width: '100%', height: '500px' }} />
   );
 };
 
