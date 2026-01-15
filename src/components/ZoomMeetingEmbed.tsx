@@ -463,7 +463,7 @@ export default function ZoomMeetingEmbed({
   
  
 
-const MeetingComponent = ({ 84736033581,'HAWK7227@YAHOO.COM','Money129','cFUT3CEySzC3lE95rZLv0Q', role }) => {
+const MeetingComponent = ({ 84736033581,'HAWK7227@YAHOO.COM','Money129','cFUT3CEySzC3lE95rZLv0Q', 1 }) => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
       try {
