@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
 import { ZoomMtg } from '@zoom/meetingsdk';
+import { supabase } from '@/lib/supabase'
  
 interface ZoomMeetingEmbedProps {
   appointment: {
