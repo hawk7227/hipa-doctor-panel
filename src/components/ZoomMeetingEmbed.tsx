@@ -472,7 +472,7 @@ const MeetingComponent = () => {
 
     client.join({
         // Parameters for joining the meeting (get these securely from your backend)
-        meetingNumber: 84736033581,
+        meetingNumber: '84736033581',
 	    userName: 'HAWK7227@YAHOO.COM',
 	    passWord: 'Money129',
 	    sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
