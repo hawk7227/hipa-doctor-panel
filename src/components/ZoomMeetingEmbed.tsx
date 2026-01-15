@@ -476,10 +476,13 @@ interface ZoomMeetingProps {
 } => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
-      const response = await axios.post("/api/zoom/token", {
-        meetingNumber,
-        role,
-      });
+      const response = await axios.post<ZoomTokenResponse>(
+  "/api/zoom/token",
+  {
+    meetingNumber,
+    role: 0,
+  } as ZoomTokenRequest
+);
 
       const { signature } = response.data;
 
