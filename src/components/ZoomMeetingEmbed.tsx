@@ -68,7 +68,7 @@ const ZoomMeeting = ({ meetingNumber, userName, userEmail, passWord, role, authE
   );
 };
 
-export function ZoomMeeting;
+
 
 
 
