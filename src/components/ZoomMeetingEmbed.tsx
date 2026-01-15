@@ -462,29 +462,88 @@ export default function ZoomMeetingEmbed({
   )
   
   
+const ZoomMeetingComponent: React.FC = () => {
+  const client = ZoomMtgEmbedded.createClient();
+  const [inMeeting, setInMeeting] = useState(false);
+  const meetingSDKElement = useRef<HTMLDivElement>(null);
 
-const MeetingComponent = () => {
-  // ... component logic to generate a secure JWT and meeting parameters ...
+  // Replace with your actual meeting details and auth endpoint
+  const authEndpoint = "http://localhost:4000/api/get-signature"; 
+  const meetingNumber = "YOUR_MEETING_NUMBER";
+  const passWord = "YOUR_MEETING_PASSWORD"; // Optional
+  const userName = "John Doe";
+  const userEmail = "john.doe@example.com";
+  const role = 0; // 0 for participant, 1 for host
 
-  // Use a useEffect hook to initialize and join the meeting
-  useEffect(() => {
-    const client = ZoomMtgEmbedded.createClient();
-
-    client.join({
-        // Parameters for joining the meeting (get these securely from your backend)
-        meetingNumber: '84736033581',
-	    userName: 'HAWK7227@YAHOO.COM',
-	    passWord: 'Money129',
-	    sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
-        // ... other parameters like signature (JWT), password, etc. ...
+  const getSignature = async () => {
+    try {
+      const response = await fetch(authEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ '84736033581', 1 }),
       });
+      const data = await response.json();
+      return data.signature as string;
+    } catch (e) {
+      console.error("Failed to fetch signature", e);
+      return "";
+    }
+  };
+
+  const startMeeting = async (signature: string) => {
+    if (!meetingSDKElement.current) return;
+
+    try {
+      await client.init({
+        zoomAppRoot: meetingSDKElement.current,
+        language: "en-US",
+        leaveOnPageUnload: true,
+      });
+
+      await client.join({
+        signature: signature,
+		meetingNumber: '84736033581',
+        userName: 'HAWK7227@YAHOO.COM',
+        passWord: 'Money129',
+        sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
+        tk: "", // Optional registrant token
+        zak: "", // Optional ZAK token
+      });
+      setInMeeting(true);
+      console.log("Joined successfully");
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  useEffect(() => {
+    const joinMeeting = async () => {
+      const signature = await getSignature();
+      if (signature) {
+        startMeeting(signature);
+      }
+    };
+
+    joinMeeting();
+
+    return () => {
+      // Clean up when the component unmounts
+      if (inMeeting) {
+        client.leave();
+      }
+    };
   }, []);
 
   return (
-    // The SDK will render within the div you specified
-    <div id="zmmtg-root" style={{ width: '100%', height: '500px' }} />
+    <div>
+      <h1>Zoom Meeting Integration</h1>
+      <div ref={meetingSDKElement} style={{ width: '100%', height: '500px' }} />
+      {/* Add controls here if using the Video SDK for a custom UI */}
+    </div>
   );
 };
+
+
 
 }
 
