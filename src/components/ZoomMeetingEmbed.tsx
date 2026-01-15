@@ -467,13 +467,13 @@ ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
 ZoomMtg.preLoadWasm();
 ZoomMtg.prepareWebSDK();
 
-const MeetingComponent = ({
-  meetingNumber,
-  userName,
-  userEmail,
-  passWord,
-  role,
-}) => {
+interface ZoomMeetingProps {
+  meetingNumber: number;
+  userName: string;
+  signature: string;
+  sdkKey: string;
+  password?: string;
+} => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
       const response = await axios.post("/api/zoom/token", {
