@@ -399,7 +399,11 @@ export default function ZoomMeetingEmbed({
               <X className="h-4 w-4" />
               Close
             </button>
-
+<ZoomMeeting
+  meetingNumber="88447926175 "
+  userName="Medazone Health"
+  password="123456"
+/>
             <iframe
               src={appointment?.zoom_start_url ?? ''}
               className="w-full h-full border-0"
