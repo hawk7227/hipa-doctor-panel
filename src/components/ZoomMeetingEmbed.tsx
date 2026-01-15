@@ -11,7 +11,7 @@ ZoomMtg.preLoadWasm();
 ZoomMtg.prepareWebSDK();
 
 interface ZoomMeetingProps {
-  meetingNumber: number;
+  meetingNumber: string;
   userName: string;
   userEmail?: string;
   password?: string;
@@ -467,7 +467,12 @@ export default function ZoomMeetingEmbed({
               <X className="h-4 w-4" />
               Close
             </button>
-
+			
+		<joinZoomMeeting
+		  meetingNumber="86216608352"
+		  userName="React User"
+		  password="123456"
+		/>
             <iframe
               src={appointment?.zoom_start_url ?? ''}
               className="w-full h-full border-0"
