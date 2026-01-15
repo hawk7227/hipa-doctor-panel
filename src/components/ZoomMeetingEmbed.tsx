@@ -483,7 +483,7 @@ const ZoomMeetingComponent: React.FC = () => {
         body: JSON.stringify({ '84736033581', 1 }),
       });
       const data = await response.json();
-      return data.signature as string;
+      return data.signature;
     } catch (e) {
       console.error("Failed to fetch signature", e);
       return "";
