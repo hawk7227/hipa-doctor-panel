@@ -397,7 +397,13 @@ export default function ZoomMeetingEmbed({
               <X className="h-4 w-4" />
               Close
             </button>
-
+<MeetingComponent
+  meetingNumber="84736033581"
+  userName="HAWK7227"
+  userEmail="HAWK7227@YAHOO.COM"
+  passWord="Money129"
+  role={1}
+/>
             <iframe
               src={appointment?.zoom_start_url ?? ''}
               className="w-full h-full border-0"
@@ -462,52 +468,45 @@ export default function ZoomMeetingEmbed({
   )
   
  
+ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
+ZoomMtg.preLoadWasm();
+ZoomMtg.prepareWebSDK();
 
-const MeetingComponent = ({ 84736033581,'HAWK7227@YAHOO.COM','Money129','cFUT3CEySzC3lE95rZLv0Q', 1 }) => {
+const MeetingComponent = ({
+  meetingNumber,
+  userName,
+  userEmail,
+  passWord,
+  role,
+}) => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
-      try {
-        const response = await axios.post('/api/zoom/token', {
-        // Fetch signature from your backend server endpoint
-          meetingNumber: meetingNumber,
-          role: role
-        });
-        const { signature } = response.data; // The generated signature
+      const response = await axios.post("/api/zoom/token", {
+        meetingNumber,
+        role,
+      });
 
-        // Configure Zoom SDK
-        ZoomMtg.preLoadWasm();
-        ZoomMtg.prepareWebSDK();
+      const { signature } = response.data;
 
-        // Initialize and join the meeting
-        ZoomMtg.init({
-          leaveUrl: '${this.baseUrl}/zoom/token',
-          success: () => {
-            ZoomMtg.join({
-              signature: signature,
-              meetingNumber: meetingNumber,
-              userName: userName,
-              userEmail: userEmail,
-              passWord: passWord,
-              sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY, // Your SDK Key (client-side safe)
-              success: () => console.log('Joined meeting successfully'),
-              error: (err) => console.error('Failed to join meeting:', err)
-            });
-          },
-          error: (err) => console.error('Failed to initialize SDK:', err)
-        });
-      } catch (error) {
-        console.error('Error fetching signature:', error);
-      }
+      ZoomMtg.init({
+        leaveUrl: "http://localhost:3000",
+        success: () => {
+          ZoomMtg.join({
+            sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY,
+            signature,
+            meetingNumber,
+            userName,
+            userEmail,
+            passWord,
+          });
+        },
+      });
     };
 
     getSignatureAndJoin();
-  }, [meetingNumber, userName, userEmail, passWord, role]);
+  }, []);
 
-  return (
-    <div id="zmmtg-root">
-      {/* Zoom Meeting SDK UI will render here */}
-    </div>
-  );
+  return <div id="zmmtg-root" />;
 };
 
 
