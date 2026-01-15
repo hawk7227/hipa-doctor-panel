@@ -475,16 +475,6 @@ interface ZoomMeetingProps {
   password?: string;
 } => {
   useEffect(() => {
-    const getSignatureAndJoin = async () => {
-	  const response = await fetch('/api/zoom/token', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        credentials: 'include', // Ensure cookies are sent
-        body: JSON.stringify({ identity: user.email })
-      })
 	   const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
