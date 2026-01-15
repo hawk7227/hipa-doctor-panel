@@ -462,11 +462,7 @@ export default function ZoomMeetingEmbed({
   )
   
  
-const MeetingComponent = ({ 
-			meetingNumber: 84736033581,
-          userName: 'HAWK7227@YAHOO.COM',
-          passWord: 'Money129',
-          sdkKey: 'cFUT3CEySzC3lE95rZLv0Q', role }) => {
+const MeetingComponent = ({ 84736033581,'HAWK7227@YAHOO.COM','Money129','cFUT3CEySzC3lE95rZLv0Q', role }) => {
   useEffect(() => {
     const getSignatureAndJoin = async () => {
       try {
