@@ -6,7 +6,7 @@ import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
 import { ZoomMtg } from '@zoom/meetingsdk';
 import { supabase } from '@/lib/supabase'
  
- ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
+ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
 ZoomMtg.preLoadWasm();
 ZoomMtg.prepareWebSDK();
 
@@ -467,11 +467,7 @@ export default function ZoomMeetingEmbed({
               <X className="h-4 w-4" />
               Close
             </button>
-<ZoomMeeting
-  meetingNumber=88447926175
-  userName="Medazone Health"
-  password="123456"
-/>
+
             <iframe
               src={appointment?.zoom_start_url ?? ''}
               className="w-full h-full border-0"
