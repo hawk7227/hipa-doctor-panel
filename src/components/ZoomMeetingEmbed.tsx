@@ -477,7 +477,7 @@ const ZoomMeetingComponent: React.FC = () => {
 
   const getSignature = async () => {
     try {
-      const response = await fetch(authEndpoint, {
+      const response = await fetch('/api/zoom/token', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ '84736033581', 1 }),
