@@ -68,7 +68,7 @@ const ZoomMeeting = ({ meetingNumber, userName, userEmail, passWord, role, authE
   );
 };
 
-function  ZoomMeeting;
+export default ZoomMeeting;
 
 
 
@@ -224,7 +224,7 @@ export function FloatingWindow({
   )
 }
 
-export default function ZoomMeetingEmbed({
+ function ZoomMeetingEmbed({
   appointment,
   currentUser,
   isCustomizeMode = false,
