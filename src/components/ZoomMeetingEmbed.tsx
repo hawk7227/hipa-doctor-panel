@@ -65,12 +65,12 @@ const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
               userEmail,
               passWord: password,
               success: () => console.log("✅ Joined Zoom"),
-              error: (err) => console.error("❌ Join error", err),
+              error: (err: any) => console.error("❌ Join error", err),
             });
           },
-          error: (err) => console.error("❌ Init error", err),
+          error: (err: any) => console.error("❌ Init error", err),
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error("Zoom join error:", err);
       }
     };
