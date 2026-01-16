@@ -39,7 +39,6 @@ console.log('DSSSSSS');
           return;
         }
 
-console.log(accessToken);
         // ✅ Fetch signature from backend
         const response = await fetch(
           `/api/zoom/token/${accessToken}`,
@@ -56,6 +55,7 @@ console.log(accessToken);
         const data = await response.json();
         const signature = data.signature;
 		
+console.log(data);
         // ✅ Initialize & Join Zoom
         ZoomMtg.join({
 		  sdkKey: 'cFUT3CEySzC3lE95rZLv0Q' as string,
