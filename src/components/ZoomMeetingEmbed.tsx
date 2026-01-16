@@ -81,7 +81,7 @@ console.log(data);
     getSignatureAndJoin();
   }, [meetingNumber, userName, userEmail, password]);
 
-  return ('<div ="zoom-meeting"></div>');
+  return (<div id="zmmtg-root"></div>);
 };
 
 interface ZoomMeetingEmbedProps {
