@@ -56,7 +56,7 @@ const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
 
         // ✅ Initialize & Join Zoom
         ZoomMtg.join({
-		  sdkKey: process.env.REACT_APP_ZOOM_SDK_KEY as string,
+		  sdkKey: 'cFUT3CEySzC3lE95rZLv0Q' as string,
 		  signature,
 		  meetingNumber,
 		  userName,
