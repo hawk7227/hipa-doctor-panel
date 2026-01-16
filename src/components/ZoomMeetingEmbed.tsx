@@ -41,7 +41,7 @@ console.log('DSSSSSS');
 
         // ✅ Fetch signature from backend
         const response = await fetch(
-          `/api/zoom/token/${accessToken}`,
+          `/api/zoom/token/`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
