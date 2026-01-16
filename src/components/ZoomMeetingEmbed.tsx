@@ -53,7 +53,7 @@ const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
 
         const data = await response.json();
         const signature = data.signature;
-
+console.log('DSSSSSS');
         // ✅ Initialize & Join Zoom
         ZoomMtg.join({
 		  sdkKey: 'cFUT3CEySzC3lE95rZLv0Q' as string,
