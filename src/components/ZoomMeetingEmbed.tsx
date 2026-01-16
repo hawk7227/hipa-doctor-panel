@@ -16,79 +16,69 @@ interface ZoomMeetingProps {
   userEmail?: string;
   password?: string;
 }
-
 const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
   meetingNumber,
   userName,
   userEmail,
   password,
 }) => {
+  const joinedRef = useRef(false);
+
   useEffect(() => {
+    if (joinedRef.current) return;
+    joinedRef.current = true;
+
     const getSignatureAndJoin = async () => {
-console.log('DSSSSSS');
       try {
-        // ✅ Get Supabase session
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
         const accessToken = session?.access_token;
+        if (!accessToken) throw new Error("No access token");
 
-        if (!accessToken) {
-          console.error("No access token found");
-          return;
+        const response = await fetch("/api/zoom/token/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            meetingNumber,
+            role: 0,
+          }),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text);
         }
 
-        // ✅ Fetch signature from backend
-        const response = await fetch(
-          `/api/zoom/token/`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              meetingNumber,
-              role: 0,
-            }),
-          }
-        );
+        const { signature } = await response.json();
 
-        const data = await response.json();
-        const signature = data.signature;
-		
-console.log('signature:'+signature);
-        // ✅ Initialize & Join Zoom
         ZoomMtg.init({
-    leaveUrl: "https://doctor.medazonhealth.com/doctor/appointments",
-    patchJsMedia: true,
-    success: () => {
-      ZoomMtg.join({
-        signature: signature,
-        sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
-        meetingNumber: meetingNumber,
-        userName: userName,
-        passWord: passWord,
-        success: () => {
-          console.log("✅ Zoom meeting joined");
-        },
-        error: (err) => {
-          console.error("❌ Join error", err);
-        },
-      });
-    },
-    error: (err) => {
-      console.error("❌ Init error", err);
-    },
-  });
-};
-      } catch (error) {
-        console.error("Zoom join error:", error);
+          leaveUrl: "https://doctor.medazonhealth.com/doctor/appointments",
+          patchJsMedia: true,
+          success: () => {
+            ZoomMtg.join({
+              signature,
+              sdkKey: import.meta.env.VITE_ZOOM_SDK_KEY,
+              meetingNumber,
+              userName,
+              userEmail,
+              passWord: password,
+              success: () => console.log("✅ Joined Zoom"),
+              error: (err) => console.error("❌ Join error", err),
+            });
+          },
+          error: (err) => console.error("❌ Init error", err),
+        });
+      } catch (err) {
+        console.error("Zoom join error:", err);
       }
     };
 
     getSignatureAndJoin();
-  }, [meetingNumber, userName, userEmail, password]);
+  }, []);
 
-  return (<div id="zmmtg-root"></div>);
+  return <div />;
 };
 
 interface ZoomMeetingEmbedProps {
