@@ -24,17 +24,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+	<script src="https://source.zoom.us/3.1.6/lib/vendor/lodash.min.js"></script>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-900 text-white`}
         suppressHydrationWarning
       >
         {children}
 		
-     <script src="https://source.zoom.us/2.15.0/lib/vendor/react.min.js"></script>
-<script src="https://source.zoom.us/2.15.0/lib/vendor/react-dom.min.js"></script>
-<script src="https://source.zoom.us/2.15.0/lib/vendor/redux.min.js"></script>
-<script src="https://source.zoom.us/2.15.0/lib/vendor/redux-thunk.min.js"></script>
-<script src="https://source.zoom.us/2.15.0/zoom-meeting-2.15.0.min.js"></script>
       </body>
     </html>
   );
