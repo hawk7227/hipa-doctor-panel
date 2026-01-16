@@ -39,6 +39,7 @@ console.log('DSSSSSS');
           return;
         }
 
+console.log(accessToken);
         // ✅ Fetch signature from backend
         const response = await fetch(
           `/api/zoom/token/${accessToken}`,
