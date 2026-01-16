@@ -59,7 +59,7 @@ const ZoomMeeting: React.FC<ZoomMeetingProps> = ({
           success: () => {
             ZoomMtg.join({
               signature,
-              sdkKey: import.meta.env.VITE_ZOOM_SDK_KEY,
+              sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
               meetingNumber,
               userName,
               userEmail,
