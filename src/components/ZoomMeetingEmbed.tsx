@@ -57,22 +57,29 @@ console.log('DSSSSSS');
 		
 console.log('signature:'+signature);
         // ✅ Initialize & Join Zoom
-        ZoomMtg.join({
-		  sdkKey: 'cFUT3CEySzC3lE95rZLv0Q' as string,
-		  signature,
-		  meetingNumber,
-		  userName,
-		  userEmail,
-		  passWord: password,
-
-		  success: (res: any) => {
-			console.log("Zoom joined successfully", res);
-		  },
-
-		  error: (err: any) => {
-			console.error("Zoom join failed", err);
-		  },
-		});
+        ZoomMtg.init({
+    leaveUrl: "https://doctor.medazonhealth.com/doctor/appointments",
+    patchJsMedia: true,
+    success: () => {
+      ZoomMtg.join({
+        signature: signature,
+        sdkKey: 'cFUT3CEySzC3lE95rZLv0Q',
+        meetingNumber: meetingNumber,
+        userName: userName,
+        passWord: passWord,
+        success: () => {
+          console.log("✅ Zoom meeting joined");
+        },
+        error: (err) => {
+          console.error("❌ Join error", err);
+        },
+      });
+    },
+    error: (err) => {
+      console.error("❌ Init error", err);
+    },
+  });
+};
       } catch (error) {
         console.error("Zoom join error:", error);
       }
