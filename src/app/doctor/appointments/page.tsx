@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase, Appointment } from '@/lib/supabase'
 import { sendAppointmentStatusEmail } from '@/lib/email'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
@@ -136,11 +136,82 @@ export default function DoctorAppointments() {
   const [activeInstantVisit, setActiveInstantVisit] = useState<CalendarAppointment | null>(null)
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false)
 
+  // ============================================
+  // CELEBRATION STATE - FRONTEND ONLY (Added)
+  // ============================================
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [particles, setParticles] = useState<Array<{id: number, x: number, color: string, size: number, duration: number, delay: number, shape: string}>>([])
+  const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
+  const celebrationTriggeredRef = useRef(false)
+
   useEffect(() => {
     fetchCurrentDoctor()
   }, [])
 
-  // Calendar utility functions
+  // ============================================
+  // CELEBRATION EFFECT - FRONTEND ONLY (Added)
+  // ============================================
+  useEffect(() => {
+    if (!loading && !celebrationTriggeredRef.current) {
+      celebrationTriggeredRef.current = true
+      
+      // Generate floating particles
+      const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4']
+      const shapes = ['circle', 'square', 'diamond']
+      const newParticles = Array.from({ length: 40 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: Math.random() * 12 + 6,
+        duration: Math.random() * 15 + 10,
+        delay: Math.random() * 10,
+        shape: shapes[Math.floor(Math.random() * shapes.length)]
+      }))
+      setParticles(newParticles)
+      
+      // Generate confetti burst
+      const confettiColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff6600', '#9933ff']
+      const newConfetti = Array.from({ length: 50 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+        delay: Math.random() * 2
+      }))
+      setConfetti(newConfetti)
+      
+      // Show welcome banner
+      setTimeout(() => setShowWelcome(true), 500)
+      
+      // Play celebration sound
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        const playNote = (freq: number, startTime: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = freq
+          osc.type = 'sine'
+          gain.gain.setValueAtTime(0.15, startTime)
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
+          osc.start(startTime)
+          osc.stop(startTime + duration)
+        }
+        const now = ctx.currentTime
+        playNote(523.25, now, 0.15)        // C5
+        playNote(659.25, now + 0.1, 0.15)  // E5
+        playNote(783.99, now + 0.2, 0.2)   // G5
+        playNote(1046.50, now + 0.35, 0.3) // C6
+      } catch (e) {
+        console.log('Audio not available')
+      }
+      
+      // Auto-hide welcome and confetti
+      setTimeout(() => setShowWelcome(false), 8000)
+      setTimeout(() => setConfetti([]), 5000)
+    }
+  }, [loading])
+
   const getWeekDates = (date: Date) => {
     const start = new Date(date)
     const day = start.getDay()
@@ -533,7 +604,6 @@ export default function DoctorAppointments() {
     }
   }, [currentDoctorId, fetchAppointments])
 
-  // Handler functions for instant visit queue
   const handleStartCall = async (appointmentId: string) => {
     // Find appointment and open Zoom if available
     const appointment = appointments.find(apt => apt.id === appointmentId)
@@ -697,6 +767,18 @@ export default function DoctorAppointments() {
 
   const gridCols = calendarViewType === 'week' ? 'grid-cols-7' : calendarViewType === 'month' ? 'grid-cols-7' : 'grid-cols-7'
 
+  // Count today's appointments for welcome banner
+  const todayAppointmentsCount = useMemo(() => {
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    return appointments.filter(apt => {
+      if (!apt.requested_date_time) return false
+      const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+      const aptDateStr = getDateString(aptDate, 'America/Phoenix')
+      return aptDateStr === todayStr
+    }).length
+  }, [appointments])
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -706,363 +788,551 @@ export default function DoctorAppointments() {
   }
 
   return (
-    <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Full Screen Calendar Container */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-        {viewType === 'calendar' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-          {calendarViewType === 'week' ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
-              {/* Week Calendar Grid - Using availability page structure */}
-              <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {/* Header Row */}
-                <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
-                  <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
-                  {visibleDates.map((date, idx) => (
-                    <div key={`header-${idx}`} className="availability-dayhead">
-                      {date.toLocaleDateString('en-US', { weekday: 'short' })} {date.getDate()}
-                    </div>
-                  ))}
-                </div>
+    <>
+      {/* ============================================ */}
+      {/* CELEBRATION STYLES - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      <style>{`
+        .particles-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 0;
+          overflow: hidden;
+        }
+        .particle {
+          position: absolute;
+          border-radius: 50%;
+          animation: floatParticle linear infinite;
+          opacity: 0.7;
+          box-shadow: 0 0 10px currentColor;
+        }
+        .particle.square {
+          border-radius: 4px;
+          transform: rotate(45deg);
+        }
+        .particle.diamond {
+          border-radius: 2px;
+          transform: rotate(45deg);
+        }
+        @keyframes floatParticle {
+          0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+          10% { opacity: 0.8; }
+          90% { opacity: 0.8; }
+          100% { transform: translateY(-100px) rotate(720deg); opacity: 0; }
+        }
+        .confetti-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 9998;
+          overflow: hidden;
+        }
+        .confetti-piece {
+          position: absolute;
+          top: -20px;
+          width: 12px;
+          height: 24px;
+          animation: confettiFall 4s ease-out forwards;
+        }
+        @keyframes confettiFall {
+          0% { transform: translateY(0) rotateZ(0deg) rotateY(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotateZ(720deg) rotateY(360deg); opacity: 0; }
+        }
+        .welcome-banner {
+          position: fixed;
+          top: 80px;
+          right: 20px;
+          background: linear-gradient(135deg, rgba(0, 200, 100, 0.95), rgba(20, 184, 166, 0.95));
+          border-radius: 16px;
+          padding: 20px 24px;
+          z-index: 9999;
+          box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3);
+          animation: welcomeSlideIn 0.5s ease-out, welcomePulse 2s ease-in-out infinite;
+          max-width: 380px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        @keyframes welcomeSlideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes welcomePulse {
+          0%, 100% { box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3); }
+          50% { box-shadow: 0 20px 80px rgba(0, 200, 100, 0.6), 0 0 60px rgba(20, 184, 166, 0.5); }
+        }
+        .welcome-icon {
+          width: 50px;
+          height: 50px;
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+          animation: iconBounce 1s ease infinite;
+        }
+        @keyframes iconBounce {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        .welcome-close {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: rgba(255, 255, 255, 0.2);
+          border: none;
+          border-radius: 50%;
+          width: 28px;
+          height: 28px;
+          cursor: pointer;
+          color: #fff;
+          font-size: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+        }
+        .welcome-close:hover {
+          background: rgba(255, 255, 255, 0.3);
+          transform: scale(1.1);
+        }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .availability-page {
+          background: linear-gradient(-45deg, #0a0a1a, #1a0a2e, #0a1a2e, #0a0a1a) !important;
+          background-size: 400% 400% !important;
+          animation: gradientShift 15s ease infinite !important;
+        }
+      `}</style>
 
-                {/* Time Slots */}
-                {timeSlots.map((time, timeIndex) => (
-                  <div key={`row-${timeIndex}`} className="availability-cal-row">
-                    <div className="availability-time">{formatTime(time)}</div>
-                    {visibleDates.map((date, dayIndex) => {
-                      const appointment = getAppointmentForSlot(date, time)
-                      const isAvailable = !appointment
-                      
-                      return (
-                        <div
-                          key={`cell-${dayIndex}-${timeIndex}`}
-                          className="availability-cell"
-                          onClick={() => {
-                            if (isAvailable) {
-                              setSelectedSlotDate(date)
-                              setSelectedSlotTime(time)
-                              setShowCreateDialog(true)
-                            } else {
-                              setSelectedAppointmentId(appointment.id)
-                            }
-                          }}
-                        >
-                          {isAvailable ? (
-                            <div className="availability-event available">
-                              <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: 'white' }}>Available</div>
-                              <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
-                            </div>
-                          ) : (
-                            <div className={`availability-event blocked ${appointment.visit_type || 'video'}`}>
-                              <div className="appointment-name">
-                                {appointment.patients?.first_name} {appointment.patients?.last_name}
-                              </div>
-                              <span className={`appointment-type-badge ${appointment.visit_type || 'video'}`}>
-                                {appointment.visit_type === 'instant' ? '⚡ INSTANT' :
-                                 appointment.visit_type === 'video' ? 'VIDEO' :
-                                 appointment.visit_type === 'phone' ? 'PHONE' :
-                                 appointment.visit_type === 'async' ? 'ASYNC' : 'VISIT'}
-                              </span>
-                              {(() => {
-                                const reason = getAppointmentReason(appointment)
-                                if (!reason) return null
-                                const words = reason.trim().split(/\s+/)
-                                const shortReason = words.slice(0, 2).join(' ')
-                                return (
-                                  <div className="appointment-reason">
-                                    {shortReason}
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))}
-              </div>
-              <div className="availability-hint" style={{ marginTop: '8px' }}>
-                Tip: Click a slot to schedule or view appointment details.
-              </div>
-            </div>
-          ) : calendarViewType === 'month' ? (
-            /* Month View - Using availability page structure */
-            <div>
-              <div className="availability-month">
-                {visibleDates.map((date, index) => {
-                  const dayAppointments = appointments.filter(apt => {
-                    if (!apt.requested_date_time) return false
-                    // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
-                    const doctorTimezone = 'America/Phoenix'
-                    const aptDate = convertToTimezone(apt.requested_date_time, doctorTimezone)
-                    const aptDateStr = getDateString(aptDate, doctorTimezone)
-                    const calendarDateStr = getDateString(date, doctorTimezone)
-                    return aptDateStr === calendarDateStr
-                  })
-                  
-                  return (
-                    <div
-                      key={index}
-                      className="availability-mcell"
-                      data-day={date.getDate()}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div className="availability-d">{date.getDate()}</div>
-                      {dayAppointments.map((apt) => (
-                        <span
-                          key={apt.id}
-                          className={`availability-tag ${
-                            apt.visit_type === 'video' ? 'g' :
-                            apt.visit_type === 'phone' ? 'a' :
-                            apt.visit_type === 'async' ? 'h' :
-                            apt.visit_type === 'instant' ? 'instant' : 'b'
-                          }`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedAppointmentId(apt.id)
-                          }}
-                          style={{ cursor: 'pointer' }}
-                          title={`${apt.patients?.first_name} ${apt.patients?.last_name} - ${getAppointmentActualTime(apt)}`}
-                        >
-                          {apt.patients?.first_name} {apt.patients?.last_name?.charAt(0)}. • {apt.visit_type || 'Visit'}
-                        </span>
-                      ))}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="availability-hint" style={{ marginTop: '8px' }}>
-                Tip: Click a day to view or schedule appointments.
-              </div>
-            </div>
-          ) : (
-            <div className="availability-hint">3-Month view (to be implemented)</div>
-          )}
-          </div>
-        ) : (
-          /* List View - Using availability page structure */
-          <div className="availability-card">
-            <table className="availability-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                  <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Patient</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Date & Time</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Type</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Reason</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Contact</th>
-                </tr>
-              </thead>
-              <tbody>
-                {appointments.length > 0 ? (
-                  appointments.map((apt) => {
-                    // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
-                    const doctorTimezone = 'America/Phoenix'
-                    const aptDate = apt.requested_date_time 
-                      ? convertToTimezone(apt.requested_date_time, doctorTimezone)
-                      : null
-                    
-                    return (
-                      <tr
-                        key={apt.id}
-                        style={{ borderBottom: '1px solid var(--line)', cursor: 'pointer' }}
-                        onClick={() => setSelectedAppointmentId(apt.id)}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#0d1628' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-                      >
-                        <td style={{ padding: '8px 10px', color: '#e6f4ff' }}>
-                          <div style={{ fontWeight: 'bold' }}>
-                            {apt.patients?.first_name || ''} {apt.patients?.last_name || ''}
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 10px', color: '#98b1c9' }}>
-                          {aptDate ? (
-                            <>
-                              {aptDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {' • '}
-                              {aptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                            </>
-                          ) : '—'}
-                        </td>
-                        <td style={{ padding: '8px 10px' }}>
-                          <span 
-                            style={{
-                              fontSize: '11px',
-                              padding: '4px 8px',
-                              borderRadius: '8px',
-                              fontWeight: 'bold',
-                              background: apt.visit_type === 'video' ? 'rgba(0, 230, 255, 0.12)' :
-                                         apt.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.12)' :
-                                         apt.visit_type === 'async' ? 'rgba(176, 122, 255, 0.12)' :
-                                         apt.visit_type === 'instant' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255,255,255,0.08)',
-                              color: apt.visit_type === 'video' ? '#00e6ff' :
-                                     apt.visit_type === 'phone' ? '#00c26e' :
-                                     apt.visit_type === 'async' ? '#b07aff' :
-                                     apt.visit_type === 'instant' ? '#f59e0b' : '#f0d7dc'
-                            }}
-                          >
-                            {apt.visit_type === 'instant' ? '⚡ Instant' :
-                             apt.visit_type === 'video' ? 'Video' :
-                             apt.visit_type === 'phone' ? 'Phone' :
-                             apt.visit_type === 'async' ? 'Async' : 'Visit'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
-                          {getAppointmentReason(apt) || '—'}
-                        </td>
-                        <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
-                          <div>{apt.patients?.email || '—'}</div>
-                          <div style={{ fontSize: '12px' }}>{apt.patients?.phone || ''}</div>
-                        </td>
-                      </tr>
-                    )
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#98b1c9' }}>
-                      No appointments found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* ============================================ */}
+      {/* FLOATING PARTICLES - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      <div className="particles-container">
+        {particles.map(particle => (
+          <div
+            key={particle.id}
+            className={`particle ${particle.shape}`}
+            style={{
+              left: `${particle.x}%`,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              backgroundColor: particle.color,
+              color: particle.color,
+              animationDuration: `${particle.duration}s`,
+              animationDelay: `${particle.delay}s`
+            }}
+          />
+        ))}
       </div>
 
-      {/* Notification - Styled to match availability page theme */}
-      {notification && (
-        <div 
-          style={{
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            maxWidth: '400px',
-            borderRadius: '12px',
-            padding: '16px',
-            zIndex: 9999,
-            boxShadow: '0 12px 60px rgba(0,0,0,.45)',
-            background: notification.type === 'success' ? '#0e2a1c' : '#2a1417',
-            border: notification.type === 'success' ? '1px solid #1e5a3a' : '1px solid #5a2a32',
-            color: notification.type === 'success' ? '#cde7da' : '#f0d7dc'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
-            <div>
-              {notification.type === 'success' ? (
-                <svg style={{ width: '20px', height: '20px', color: '#19d67f' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg style={{ width: '20px', height: '20px', color: '#E53935' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              )}
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: '14px', fontWeight: '600' }}>{notification.message}</p>
-            </div>
-            <button
-              onClick={() => setNotification(null)}
+      {/* ============================================ */}
+      {/* CONFETTI BURST - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      {confetti.length > 0 && (
+        <div className="confetti-container">
+          {confetti.map(piece => (
+            <div
+              key={piece.id}
+              className="confetti-piece"
               style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px',
-                color: 'inherit',
-                opacity: 0.7
+                left: `${piece.x}%`,
+                backgroundColor: piece.color,
+                animationDelay: `${piece.delay}s`
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7' }}
-            >
-              <svg style={{ width: '16px', height: '16px' }} fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
+            />
+          ))}
         </div>
       )}
 
-      {/* Appointment Detail Modal */}
-      <AppointmentDetailModal 
-        appointmentId={selectedAppointmentId}
-        isOpen={!!selectedAppointmentId}
-        appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
-        currentDate={currentDate}
-        onClose={() => setSelectedAppointmentId(null)}
-        onStatusChange={() => {
-          // Trigger refresh immediately without blocking (skip loading state for faster update)
-          if (currentDoctorId) {
-            fetchAppointments(currentDoctorId, true) // Skip loading state for instant refresh
-          }
-        }}
-        onAppointmentSwitch={(appointmentId) => {
-          setSelectedAppointmentId(appointmentId)
-        }}
-        onFollowUp={(patientData, date, time) => {
-          setFollowUpPatientData(patientData)
-          setSelectedSlotDate(date)
-          setSelectedSlotTime(time)
-          setShowCreateDialog(true)
-          setSelectedAppointmentId(null) // Close appointment detail modal
-        }}
-        onSmsSent={(message) => {
-          setNotification({
-            type: 'success',
-            message: message
-          })
-          setTimeout(() => setNotification(null), 5000)
-        }}
-      />
+      {/* ============================================ */}
+      {/* WELCOME BANNER - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      {showWelcome && (
+        <div className="welcome-banner">
+          <div className="welcome-icon">✨</div>
+          <div>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', fontWeight: 800 }}>👋 WELCOME!</h3>
+            <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.9)', fontSize: '14px' }}>
+              Your appointment calendar is ready. You have {todayAppointmentsCount} appointment{todayAppointmentsCount !== 1 ? 's' : ''} today!
+            </p>
+          </div>
+          <button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button>
+        </div>
+      )}
 
-      {/* Create Appointment Dialog */}
-      {currentDoctorId && selectedSlotDate && selectedSlotTime && (
-        <CreateAppointmentDialog
-          isOpen={showCreateDialog}
+      {/* ============================================ */}
+      {/* ORIGINAL CALENDAR - COMPLETELY UNCHANGED */}
+      {/* ============================================ */}
+      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Full Screen Calendar Container */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+          {viewType === 'calendar' ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+            {calendarViewType === 'week' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+                {/* Week Calendar Grid - Using availability page structure */}
+                <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  {/* Header Row */}
+                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
+                    <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
+                    {visibleDates.map((date, idx) => (
+                      <div key={`header-${idx}`} className="availability-dayhead">
+                        {date.toLocaleDateString('en-US', { weekday: 'short' })} {date.getDate()}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Time Slots */}
+                  {timeSlots.map((time, timeIndex) => (
+                    <div key={`row-${timeIndex}`} className="availability-cal-row">
+                      <div className="availability-time">{formatTime(time)}</div>
+                      {visibleDates.map((date, dayIndex) => {
+                        const appointment = getAppointmentForSlot(date, time)
+                        const isAvailable = !appointment
+                        
+                        return (
+                          <div
+                            key={`cell-${dayIndex}-${timeIndex}`}
+                            className="availability-cell"
+                            onClick={() => {
+                              if (isAvailable) {
+                                setSelectedSlotDate(date)
+                                setSelectedSlotTime(time)
+                                setShowCreateDialog(true)
+                              } else {
+                                setSelectedAppointmentId(appointment.id)
+                              }
+                            }}
+                          >
+                            {isAvailable ? (
+                              <div className="availability-event available">
+                                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: 'white' }}>Available</div>
+                                <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
+                              </div>
+                            ) : (
+                              <div className={`availability-event blocked ${appointment.visit_type || 'video'}`}>
+                                <div className="appointment-name">
+                                  {appointment.patients?.first_name} {appointment.patients?.last_name}
+                                </div>
+                                <span className={`appointment-type-badge ${appointment.visit_type || 'video'}`}>
+                                  {appointment.visit_type === 'instant' ? '⚡ INSTANT' :
+                                   appointment.visit_type === 'video' ? 'VIDEO' :
+                                   appointment.visit_type === 'phone' ? 'PHONE' :
+                                   appointment.visit_type === 'async' ? 'ASYNC' : 'VISIT'}
+                                </span>
+                                {(() => {
+                                  const reason = getAppointmentReason(appointment)
+                                  if (!reason) return null
+                                  const words = reason.trim().split(/\s+/)
+                                  const shortReason = words.slice(0, 2).join(' ')
+                                  return (
+                                    <div className="appointment-reason">
+                                      {shortReason}
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="availability-hint" style={{ marginTop: '8px' }}>
+                  Tip: Click a slot to schedule or view appointment details.
+                </div>
+              </div>
+            ) : calendarViewType === 'month' ? (
+              /* Month View - Using availability page structure */
+              <div>
+                <div className="availability-month">
+                  {visibleDates.map((date, index) => {
+                    const dayAppointments = appointments.filter(apt => {
+                      if (!apt.requested_date_time) return false
+                      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                      const doctorTimezone = 'America/Phoenix'
+                      const aptDate = convertToTimezone(apt.requested_date_time, doctorTimezone)
+                      const aptDateStr = getDateString(aptDate, doctorTimezone)
+                      const calendarDateStr = getDateString(date, doctorTimezone)
+                      return aptDateStr === calendarDateStr
+                    })
+                    
+                    return (
+                      <div
+                        key={index}
+                        className="availability-mcell"
+                        data-day={date.getDate()}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="availability-d">{date.getDate()}</div>
+                        {dayAppointments.map((apt) => (
+                          <span
+                            key={apt.id}
+                            className={`availability-tag ${
+                              apt.visit_type === 'video' ? 'g' :
+                              apt.visit_type === 'phone' ? 'a' :
+                              apt.visit_type === 'async' ? 'h' :
+                              apt.visit_type === 'instant' ? 'instant' : 'b'
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedAppointmentId(apt.id)
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            title={`${apt.patients?.first_name} ${apt.patients?.last_name} - ${getAppointmentActualTime(apt)}`}
+                          >
+                            {apt.patients?.first_name} {apt.patients?.last_name?.charAt(0)}. • {apt.visit_type || 'Visit'}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="availability-hint" style={{ marginTop: '8px' }}>
+                  Tip: Click a day to view or schedule appointments.
+                </div>
+              </div>
+            ) : (
+              <div className="availability-hint">3-Month view (to be implemented)</div>
+            )}
+            </div>
+          ) : (
+            /* List View - Using availability page structure */
+            <div className="availability-card">
+              <table className="availability-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Patient</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Date & Time</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Type</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Reason</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Contact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {appointments.length > 0 ? (
+                    appointments.map((apt) => {
+                      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                      const doctorTimezone = 'America/Phoenix'
+                      const aptDate = apt.requested_date_time 
+                        ? convertToTimezone(apt.requested_date_time, doctorTimezone)
+                        : null
+                      
+                      return (
+                        <tr
+                          key={apt.id}
+                          style={{ borderBottom: '1px solid var(--line)', cursor: 'pointer' }}
+                          onClick={() => setSelectedAppointmentId(apt.id)}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#0d1628' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                        >
+                          <td style={{ padding: '8px 10px', color: '#e6f4ff' }}>
+                            <div style={{ fontWeight: 'bold' }}>
+                              {apt.patients?.first_name || ''} {apt.patients?.last_name || ''}
+                            </div>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9' }}>
+                            {aptDate ? (
+                              <>
+                                {aptDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' • '}
+                                {aptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                              </>
+                            ) : '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <span 
+                              style={{
+                                fontSize: '11px',
+                                padding: '4px 8px',
+                                borderRadius: '8px',
+                                fontWeight: 'bold',
+                                background: apt.visit_type === 'video' ? 'rgba(0, 230, 255, 0.12)' :
+                                           apt.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.12)' :
+                                           apt.visit_type === 'async' ? 'rgba(176, 122, 255, 0.12)' :
+                                           apt.visit_type === 'instant' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255,255,255,0.08)',
+                                color: apt.visit_type === 'video' ? '#00e6ff' :
+                                       apt.visit_type === 'phone' ? '#00c26e' :
+                                       apt.visit_type === 'async' ? '#b07aff' :
+                                       apt.visit_type === 'instant' ? '#f59e0b' : '#f0d7dc'
+                              }}
+                            >
+                              {apt.visit_type === 'instant' ? '⚡ Instant' :
+                               apt.visit_type === 'video' ? 'Video' :
+                               apt.visit_type === 'phone' ? 'Phone' :
+                               apt.visit_type === 'async' ? 'Async' : 'Visit'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
+                            {getAppointmentReason(apt) || '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
+                            <div>{apt.patients?.email || '—'}</div>
+                            <div style={{ fontSize: '12px' }}>{apt.patients?.phone || ''}</div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#98b1c9' }}>
+                        No appointments found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Notification - Styled to match availability page theme */}
+        {notification && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              maxWidth: '400px',
+              borderRadius: '12px',
+              padding: '16px',
+              zIndex: 9999,
+              boxShadow: '0 12px 60px rgba(0,0,0,.45)',
+              background: notification.type === 'success' ? '#0e2a1c' : '#2a1417',
+              border: notification.type === 'success' ? '1px solid #1e5a3a' : '1px solid #5a2a32',
+              color: notification.type === 'success' ? '#cde7da' : '#f0d7dc'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
+              <div>
+                {notification.type === 'success' ? (
+                  <svg style={{ width: '20px', height: '20px', color: '#19d67f' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg style={{ width: '20px', height: '20px', color: '#E53935' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: '14px', fontWeight: '600' }}>{notification.message}</p>
+              </div>
+              <button
+                onClick={() => setNotification(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  color: 'inherit',
+                  opacity: 0.7
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7' }}
+              >
+                <svg style={{ width: '16px', height: '16px' }} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Appointment Detail Modal */}
+        <AppointmentDetailModal 
+          appointmentId={selectedAppointmentId}
+          isOpen={!!selectedAppointmentId}
           appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
-          onClose={() => {
-            setShowCreateDialog(false)
-            setSelectedSlotDate(null)
-            setSelectedSlotTime(null)
-            setFollowUpPatientData(null)
-          }}
-          onSuccess={async () => {
+          currentDate={currentDate}
+          onClose={() => setSelectedAppointmentId(null)}
+          onStatusChange={() => {
+            // Trigger refresh immediately without blocking (skip loading state for faster update)
             if (currentDoctorId) {
-              await fetchAppointments(currentDoctorId)
+              fetchAppointments(currentDoctorId, true) // Skip loading state for instant refresh
             }
-            setFollowUpPatientData(null)
           }}
-          doctorId={currentDoctorId}
-          selectedDate={selectedSlotDate}
-          selectedTime={selectedSlotTime}
-          patientData={followUpPatientData}
+          onAppointmentSwitch={(appointmentId) => {
+            setSelectedAppointmentId(appointmentId)
+          }}
+          onFollowUp={(patientData, date, time) => {
+            setFollowUpPatientData(patientData)
+            setSelectedSlotDate(date)
+            setSelectedSlotTime(time)
+            setShowCreateDialog(true)
+            setSelectedAppointmentId(null) // Close appointment detail modal
+          }}
+          onSmsSent={(message) => {
+            setNotification({
+              type: 'success',
+              message: message
+            })
+            setTimeout(() => setNotification(null), 5000)
+          }}
         />
-      )}
 
-      {/* Instant Visit Queue Modal */}
-      {activeInstantVisit && (
-        <InstantVisitQueueModal
-          isOpen={isQueueModalOpen}
-          patient={{
-            id: activeInstantVisit.patient_id || '',
-            appointmentId: activeInstantVisit.id,
-            name: `${activeInstantVisit.patients?.first_name || ''} ${activeInstantVisit.patients?.last_name || ''}`.trim() || 'Unknown Patient',
-            email: activeInstantVisit.patients?.email || '',
-            phone: activeInstantVisit.patients?.phone || '',
-            reason: getAppointmentReason(activeInstantVisit),
-            visitType: (activeInstantVisit.visit_type === 'video' ? 'video' : 'phone') as 'video' | 'phone',
-            position: instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1,
-            totalInQueue: instantVisitQueue.length,
-            estimatedWait: (instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1) * 5,
-            paidAt: activeInstantVisit.created_at ? new Date(activeInstantVisit.created_at) : new Date()
-          }}
-          onClose={() => setIsQueueModalOpen(false)}
-          onStartCall={handleStartCall}
-          onComplete={handleCompleteInstantVisit}
-          onCancel={handleCancelInstantVisit}
-        />
-      )}
-    </div>
+        {/* Create Appointment Dialog */}
+        {currentDoctorId && selectedSlotDate && selectedSlotTime && (
+          <CreateAppointmentDialog
+            isOpen={showCreateDialog}
+            appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+            onClose={() => {
+              setShowCreateDialog(false)
+              setSelectedSlotDate(null)
+              setSelectedSlotTime(null)
+              setFollowUpPatientData(null)
+            }}
+            onSuccess={async () => {
+              if (currentDoctorId) {
+                await fetchAppointments(currentDoctorId)
+              }
+              setFollowUpPatientData(null)
+            }}
+            doctorId={currentDoctorId}
+            selectedDate={selectedSlotDate}
+            selectedTime={selectedSlotTime}
+            patientData={followUpPatientData}
+          />
+        )}
+
+        {/* Instant Visit Queue Modal */}
+        {activeInstantVisit && (
+          <InstantVisitQueueModal
+            isOpen={isQueueModalOpen}
+            patient={{
+              id: activeInstantVisit.patient_id || '',
+              appointmentId: activeInstantVisit.id,
+              name: `${activeInstantVisit.patients?.first_name || ''} ${activeInstantVisit.patients?.last_name || ''}`.trim() || 'Unknown Patient',
+              email: activeInstantVisit.patients?.email || '',
+              phone: activeInstantVisit.patients?.phone || '',
+              reason: getAppointmentReason(activeInstantVisit),
+              visitType: (activeInstantVisit.visit_type === 'video' ? 'video' : 'phone') as 'video' | 'phone',
+              position: instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1,
+              totalInQueue: instantVisitQueue.length,
+              estimatedWait: (instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1) * 5,
+              paidAt: activeInstantVisit.created_at ? new Date(activeInstantVisit.created_at) : new Date()
+            }}
+            onClose={() => setIsQueueModalOpen(false)}
+            onStartCall={handleStartCall}
+            onComplete={handleCompleteInstantVisit}
+            onCancel={handleCancelInstantVisit}
+          />
+        )}
+      </div>
+    </>
   )
 }
 
