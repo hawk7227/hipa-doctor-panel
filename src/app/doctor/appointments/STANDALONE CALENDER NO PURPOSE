@@ -1,0 +1,937 @@
+'use client'
+
+/**
+ * ============================================
+ * STANDALONE APPOINTMENTS CALENDAR UTILITIES
+ * ============================================
+ * 
+ * This file contains all reusable calendar functions and utilities
+ * that can be imported and used in other components.
+ * 
+ * Features:
+ * - Phoenix timezone handling
+ * - Calendar date generation (week/month/3-month)
+ * - Time slot generation and formatting
+ * - Appointment mapping with O(1) lookup
+ * - Real-time Supabase subscriptions
+ * - Instant visit handlers
+ * - Celebration effects (particles, confetti, sound)
+ * - Custom React hooks for calendar state management
+ */
+
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { supabase, Appointment } from '@/lib/supabase'
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+interface ClinicalNote {
+  id: string
+  note_type: string
+  content: string | null
+}
+
+export interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_date_time' | 'visit_type'> {
+  requested_date_time: string | null
+  visit_type: string | null
+  patients?: {
+    first_name?: string | null
+    last_name?: string | null
+    email?: string | null
+    phone?: string | null
+    chief_complaint?: string | null
+  } | null
+  doctors?: {
+    timezone: string
+  }
+  clinical_notes?: ClinicalNote[] | null
+  subjective_notes?: string | null
+  chief_complaint?: string | null
+  reason?: string | null
+}
+
+export type ViewType = 'calendar' | 'list'
+export type CalendarViewType = 'week' | 'month' | '3month'
+
+// ============================================
+// TIMEZONE UTILITIES
+// ============================================
+
+/**
+ * Converts a UTC date string to a specific timezone
+ * Returns a Date object with UTC values representing the timezone's local time
+ */
+export function convertToTimezone(dateString: string, timezone: string): Date {
+  const date = new Date(dateString)
+  
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', options)
+  const parts = formatter.formatToParts(date)
+  
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  const hour = parseInt(getValue('hour'))
+  const minute = parseInt(getValue('minute'))
+  const second = parseInt(getValue('second'))
+  
+  return new Date(Date.UTC(year, month, day, hour, minute, second))
+}
+
+/**
+ * Gets a date string in YYYY-MM-DD format
+ * When timezone is provided, uses UTC methods (for converted dates)
+ */
+export function getDateString(date: Date, timezone?: string): string {
+  if (timezone) {
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Creates a time slot explicitly as Phoenix time
+ * Returns a UTC Date representing Phoenix local time
+ */
+export function createPhoenixTimeSlot(hour: number, minute: number): Date {
+  const today = new Date()
+  const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Phoenix',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = phoenixFormatter.formatToParts(today)
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  
+  return new Date(Date.UTC(year, month, day, hour, minute, 0))
+}
+
+// ============================================
+// CALENDAR DATE UTILITIES
+// ============================================
+
+/**
+ * Gets dates for a week starting from Monday
+ */
+export function getWeekDates(date: Date): Date[] {
+  const start = new Date(date)
+  const day = start.getDay()
+  const diff = start.getDate() - day + (day === 0 ? -6 : 1)
+  start.setDate(diff)
+  
+  const dates: Date[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    dates.push(d)
+  }
+  return dates
+}
+
+/**
+ * Gets all dates in a month
+ */
+export function getMonthDates(date: Date): Date[] {
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  const lastDay = new Date(year, month + 1, 0)
+  
+  const dates: Date[] = []
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    dates.push(new Date(year, month, day))
+  }
+  return dates
+}
+
+/**
+ * Gets dates for three months starting from current month
+ */
+export function getThreeMonthDates(date: Date): Date[] {
+  const dates: Date[] = []
+  const startMonth = date.getMonth()
+  const year = date.getFullYear()
+  
+  for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
+    const lastDay = new Date(year, startMonth + monthOffset + 1, 0)
+    
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      dates.push(new Date(year, startMonth + monthOffset, day))
+    }
+  }
+  return dates
+}
+
+/**
+ * Navigates calendar by direction
+ */
+export function navigateCalendarDate(
+  currentDate: Date, 
+  direction: 'prev' | 'next', 
+  viewType: CalendarViewType
+): Date {
+  const newDate = new Date(currentDate)
+  if (viewType === 'week') {
+    newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
+  } else if (viewType === 'month') {
+    newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
+  } else if (viewType === '3month') {
+    newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 3 : -3))
+  }
+  return newDate
+}
+
+// ============================================
+// TIME UTILITIES
+// ============================================
+
+/**
+ * Formats a time slot for display (e.g., "9:30 AM")
+ */
+export function formatTime(date: Date): string {
+  const hours = date.getUTCHours()
+  const minutes = date.getUTCMinutes()
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const displayHours = hours % 12 || 12
+  const displayMinutes = minutes.toString().padStart(2, '0')
+  return `${displayHours}:${displayMinutes} ${period}`
+}
+
+/**
+ * Gets the actual appointment time formatted for display
+ */
+export function getAppointmentActualTime(appointment: CalendarAppointment): string {
+  if (!appointment.requested_date_time) return ''
+  
+  const doctorTimezone = 'America/Phoenix'
+  const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+  
+  const hours = appointmentDate.getUTCHours()
+  const minutes = appointmentDate.getUTCMinutes()
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const displayHours = hours % 12 || 12
+  const displayMinutes = minutes.toString().padStart(2, '0')
+  
+  return `${displayHours}:${displayMinutes} ${period}`
+}
+
+/**
+ * Rounds a time to the nearest 30-minute slot
+ */
+export function roundToNearestSlot(appointmentDate: Date): Date {
+  const rounded = new Date(appointmentDate)
+  const minutes = appointmentDate.getUTCMinutes()
+  const hours = appointmentDate.getUTCHours()
+  
+  if (minutes < 15) {
+    rounded.setUTCMinutes(0, 0, 0)
+    rounded.setUTCHours(hours)
+  } else if (minutes < 45) {
+    rounded.setUTCMinutes(30, 0, 0)
+    rounded.setUTCHours(hours)
+  } else {
+    rounded.setUTCMinutes(0, 0, 0)
+    rounded.setUTCHours(hours + 1)
+  }
+  
+  return rounded
+}
+
+// ============================================
+// APPOINTMENT UTILITIES
+// ============================================
+
+/**
+ * Gets the reason from clinical notes or fallback fields
+ */
+export function getAppointmentReason(appointment: CalendarAppointment): string {
+  if (appointment.clinical_notes && appointment.clinical_notes.length > 0) {
+    const reasonNote = appointment.clinical_notes.find(
+      note => note.note_type === 'chief_complaint' || note.note_type === 'subjective'
+    )
+    if (reasonNote?.content) {
+      return reasonNote.content
+    }
+  }
+  
+  return appointment.chief_complaint || 
+         appointment.patients?.chief_complaint || 
+         appointment.reason || 
+         ''
+}
+
+/**
+ * Creates a memoized appointment lookup map for O(1) access
+ */
+export function createAppointmentMap(appointments: CalendarAppointment[]): Map<string, CalendarAppointment> {
+  const map = new Map<string, CalendarAppointment>()
+  const doctorTimezone = 'America/Phoenix'
+  
+  appointments.forEach(appointment => {
+    if (!appointment.requested_date_time) return
+    
+    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+    const dateStr = getDateString(appointmentDate, doctorTimezone)
+    const roundedSlot = roundToNearestSlot(appointmentDate)
+    
+    const hour = roundedSlot.getUTCHours()
+    const minute = roundedSlot.getUTCMinutes()
+    const key = `${dateStr}_${hour}_${minute}`
+    
+    map.set(key, appointment)
+  })
+  
+  return map
+}
+
+/**
+ * Gets appointment for a specific slot
+ */
+export function getAppointmentForSlot(
+  date: Date, 
+  time: Date, 
+  appointmentMap: Map<string, CalendarAppointment>
+): CalendarAppointment | null {
+  const doctorTimezone = 'America/Phoenix'
+  
+  const dateInPhoenix = convertToTimezone(date.toISOString(), doctorTimezone)
+  const slotDateStr = getDateString(dateInPhoenix, doctorTimezone)
+  
+  const hour = time.getUTCHours()
+  const minute = time.getUTCMinutes()
+  
+  const key = `${slotDateStr}_${hour}_${minute}`
+  
+  return appointmentMap.get(key) || null
+}
+
+/**
+ * Generates time slots from 5 AM to 8 PM
+ */
+export function generateTimeSlots(): Date[] {
+  const slots: Date[] = []
+  for (let hour = 5; hour <= 20; hour++) {
+    for (let minute = 0; minute < 60; minute += 30) {
+      slots.push(createPhoenixTimeSlot(hour, minute))
+    }
+  }
+  return slots
+}
+
+// ============================================
+// DATA FETCHING FUNCTIONS
+// ============================================
+
+/**
+ * Fetches the current doctor from Supabase auth
+ */
+export async function fetchCurrentDoctor(): Promise<{ id: string } | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      console.error('No authenticated user found')
+      return null
+    }
+
+    const { data: doctor, error } = await supabase
+      .from('doctors')
+      .select('id')
+      .eq('email', user.email)
+      .single()
+
+    if (error) {
+      console.error('Error fetching doctor:', error)
+      return null
+    }
+
+    return doctor
+  } catch (error) {
+    console.error('Error fetching current doctor:', error)
+    return null
+  }
+}
+
+/**
+ * Fetches appointments for a doctor
+ */
+export async function fetchAppointmentsForDoctor(doctorId: string): Promise<CalendarAppointment[]> {
+  try {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select(`
+        *,
+        doctors!appointments_doctor_id_fkey(timezone),
+        patients!appointments_patient_id_fkey(first_name, last_name, email, phone, chief_complaint),
+        clinical_notes(id, note_type, content)
+      `)
+      .eq('doctor_id', doctorId)
+      .neq('status', 'cancelled')
+      .order('requested_date_time', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching appointments:', error)
+      return []
+    }
+
+    return (data || []) as CalendarAppointment[]
+  } catch (error) {
+    console.error('Error fetching appointments:', error)
+    return []
+  }
+}
+
+// ============================================
+// INSTANT VISIT HANDLERS
+// ============================================
+
+/**
+ * Starts a call for an instant visit
+ */
+export function handleStartCall(
+  appointmentId: string, 
+  appointments: CalendarAppointment[],
+  onError: (message: string) => void
+): void {
+  const appointment = appointments.find(apt => apt.id === appointmentId)
+  if (appointment?.zoom_meeting_url) {
+    window.open(appointment.zoom_meeting_url, '_blank')
+  } else {
+    onError('No Zoom meeting link available for this appointment')
+  }
+}
+
+/**
+ * Completes an instant visit
+ */
+export async function handleCompleteInstantVisit(
+  appointmentId: string,
+  onSuccess: () => void,
+  onError: (message: string) => void
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'completed' })
+      .eq('id', appointmentId)
+
+    if (error) throw error
+    onSuccess()
+  } catch (error) {
+    console.error('Error completing visit:', error)
+    onError('Failed to complete visit')
+  }
+}
+
+/**
+ * Cancels an instant visit
+ */
+export async function handleCancelInstantVisit(
+  appointmentId: string,
+  onSuccess: () => void,
+  onError: (message: string) => void
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appointmentId)
+
+    if (error) throw error
+    onSuccess()
+  } catch (error) {
+    console.error('Error cancelling visit:', error)
+    onError('Failed to remove patient')
+  }
+}
+
+// ============================================
+// APPOINTMENT ACTION HANDLER
+// ============================================
+
+/**
+ * Handles accept/reject/complete actions on appointments
+ */
+export async function handleAppointmentAction(
+  appointmentId: string, 
+  action: 'accept' | 'reject' | 'complete',
+  onSuccess: (message: string) => void,
+  onError: (message: string) => void
+): Promise<void> {
+  try {
+    if (action === 'complete') {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'completed' })
+        .eq('id', appointmentId)
+
+      if (error) {
+        onError('Failed to mark appointment as complete')
+        return
+      }
+
+      onSuccess('Appointment marked as complete')
+      return
+    }
+
+    const endpoint = action === 'accept' ? '/api/appointments/accept' : '/api/appointments/reject'
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        appointmentId,
+        reason: action === 'reject' ? 'Doctor unavailable at this time' : undefined
+      })
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      onError(result.error || `Failed to ${action} appointment`)
+      return
+    }
+
+    let successMessage = `Appointment ${action}ed successfully`
+    
+    if (action === 'accept') {
+      if (result.data.paymentCaptured) successMessage += ' • Payment captured'
+      if (result.data.zoomMeeting) successMessage += ' • Zoom meeting created'
+    } else if (action === 'reject') {
+      if (result.data.paymentRefunded) {
+        successMessage += ` • Payment refunded ($${(result.data.refundAmount / 100).toFixed(2)})`
+      }
+    }
+
+    onSuccess(successMessage)
+  } catch (error) {
+    console.error('Error updating appointment:', error)
+    onError('An unexpected error occurred')
+  }
+}
+
+// ============================================
+// REAL-TIME SUBSCRIPTION SETUP
+// ============================================
+
+/**
+ * Sets up real-time subscription for appointment changes
+ */
+export function setupAppointmentSubscription(
+  doctorId: string,
+  onInsert: (appointment: CalendarAppointment) => void,
+  onUpdate: (appointment: CalendarAppointment) => void
+): () => void {
+  const channel = supabase
+    .channel('instant-visits-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'appointments',
+        filter: `doctor_id=eq.${doctorId}`
+      },
+      (payload) => {
+        onInsert(payload.new as CalendarAppointment)
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'appointments',
+        filter: `doctor_id=eq.${doctorId}`
+      },
+      (payload) => {
+        onUpdate(payload.new as CalendarAppointment)
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+// ============================================
+// CELEBRATION EFFECTS
+// ============================================
+
+export interface Particle {
+  id: number
+  x: number
+  y: number
+  color: string
+  size: number
+  duration: number
+  delay: number
+  shape: string
+}
+
+export interface ConfettiPiece {
+  id: number
+  x: number
+  color: string
+  delay: number
+}
+
+/**
+ * Generates floating particles for celebration effect
+ */
+export function generateParticles(count: number = 40): Particle[] {
+  const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4']
+  const shapes = ['circle', 'square', 'diamond']
+  
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    size: Math.random() * 12 + 6,
+    duration: Math.random() * 15 + 10,
+    delay: Math.random() * 10,
+    shape: shapes[Math.floor(Math.random() * shapes.length)]
+  }))
+}
+
+/**
+ * Generates confetti pieces for celebration effect
+ */
+export function generateConfetti(count: number = 50): ConfettiPiece[] {
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff6600', '#9933ff']
+  
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    delay: Math.random() * 2
+  }))
+}
+
+/**
+ * Plays celebration sound using Web Audio API
+ */
+export function playCelebrationSound(): void {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    
+    const playNote = (freq: number, startTime: number, duration: number) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = freq
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0.15, startTime)
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
+      osc.start(startTime)
+      osc.stop(startTime + duration)
+    }
+    
+    const now = ctx.currentTime
+    playNote(523.25, now, 0.15)        // C5
+    playNote(659.25, now + 0.1, 0.15)  // E5
+    playNote(783.99, now + 0.2, 0.2)   // G5
+    playNote(1046.50, now + 0.35, 0.3) // C6
+  } catch (e) {
+    console.log('Audio not available')
+  }
+}
+
+// ============================================
+// CELEBRATION STYLES
+// ============================================
+export const celebrationStyles = `
+/* Floating Particles */
+.particles-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  animation: floatParticle linear infinite;
+  opacity: 0.7;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.particle.square {
+  border-radius: 4px;
+  transform: rotate(45deg);
+}
+
+.particle.diamond {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+@keyframes floatParticle {
+  0% {
+    transform: translateY(100vh) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-100px) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* Confetti */
+.confetti-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9998;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 12px;
+  height: 24px;
+  animation: confettiFall 4s ease-out forwards;
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translateY(0) rotateZ(0deg) rotateY(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotateZ(720deg) rotateY(360deg);
+    opacity: 0;
+  }
+}
+
+/* Welcome Banner */
+.welcome-banner {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  background: linear-gradient(135deg, rgba(0, 200, 100, 0.95), rgba(20, 184, 166, 0.95));
+  border-radius: 16px;
+  padding: 20px 24px;
+  z-index: 9999;
+  box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3);
+  animation: welcomeSlideIn 0.5s ease-out, welcomePulse 2s ease-in-out infinite;
+  max-width: 380px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+@keyframes welcomeSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes welcomePulse {
+  0%, 100% { box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3); }
+  50% { box-shadow: 0 20px 80px rgba(0, 200, 100, 0.6), 0 0 60px rgba(20, 184, 166, 0.5); }
+}
+
+.welcome-icon {
+  width: 50px;
+  height: 50px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  animation: iconBounce 1s ease infinite;
+}
+
+@keyframes iconBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.welcome-content h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.welcome-content p {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.welcome-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.welcome-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+/* Animated gradient background */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+`
+
+// ============================================
+// CUSTOM HOOKS
+// ============================================
+
+/**
+ * Hook for managing calendar state
+ */
+export function useCalendarState(initialDate?: Date) {
+  const [currentDate, setCurrentDate] = useState(initialDate || new Date())
+  const [viewType, setViewType] = useState<ViewType>('calendar')
+  const [calendarViewType, setCalendarViewType] = useState<CalendarViewType>('week')
+  
+  const visibleDates = useMemo(() => {
+    if (calendarViewType === 'week') return getWeekDates(currentDate)
+    if (calendarViewType === 'month') return getMonthDates(currentDate)
+    return getThreeMonthDates(currentDate)
+  }, [currentDate, calendarViewType])
+  
+  const timeSlots = useMemo(() => generateTimeSlots(), [])
+  
+  const navigate = useCallback((direction: 'prev' | 'next') => {
+    setCurrentDate(prev => navigateCalendarDate(prev, direction, calendarViewType))
+  }, [calendarViewType])
+  
+  return {
+    currentDate,
+    setCurrentDate,
+    viewType,
+    setViewType,
+    calendarViewType,
+    setCalendarViewType,
+    visibleDates,
+    timeSlots,
+    navigate
+  }
+}
+
+/**
+ * Hook for managing appointments
+ */
+export function useAppointments(doctorId: string | null) {
+  const [appointments, setAppointments] = useState<CalendarAppointment[]>([])
+  const [loading, setLoading] = useState(true)
+  
+  const appointmentMap = useMemo(() => createAppointmentMap(appointments), [appointments])
+  
+  const refresh = useCallback(async (skipLoading = false) => {
+    if (!doctorId) return
+    if (!skipLoading) setLoading(true)
+    const data = await fetchAppointmentsForDoctor(doctorId)
+    setAppointments(data)
+    if (!skipLoading) setLoading(false)
+  }, [doctorId])
+  
+  useEffect(() => {
+    if (doctorId) refresh()
+  }, [doctorId, refresh])
+  
+  return {
+    appointments,
+    setAppointments,
+    loading,
+    setLoading,
+    appointmentMap,
+    refresh
+  }
+}
+
+/**
+ * Hook for celebration effects
+ */
+export function useCelebration() {
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [particles, setParticles] = useState<Particle[]>([])
+  const [confetti, setConfetti] = useState<ConfettiPiece[]>([])
+  const triggeredRef = useRef(false)
+  
+  const trigger = useCallback(() => {
+    if (triggeredRef.current) return
+    triggeredRef.current = true
+    
+    setParticles(generateParticles())
+    setConfetti(generateConfetti())
+    
+    setTimeout(() => setShowWelcome(true), 500)
+    playCelebrationSound()
+    
+    setTimeout(() => setShowWelcome(false), 8000)
+    setTimeout(() => setConfetti([]), 5000)
+  }, [])
+  
+  return {
+    showWelcome,
+    setShowWelcome,
+    particles,
+    confetti,
+    trigger
+  }
+}
