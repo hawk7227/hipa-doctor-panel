@@ -142,7 +142,25 @@ export default function DoctorAppointments() {
   const [showWelcome, setShowWelcome] = useState(false)
   const [particles, setParticles] = useState<Array<{id: number, x: number, color: string, size: number, duration: number, delay: number, shape: string}>>([])
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
+  const [soundEnabled, setSoundEnabled] = useState(false)
   const celebrationTriggeredRef = useRef(false)
+
+  // Generate particles IMMEDIATELY on mount (no waiting for loading)
+  useEffect(() => {
+    const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ff0080', '#00ffcc']
+    const shapes = ['circle', 'square', 'diamond']
+    const newParticles = Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: Math.random() * 16 + 8,
+      duration: Math.random() * 12 + 8,
+      delay: Math.random() * 8,
+      shape: shapes[Math.floor(Math.random() * shapes.length)]
+    }))
+    setParticles(newParticles)
+    console.log('🎉 Particles generated:', newParticles.length)
+  }, [])
 
   useEffect(() => {
     fetchCurrentDoctor()
@@ -154,35 +172,23 @@ export default function DoctorAppointments() {
   useEffect(() => {
     if (!loading && !celebrationTriggeredRef.current) {
       celebrationTriggeredRef.current = true
-      
-      // Generate floating particles
-      const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4']
-      const shapes = ['circle', 'square', 'diamond']
-      const newParticles = Array.from({ length: 40 }, (_, i) => ({
-        id: i,
-        x: Math.random() * 100,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        size: Math.random() * 12 + 6,
-        duration: Math.random() * 15 + 10,
-        delay: Math.random() * 10,
-        shape: shapes[Math.floor(Math.random() * shapes.length)]
-      }))
-      setParticles(newParticles)
+      console.log('🎊 Celebration triggered!')
       
       // Generate confetti burst
-      const confettiColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff6600', '#9933ff']
-      const newConfetti = Array.from({ length: 50 }, (_, i) => ({
+      const confettiColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff6600', '#9933ff', '#00ff88', '#ff0080']
+      const newConfetti = Array.from({ length: 80 }, (_, i) => ({
         id: i,
         x: Math.random() * 100,
         color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
-        delay: Math.random() * 2
+        delay: Math.random() * 3
       }))
       setConfetti(newConfetti)
+      console.log('🎊 Confetti generated:', newConfetti.length)
       
-      // Show welcome banner
-      setTimeout(() => setShowWelcome(true), 500)
+      // Show welcome banner immediately
+      setShowWelcome(true)
       
-      // Play celebration sound
+      // Play celebration sound (may be blocked by browser autoplay policy)
       try {
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
         const playNote = (freq: number, startTime: number, duration: number) => {
@@ -192,7 +198,7 @@ export default function DoctorAppointments() {
           gain.connect(ctx.destination)
           osc.frequency.value = freq
           osc.type = 'sine'
-          gain.gain.setValueAtTime(0.15, startTime)
+          gain.gain.setValueAtTime(0.2, startTime)
           gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
           osc.start(startTime)
           osc.stop(startTime + duration)
@@ -202,15 +208,76 @@ export default function DoctorAppointments() {
         playNote(659.25, now + 0.1, 0.15)  // E5
         playNote(783.99, now + 0.2, 0.2)   // G5
         playNote(1046.50, now + 0.35, 0.3) // C6
+        setSoundEnabled(true)
       } catch (e) {
-        console.log('Audio not available')
+        console.log('Audio blocked - will play on first click')
       }
       
       // Auto-hide welcome and confetti
-      setTimeout(() => setShowWelcome(false), 8000)
-      setTimeout(() => setConfetti([]), 5000)
+      setTimeout(() => setShowWelcome(false), 10000)
+      setTimeout(() => setConfetti([]), 6000)
     }
   }, [loading])
+
+  // ============================================
+  // SOUND EFFECTS - FRONTEND ONLY (Added)
+  // ============================================
+  const playClickSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      
+      // If first sound, play celebration chime!
+      if (!soundEnabled) {
+        setSoundEnabled(true)
+        const playNote = (freq: number, startTime: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = freq
+          osc.type = 'sine'
+          gain.gain.setValueAtTime(0.2, startTime)
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
+          osc.start(startTime)
+          osc.stop(startTime + duration)
+        }
+        const now = ctx.currentTime
+        playNote(523.25, now, 0.15)
+        playNote(659.25, now + 0.1, 0.15)
+        playNote(783.99, now + 0.2, 0.2)
+        playNote(1046.50, now + 0.35, 0.3)
+      } else {
+        // Normal click sound
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.value = 880
+        osc.type = 'sine'
+        gain.gain.setValueAtTime(0.12, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.08)
+      }
+    } catch (e) {}
+  }
+
+  const playHoverSound = () => {
+    if (!soundEnabled) return // Don't play hover until first click
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 1200
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0.04, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.04)
+    } catch (e) {}
+  }
 
   const getWeekDates = (date: Date) => {
     const start = new Date(date)
@@ -800,15 +867,17 @@ export default function DoctorAppointments() {
           width: 100%;
           height: 100%;
           pointer-events: none;
-          z-index: 0;
+          z-index: 9997;
           overflow: hidden;
         }
         .particle {
           position: absolute;
+          bottom: -50px;
           border-radius: 50%;
           animation: floatParticle linear infinite;
-          opacity: 0.7;
-          box-shadow: 0 0 10px currentColor;
+          opacity: 0.9;
+          box-shadow: 0 0 20px currentColor, 0 0 40px currentColor;
+          filter: brightness(1.5);
         }
         .particle.square {
           border-radius: 4px;
@@ -819,10 +888,20 @@ export default function DoctorAppointments() {
           transform: rotate(45deg);
         }
         @keyframes floatParticle {
-          0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
-          10% { opacity: 0.8; }
-          90% { opacity: 0.8; }
-          100% { transform: translateY(-100px) rotate(720deg); opacity: 0; }
+          0% { 
+            transform: translateY(0) rotate(0deg); 
+            opacity: 0; 
+          }
+          5% { 
+            opacity: 0.8; 
+          }
+          95% { 
+            opacity: 0.6; 
+          }
+          100% { 
+            transform: translateY(-110vh) rotate(720deg); 
+            opacity: 0; 
+          }
         }
         .confetti-container {
           position: fixed;
@@ -1168,7 +1247,9 @@ export default function DoctorAppointments() {
                           <div
                             key={`cell-${dayIndex}-${timeIndex}`}
                             className="availability-cell"
+                            onMouseEnter={() => playHoverSound()}
                             onClick={() => {
+                              playClickSound()
                               if (isAvailable) {
                                 setSelectedSlotDate(date)
                                 setSelectedSlotTime(time)
