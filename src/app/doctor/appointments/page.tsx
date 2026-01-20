@@ -87,6 +87,19 @@ type CalendarViewType = 'week' | 'month' | '3month'
 // STYLES
 // ============================================
 const styles = `
+/* Hide sidebar on this page */
+aside, [class*="sidebar"], [class*="Sidebar"], nav:not(.header *) {
+  display: none !important;
+}
+
+/* Make main content full width */
+main, [class*="main"], .container {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -2022,5 +2035,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
+
 
 
