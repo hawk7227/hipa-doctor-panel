@@ -706,15 +706,105 @@ export default function DoctorAppointments() {
   }
 
   return (
-    <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Full Screen Calendar Container */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+    <div className="availability-page">
+      {/* Header - Using availability page style */}
+      <header className="availability-header">
+        <div className="availability-top">
+          <div className="availability-logo">
+            <div className="availability-orb"></div>
+            Doctor Appointments Calendar
+          </div>
+          <span className="availability-pill">
+            {viewType === 'calendar' && calendarViewType === 'week' && visibleDates.length > 0 && (
+              <>
+                {visibleDates[0]?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {' - '}
+                {visibleDates[visibleDates.length - 1]?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </>
+            )}
+            {viewType === 'calendar' && calendarViewType === 'month' && currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            {viewType === 'calendar' && calendarViewType === '3month' && (
+              <>
+                {currentDate.toLocaleDateString('en-US', { month: 'short' })}
+                {' - '}
+                {new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+              </>
+            )}
+            {viewType === 'list' && 'All Appointments'}
+          </span>
+          <span style={{ flex: 1 }}></span>
+          <a href="/doctor/dashboard" className="availability-pill">Back to Dashboard</a>
+        </div>
+      </header>
+
+      {/* Container - Using availability page style */}
+      <div className="availability-container">
+        {/* Toolbar */}
+        <div className="availability-toolbar availability-card">
+          <button
+            className={calendarViewType === 'month' && viewType === 'calendar' ? 'availability-btn' : 'availability-btn ghost'}
+            onClick={() => { setViewType('calendar'); setCalendarViewType('month'); }}
+          >
+            Month
+          </button>
+          <button
+            className={calendarViewType === 'week' && viewType === 'calendar' ? 'availability-btn' : 'availability-btn ghost'}
+            onClick={() => { setViewType('calendar'); setCalendarViewType('week'); }}
+          >
+            Week
+          </button>
+          <button
+            className={viewType === 'list' ? 'availability-btn' : 'availability-btn ghost'}
+            onClick={() => setViewType('list')}
+          >
+            List
+          </button>
+          <button
+            className="availability-btn ghost"
+            onClick={() => navigateCalendar('prev')}
+            title="Previous"
+          >
+            ←
+          </button>
+          <span className="availability-pill">
+            {viewType === 'calendar' && calendarViewType === 'week' && visibleDates.length > 0 && (
+              <>Week of {visibleDates[0]?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
+            )}
+            {viewType === 'calendar' && calendarViewType === 'month' && currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            {viewType === 'list' && 'All Appointments'}
+          </span>
+          <button
+            className="availability-btn ghost"
+            onClick={() => navigateCalendar('next')}
+            title="Next"
+          >
+            →
+          </button>
+          <span style={{ flex: 1 }}></span>
+          <button className="availability-btn ghost" onClick={() => window.print()}>Print / PDF</button>
+        </div>
+
+        {/* Legend */}
+        <div className="availability-card">
+          <div className="availability-legend">
+            <span className="availability-chip"><span className="availability-dot availability-dot-avai"></span> Available</span>
+            <span className="availability-chip"><span className="availability-dot" style={{background:'#E53935'}}></span> Booked</span>
+            <span className="availability-chip"><span className="availability-dot" style={{background:'#00e6ff'}}></span> Video</span>
+            <span className="availability-chip"><span className="availability-dot" style={{background:'#b07aff'}}></span> Async</span>
+            <span className="availability-chip"><span className="availability-dot" style={{background:'#00c26e'}}></span> Phone</span>
+            <span className="availability-chip"><span className="availability-dot" style={{background:'#f59e0b'}}></span> Instant</span>
+            <span className="availability-chip" style={{marginLeft: 'auto', color: '#98b1c9', fontSize: '12px'}}>
+              ⏰ All times in Phoenix time (MST)
+            </span>
+          </div>
+        </div>
+
         {viewType === 'calendar' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+          <div className="availability-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {calendarViewType === 'week' ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
               {/* Week Calendar Grid - Using availability page structure */}
-              <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div className="availability-cal">
                 {/* Header Row */}
                 <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
                   <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
@@ -1065,6 +1155,7 @@ export default function DoctorAppointments() {
     </div>
   )
 }
+
 
 
 
