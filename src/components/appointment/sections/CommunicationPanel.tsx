@@ -1,5 +1,6 @@
-import React, { memo, startTransition } from 'react'
-import { GripVertical, MessageSquare, Phone, Send, Clock, PhoneCall, Video, Play, Pause } from 'lucide-react'
+import React, { memo, startTransition, useState, useEffect } from 'react'
+import { GripVertical, MessageSquare, Phone, Send, Clock, PhoneCall, Video, Play, Pause, User, UserX } from 'lucide-react'
+import VideoCallPanel from './VideoCallPanel'
 
 interface CommunicationPanelProps {
   smsTo: string
@@ -19,6 +20,11 @@ interface CommunicationPanelProps {
   isCustomizeMode?: boolean
   sectionProps?: any
   sectionId?: string
+  // Patient info (optional - panel works without patient)
+  patientName?: string
+  patientPhone?: string
+  patientId?: string | null
+  doctorName?: string
   onSmsToChange: (value: string) => void
   onSmsMessageChange: (value: string) => void
   onCallPhoneNumberChange: (value: string) => void
@@ -30,6 +36,9 @@ interface CommunicationPanelProps {
   formatHistoryDate: (dateString: string) => string
   onPlayRecording?: (id: string) => void
   audioRefs?: React.MutableRefObject<{ [key: string]: HTMLAudioElement | null }>
+  // Optional callbacks for video call
+  onSaveTranscript?: (transcript: string) => void
+  onSaveSOAP?: (soap: { subjective: string; objective: string; assessment: string; plan: string }) => void
 }
 
 const CommunicationPanel = memo(function CommunicationPanel({
@@ -50,6 +59,10 @@ const CommunicationPanel = memo(function CommunicationPanel({
   isCustomizeMode = false,
   sectionProps = {},
   sectionId = 'sms-section',
+  patientName = '',
+  patientPhone = '',
+  patientId = null,
+  doctorName = 'Dr. Smith',
   onSmsToChange,
   onSmsMessageChange,
   onCallPhoneNumberChange,
@@ -60,8 +73,60 @@ const CommunicationPanel = memo(function CommunicationPanel({
   formatDuration,
   formatHistoryDate,
   onPlayRecording,
-  audioRefs
+  audioRefs,
+  onSaveTranscript,
+  onSaveSOAP
 }: CommunicationPanelProps) {
+  // Video call active state
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false)
+  
+  // Track if using patient's number vs manual entry
+  const [isUsingPatientPhone, setIsUsingPatientPhone] = useState(false)
+
+  // Auto-sync patient phone when patient changes
+  useEffect(() => {
+    if (patientPhone) {
+      // Only auto-fill if fields are empty or were using patient's number
+      if (!smsTo || isUsingPatientPhone) {
+        onSmsToChange(patientPhone)
+        setIsUsingPatientPhone(true)
+      }
+      if (!callPhoneNumber || isUsingPatientPhone) {
+        onCallPhoneNumberChange(patientPhone)
+        setIsUsingPatientPhone(true)
+      }
+    }
+  }, [patientPhone, patientId])
+
+  // Helper to use patient's phone number
+  const usePatientPhoneForSMS = () => {
+    if (patientPhone) {
+      onSmsToChange(patientPhone)
+      setIsUsingPatientPhone(true)
+    }
+  }
+
+  const usePatientPhoneForCall = () => {
+    if (patientPhone) {
+      onCallPhoneNumberChange(patientPhone)
+      setIsUsingPatientPhone(true)
+    }
+  }
+
+  // Helper to clear and enter manual number
+  const clearForManualEntry = (type: 'sms' | 'call') => {
+    if (type === 'sms') {
+      onSmsToChange('')
+    } else {
+      onCallPhoneNumberChange('')
+    }
+    setIsUsingPatientPhone(false)
+  }
+
+  // Check if currently showing patient's number
+  const isSmsToPatient = patientPhone && smsTo === patientPhone
+  const isCallToPatient = patientPhone && callPhoneNumber === patientPhone
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'call':
@@ -105,6 +170,42 @@ const CommunicationPanel = memo(function CommunicationPanel({
     return 'text-yellow-400'
   }
 
+  // NEW: Handle starting video call
+  const handleStartVideoCall = () => {
+    setIsVideoCallActive(true)
+  }
+
+  // NEW: Handle closing video call
+  const handleCloseVideoCall = () => {
+    setIsVideoCallActive(false)
+  }
+
+  // =============================================
+  // RENDER: Video Call Mode (Option B - Replace Content)
+  // =============================================
+  if (isVideoCallActive) {
+    return (
+      <div {...sectionProps} style={{ contain: 'layout style paint' }}>
+        {isCustomizeMode && (
+          <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
+        <VideoCallPanel
+          patientName={patientName}
+          patientPhone={patientPhone || smsTo || callPhoneNumber}
+          doctorName={doctorName}
+          onClose={handleCloseVideoCall}
+          onSaveTranscript={onSaveTranscript}
+          onSaveSOAP={onSaveSOAP}
+        />
+      </div>
+    )
+  }
+
+  // =============================================
+  // RENDER: Normal Communication Panel
+  // =============================================
   return (
     <div {...sectionProps} style={{ contain: 'layout style paint' }}>
       {isCustomizeMode && (
@@ -113,63 +214,134 @@ const CommunicationPanel = memo(function CommunicationPanel({
         </div>
       )}
       <div className="bg-slate-800/50 rounded-2xl p-4 sm:p-6 border border-white/10">
-        <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
-          Send SMS
-        </h3>
-        <div className="space-y-3 sm:space-y-4">
-          <div>
-            <label className="block text-xs sm:text-sm text-gray-400 mb-2">To</label>
-            <input
-              type="tel"
-              value={smsTo}
-              onChange={(e) => {
-                startTransition(() => {
-                  onSmsToChange(e.target.value)
-                })
-              }}
-              placeholder="Phone number (e.g., +1234567890)"
-              className="w-full h-9 sm:h-10 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm sm:text-base"
-              style={{ contain: 'layout style' }}
-            />
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm text-gray-400 mb-2">Message</label>
-            <textarea
-              value={smsMessage}
-              onChange={(e) => {
-                startTransition(() => {
-                  onSmsMessageChange(e.target.value)
-                })
-              }}
-              placeholder="Type your message..."
-              rows={4}
-              className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none text-sm sm:text-base"
-              style={{ contain: 'layout style' }}
-            />
-          </div>
-          <button
-            onClick={onSendSMS}
-            disabled={isSendingSMS || !smsTo || !smsMessage.trim()}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base font-medium"
-          >
-            {isSendingSMS ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                <span>Sending...</span>
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                <span>Send SMS</span>
-              </>
-            )}
-          </button>
-          {error && error.includes('SMS') && (
-            <div className="p-2 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-400">
-              {error}
+        
+        {/* Patient Context Banner - shows when patient selected */}
+        {patientName && patientId && (
+          <div className="mb-4 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-cyan-400" />
+                <span className="text-cyan-400 text-sm font-medium">Communicating with: {patientName}</span>
+              </div>
+              {patientPhone && (
+                <span className="text-cyan-300 text-xs">{patientPhone}</span>
+              )}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* No Patient Mode Banner */}
+        {!patientId && (
+          <div className="mb-4 p-3 bg-slate-700/50 border border-slate-600 rounded-lg">
+            <div className="flex items-center gap-2">
+              <UserX className="w-4 h-4 text-slate-400" />
+              <span className="text-slate-400 text-sm">Manual mode - Enter any phone number</span>
+            </div>
+          </div>
+        )}
+
+        {/* Video Call Button - Only show if patient selected */}
+        {patientName && patientId && (
+          <div className="mb-6">
+            <button
+              onClick={handleStartVideoCall}
+              className="w-full flex items-center justify-center gap-3 px-4 py-4 bg-gradient-to-r from-purple-600 to-cyan-600 text-white rounded-xl hover:from-purple-700 hover:to-cyan-700 transition-all shadow-lg hover:shadow-purple-500/25 text-base font-semibold"
+            >
+              <Video className="h-5 w-5" />
+              <span>Start Video Call + AI Scribe</span>
+            </button>
+            <p className="text-center text-slate-500 text-xs mt-2">
+              Video visit with real-time transcription & SOAP notes
+            </p>
+          </div>
+        )}
+
+        <div className={patientId ? "border-t border-white/10 pt-6" : ""}>
+          <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
+            Send SMS
+            {isSmsToPatient && (
+              <span className="ml-2 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded-full">
+                To Patient
+              </span>
+            )}
+          </h3>
+          <div className="space-y-3 sm:space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs sm:text-sm text-gray-400">To</label>
+                {patientPhone && !isSmsToPatient && (
+                  <button
+                    onClick={usePatientPhoneForSMS}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  >
+                    <User className="w-3 h-3" />
+                    Use Patient #{patientPhone.slice(-4)}
+                  </button>
+                )}
+                {isSmsToPatient && (
+                  <button
+                    onClick={() => clearForManualEntry('sms')}
+                    className="text-xs text-slate-400 hover:text-slate-300"
+                  >
+                    Enter different number
+                  </button>
+                )}
+              </div>
+              <input
+                type="tel"
+                value={smsTo}
+                onChange={(e) => {
+                  startTransition(() => {
+                    onSmsToChange(e.target.value)
+                    if (e.target.value !== patientPhone) {
+                      setIsUsingPatientPhone(false)
+                    }
+                  })
+                }}
+                placeholder="Phone number (e.g., +1234567890)"
+                className="w-full h-9 sm:h-10 px-3 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm sm:text-base"
+                style={{ contain: 'layout style' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm text-gray-400 mb-2">Message</label>
+              <textarea
+                value={smsMessage}
+                onChange={(e) => {
+                  startTransition(() => {
+                    onSmsMessageChange(e.target.value)
+                  })
+                }}
+                placeholder="Type your message..."
+                rows={4}
+                className="w-full px-3 py-2 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none text-sm sm:text-base"
+                style={{ contain: 'layout style' }}
+              />
+            </div>
+            <button
+              onClick={onSendSMS}
+              disabled={isSendingSMS || !smsTo || !smsMessage.trim()}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base font-medium"
+            >
+              {isSendingSMS ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  <span>Send SMS</span>
+                </>
+              )}
+            </button>
+            {error && error.includes('SMS') && (
+              <div className="p-2 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-400">
+                {error}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Call Section */}
@@ -177,16 +349,43 @@ const CommunicationPanel = memo(function CommunicationPanel({
           <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
             <Phone className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
             Make Call
+            {isCallToPatient && (
+              <span className="ml-2 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded-full">
+                To Patient
+              </span>
+            )}
           </h3>
           <div className="space-y-3 sm:space-y-4">
             <div>
-              <label className="block text-xs sm:text-sm text-gray-400 mb-2">Phone Number</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs sm:text-sm text-gray-400">Phone Number</label>
+                {patientPhone && !isCallToPatient && (
+                  <button
+                    onClick={usePatientPhoneForCall}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  >
+                    <User className="w-3 h-3" />
+                    Use Patient #{patientPhone.slice(-4)}
+                  </button>
+                )}
+                {isCallToPatient && (
+                  <button
+                    onClick={() => clearForManualEntry('call')}
+                    className="text-xs text-slate-400 hover:text-slate-300"
+                  >
+                    Enter different number
+                  </button>
+                )}
+              </div>
               <input
                 type="tel"
                 value={callPhoneNumber}
                 onChange={(e) => {
                   startTransition(() => {
                     onCallPhoneNumberChange(e.target.value)
+                    if (e.target.value !== patientPhone) {
+                      setIsUsingPatientPhone(false)
+                    }
                   })
                 }}
                 placeholder="Phone number (e.g., +1234567890)"
@@ -347,7 +546,11 @@ const CommunicationPanel = memo(function CommunicationPanel({
     prevProps.isCalling === nextProps.isCalling &&
     prevProps.communicationHistory.length === nextProps.communicationHistory.length &&
     prevProps.loadingHistory === nextProps.loadingHistory &&
-    prevProps.isCustomizeMode === nextProps.isCustomizeMode
+    prevProps.isCustomizeMode === nextProps.isCustomizeMode &&
+    prevProps.patientName === nextProps.patientName &&
+    prevProps.patientPhone === nextProps.patientPhone &&
+    prevProps.patientId === nextProps.patientId &&
+    prevProps.doctorName === nextProps.doctorName
   )
 })
 
