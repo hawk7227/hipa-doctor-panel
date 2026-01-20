@@ -1165,12 +1165,13 @@ export default function DoctorAppointments() {
 
   const audioContextRef = useRef<AudioContext | null>(null)
   const particlesRef = useRef<HTMLDivElement | null>(null)
+  const calendarGridRef = useRef<HTMLDivElement | null>(null)
 
   // Provider timezone is ALWAYS America/Phoenix
   const DOCTOR_TIMEZONE = 'America/Phoenix'
 
   // ============================================
-  // TIME SLOTS
+  // TIME SLOTS - Keep ALL slots (5 AM - 8 PM)
   // ============================================
   const timeSlots = useMemo(() => {
     const slots: Date[] = []
@@ -1189,16 +1190,12 @@ export default function DoctorAppointments() {
   // ============================================
   // CALENDAR UTILITIES
   // ============================================
+  // UPDATED: Current date on far left + next 6 days
   const getWeekDates = (date: Date) => {
-    const start = new Date(date)
-    const day = start.getDay()
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1)
-    start.setDate(diff)
-    
     const dates: Date[] = []
     for (let i = 0; i < 7; i++) {
-      const d = new Date(start)
-      d.setDate(start.getDate() + i)
+      const d = new Date(date)
+      d.setDate(date.getDate() + i)
       dates.push(d)
     }
     return dates
@@ -1589,6 +1586,22 @@ export default function DoctorAppointments() {
   useEffect(() => {
     fetchCurrentDoctor()
     createParticles()
+    
+    // Auto-scroll to current time row
+    setTimeout(() => {
+      if (calendarGridRef.current) {
+        const now = new Date()
+        const currentHour = now.getHours()
+        const rowHeight = 80 // matches min-height of calendar-cell
+        const headerHeight = 50 // approximate header height
+        // Calculate scroll position: (hours since 5 AM) * 2 slots per hour * row height
+        const scrollPosition = Math.max(0, (currentHour - 5) * 2 * rowHeight)
+        calendarGridRef.current.scrollTo({
+          top: scrollPosition,
+          behavior: 'smooth'
+        })
+      }
+    }, 100)
   }, [])
 
   // ============================================
@@ -1698,7 +1711,7 @@ export default function DoctorAppointments() {
         <div className="header-content">
           <div className="logo">
             <div className="logo-orb"></div>
-            <span className="logo-text">Doctor Appointments Calendar</span>
+            <span className="logo-text">Your Appointments</span>
           </div>
           <div className="date-pill">{dateRange.header}</div>
           <div className="header-spacer"></div>
@@ -1778,7 +1791,7 @@ export default function DoctorAppointments() {
           <div className="calendar-card">
             {calendarViewType === 'week' ? (
               <>
-                <div className="calendar-grid">
+                <div className="calendar-grid" ref={calendarGridRef}>
                   {/* Header Row */}
                   <div className="calendar-header-cell">⏰ Time</div>
                   {visibleDates.map((date, idx) => (
@@ -2035,6 +2048,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
