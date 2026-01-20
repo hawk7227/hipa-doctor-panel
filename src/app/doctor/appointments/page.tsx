@@ -914,6 +914,168 @@ export default function DoctorAppointments() {
           background-size: 400% 400% !important;
           animation: gradientShift 15s ease infinite !important;
         }
+
+        /* ============================================ */
+        /* BRIGHT CALENDAR GRID STYLES - Visual Only */
+        /* ============================================ */
+        
+        /* Bright header row */
+        .availability-dayhead {
+          background: linear-gradient(180deg, rgba(0, 245, 255, 0.15), rgba(20, 184, 166, 0.1)) !important;
+          color: #00f5ff !important;
+          text-shadow: 0 0 10px rgba(0, 245, 255, 0.5) !important;
+          border-bottom: 2px solid rgba(0, 245, 255, 0.3) !important;
+          font-weight: 700 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 1px !important;
+        }
+
+        /* Time column */
+        .availability-time {
+          color: #ff00ff !important;
+          text-shadow: 0 0 10px rgba(255, 0, 255, 0.4) !important;
+          font-weight: 600 !important;
+        }
+
+        /* Available slots - BRIGHT GREEN with glow */
+        .availability-event.available {
+          background: linear-gradient(135deg, rgba(0, 255, 100, 0.35), rgba(20, 255, 150, 0.25)) !important;
+          border: 2px solid rgba(0, 255, 100, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 255, 100, 0.3), inset 0 0 20px rgba(0, 255, 100, 0.1) !important;
+          animation: availablePulse 3s ease-in-out infinite !important;
+          transition: all 0.3s ease !important;
+        }
+
+        @keyframes availablePulse {
+          0%, 100% { 
+            box-shadow: 0 0 15px rgba(0, 255, 100, 0.3), inset 0 0 15px rgba(0, 255, 100, 0.1);
+            border-color: rgba(0, 255, 100, 0.5);
+          }
+          50% { 
+            box-shadow: 0 0 30px rgba(0, 255, 100, 0.5), inset 0 0 25px rgba(0, 255, 100, 0.2);
+            border-color: rgba(0, 255, 100, 0.8);
+          }
+        }
+
+        .availability-event.available:hover {
+          transform: scale(1.05) !important;
+          box-shadow: 0 0 40px rgba(0, 255, 100, 0.6), inset 0 0 30px rgba(0, 255, 100, 0.2) !important;
+          border-color: #00ff64 !important;
+        }
+
+        /* Booked slots - Vibrant colors */
+        .availability-event.blocked {
+          transition: all 0.3s ease !important;
+          box-shadow: 0 0 15px rgba(255, 100, 100, 0.3) !important;
+        }
+
+        .availability-event.blocked:hover {
+          transform: scale(1.05) !important;
+          z-index: 100 !important;
+        }
+
+        .availability-event.blocked.video {
+          background: linear-gradient(135deg, rgba(0, 200, 255, 0.4), rgba(0, 150, 220, 0.3)) !important;
+          border: 2px solid rgba(0, 220, 255, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 220, 255, 0.4) !important;
+        }
+
+        .availability-event.blocked.phone {
+          background: linear-gradient(135deg, rgba(0, 255, 150, 0.4), rgba(0, 200, 100, 0.3)) !important;
+          border: 2px solid rgba(0, 255, 150, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 255, 150, 0.4) !important;
+        }
+
+        .availability-event.blocked.async {
+          background: linear-gradient(135deg, rgba(180, 100, 255, 0.4), rgba(150, 80, 220, 0.3)) !important;
+          border: 2px solid rgba(180, 100, 255, 0.6) !important;
+          box-shadow: 0 0 20px rgba(180, 100, 255, 0.4) !important;
+        }
+
+        .availability-event.blocked.instant {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.4), rgba(255, 150, 0, 0.3)) !important;
+          border: 2px solid rgba(255, 180, 0, 0.6) !important;
+          box-shadow: 0 0 20px rgba(255, 180, 0, 0.4) !important;
+          animation: instantPulse 1.5s ease-in-out infinite !important;
+        }
+
+        @keyframes instantPulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(255, 180, 0, 0.4); }
+          50% { box-shadow: 0 0 35px rgba(255, 180, 0, 0.7); }
+        }
+
+        /* Calendar cell hover */
+        .availability-cell {
+          transition: all 0.2s ease !important;
+        }
+
+        .availability-cell:hover {
+          background: rgba(0, 245, 255, 0.05) !important;
+        }
+
+        /* Calendar grid lines - subtle glow */
+        .availability-cal-row {
+          border-bottom: 1px solid rgba(0, 245, 255, 0.1) !important;
+        }
+
+        /* Appointment name text */
+        .appointment-name {
+          color: #fff !important;
+          font-weight: 700 !important;
+          text-shadow: 0 0 10px rgba(255, 255, 255, 0.3) !important;
+        }
+
+        /* Type badges - brighter */
+        .appointment-type-badge {
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.5px !important;
+          padding: 4px 10px !important;
+          border-radius: 12px !important;
+          font-size: 10px !important;
+        }
+
+        .appointment-type-badge.video {
+          background: rgba(0, 220, 255, 0.3) !important;
+          color: #00f5ff !important;
+          box-shadow: 0 0 10px rgba(0, 220, 255, 0.4) !important;
+        }
+
+        .appointment-type-badge.phone {
+          background: rgba(0, 255, 150, 0.3) !important;
+          color: #00ff96 !important;
+          box-shadow: 0 0 10px rgba(0, 255, 150, 0.4) !important;
+        }
+
+        .appointment-type-badge.async {
+          background: rgba(180, 100, 255, 0.3) !important;
+          color: #c896ff !important;
+          box-shadow: 0 0 10px rgba(180, 100, 255, 0.4) !important;
+        }
+
+        /* Sparkle effect on hover for available slots */
+        .availability-event.available::before {
+          content: '✨';
+          position: absolute;
+          top: 5px;
+          right: 8px;
+          font-size: 14px;
+          opacity: 0.8;
+          animation: sparkle 2s ease-in-out infinite;
+        }
+
+        @keyframes sparkle {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Calendar container glow */
+        .availability-cal {
+          border: 1px solid rgba(0, 245, 255, 0.2) !important;
+          border-radius: 12px !important;
+          overflow: hidden !important;
+          box-shadow: 0 0 40px rgba(0, 245, 255, 0.1), 0 0 80px rgba(20, 184, 166, 0.05) !important;
+        }
       `}</style>
 
       {/* ============================================ */}
