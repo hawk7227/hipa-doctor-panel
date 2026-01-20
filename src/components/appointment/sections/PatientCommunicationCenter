@@ -1,0 +1,963 @@
+'use client'
+
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { 
+  Search, 
+  X, 
+  Phone, 
+  Video, 
+  MessageSquare, 
+  Mail, 
+  User, 
+  Calendar, 
+  FileText, 
+  ChevronRight,
+  Clock,
+  AlertCircle,
+  Loader2,
+  ArrowLeft,
+  MoreVertical,
+  Sparkles
+} from 'lucide-react'
+import CommunicationPanel from '@/components/CommunicationPanel'
+// OR adjust path: import CommunicationPanel from './CommunicationPanel'
+
+// =============================================
+// TYPES
+// =============================================
+interface Patient {
+  id: string
+  first_name: string
+  last_name: string
+  email: string | null
+  mobile_phone: string | null
+  date_of_birth: string | null
+  gender: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  zip_code: string | null
+  created_at: string
+  // Joined data
+  appointment_count?: number
+  last_appointment?: string | null
+  last_visit_type?: string | null
+}
+
+interface CommunicationHistoryItem {
+  id: string
+  type: 'call' | 'sms' | 'video' | 'email'
+  direction: 'inbound' | 'outbound'
+  status: string
+  message?: string
+  duration?: number
+  recording_url?: string
+  created_at: string
+}
+
+// =============================================
+// PATIENT COMMUNICATION CENTER PAGE
+// =============================================
+export default function PatientCommunicationCenter() {
+  const supabase = createClientComponentClient()
+  
+  // =============================================
+  // STATE
+  // =============================================
+  // Search & Patient List
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchResults, setSearchResults] = useState<Patient[]>([])
+  const [recentPatients, setRecentPatients] = useState<Patient[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  
+  // Selected Patient
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
+  const [patientFiles, setPatientFiles] = useState<any[]>([])
+  const [loadingPatientData, setLoadingPatientData] = useState(false)
+  
+  // Standalone communication mode (no patient selected)
+  const [showStandaloneCommunication, setShowStandaloneCommunication] = useState(false)
+  
+  // Communication State (for CommunicationPanel)
+  const [smsTo, setSmsTo] = useState('')
+  const [smsMessage, setSmsMessage] = useState('')
+  const [isSendingSMS, setIsSendingSMS] = useState(false)
+  const [callPhoneNumber, setCallPhoneNumber] = useState('')
+  const [isCalling, setIsCalling] = useState(false)
+  const [isCallLoading, setIsCallLoading] = useState(false)
+  const [callStatus, setCallStatus] = useState('Ready')
+  const [callDuration, setCallDuration] = useState(0)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isDeviceReady, setIsDeviceReady] = useState(true)
+  const [communicationHistory, setCommunicationHistory] = useState<CommunicationHistoryItem[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [playingRecordingId, setPlayingRecordingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Doctor info (get from auth context in real app)
+  const [doctorName, setDoctorName] = useState('Dr. Smith')
+  
+  const audioRefs = useRef<{ [key: string]: HTMLAudioElement | null }>({})
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  // =============================================
+  // LOAD RECENT PATIENTS ON MOUNT
+  // =============================================
+  useEffect(() => {
+    loadRecentPatients()
+    loadDoctorInfo()
+  }, [])
+
+  const loadDoctorInfo = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: doctor } = await supabase
+          .from('doctors')
+          .select('first_name, last_name')
+          .eq('id', user.id)
+          .single()
+        
+        if (doctor) {
+          setDoctorName(`Dr. ${doctor.first_name} ${doctor.last_name}`)
+        }
+      }
+    } catch (err) {
+      console.error('Error loading doctor info:', err)
+    }
+  }
+
+  const loadRecentPatients = async () => {
+    try {
+      // Get patients with recent activity (appointments, communications)
+      const { data, error } = await supabase
+        .from('patients')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          mobile_phone,
+          date_of_birth,
+          gender,
+          created_at
+        `)
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (error) throw error
+      setRecentPatients(data || [])
+    } catch (err) {
+      console.error('Error loading recent patients:', err)
+    }
+  }
+
+  // =============================================
+  // SMART SEARCH
+  // =============================================
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchTerm(value)
+    setSearchError(null)
+    
+    // Clear previous debounce
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current)
+    }
+    
+    if (value.trim().length < 2) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+    
+    // Debounce search
+    searchDebounceRef.current = setTimeout(() => {
+      performSearch(value.trim())
+    }, 300)
+  }, [])
+
+  const performSearch = async (term: string) => {
+    setIsSearching(true)
+    setSearchError(null)
+    
+    try {
+      // Smart search: name, email, phone
+      const searchLower = term.toLowerCase()
+      
+      // Build search query
+      let query = supabase
+        .from('patients')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          mobile_phone,
+          date_of_birth,
+          gender,
+          address,
+          city,
+          state,
+          zip_code,
+          created_at
+        `)
+        .limit(20)
+
+      // Search by name (first or last)
+      if (term.includes(' ')) {
+        // Full name search
+        const [first, ...rest] = term.split(' ')
+        const last = rest.join(' ')
+        query = query
+          .ilike('first_name', `%${first}%`)
+          .ilike('last_name', `%${last}%`)
+      } else if (term.includes('@')) {
+        // Email search
+        query = query.ilike('email', `%${term}%`)
+      } else if (/^\d+$/.test(term) || term.startsWith('+')) {
+        // Phone number search
+        query = query.ilike('mobile_phone', `%${term.replace(/\D/g, '')}%`)
+      } else {
+        // General name search
+        query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%`)
+      }
+
+      const { data, error } = await query.order('last_name', { ascending: true })
+
+      if (error) throw error
+
+      // Deduplicate by email (combine records with same email)
+      const deduped = deduplicateByEmail(data || [])
+      setSearchResults(deduped)
+      
+    } catch (err: any) {
+      console.error('Search error:', err)
+      setSearchError(err.message || 'Search failed')
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  // Deduplicate patients by email
+  const deduplicateByEmail = (patients: Patient[]): Patient[] => {
+    const emailMap = new Map<string, Patient>()
+    const noEmailPatients: Patient[] = []
+    
+    patients.forEach(patient => {
+      if (patient.email) {
+        const existing = emailMap.get(patient.email.toLowerCase())
+        if (!existing || new Date(patient.created_at) > new Date(existing.created_at)) {
+          emailMap.set(patient.email.toLowerCase(), patient)
+        }
+      } else {
+        noEmailPatients.push(patient)
+      }
+    })
+    
+    return [...Array.from(emailMap.values()), ...noEmailPatients]
+  }
+
+  // =============================================
+  // SELECT PATIENT
+  // =============================================
+  const handleSelectPatient = async (patient: Patient) => {
+    setSelectedPatient(patient)
+    setLoadingPatientData(true)
+    setError(null)
+    
+    // Pre-fill communication fields
+    setSmsTo(patient.mobile_phone || '')
+    setCallPhoneNumber(patient.mobile_phone || '')
+    
+    try {
+      // Load communication history for this patient
+      await loadCommunicationHistory(patient.id)
+      
+      // Load patient files
+      await loadPatientFiles(patient.id)
+      
+    } catch (err: any) {
+      console.error('Error loading patient data:', err)
+      setError(err.message || 'Failed to load patient data')
+    } finally {
+      setLoadingPatientData(false)
+    }
+  }
+
+  const loadCommunicationHistory = async (patientId: string) => {
+    setLoadingHistory(true)
+    try {
+      const { data, error } = await supabase
+        .from('communication_history')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      setCommunicationHistory(data || [])
+    } catch (err) {
+      console.error('Error loading communication history:', err)
+      setCommunicationHistory([])
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
+  const loadPatientFiles = async (patientId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('files')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      setPatientFiles(data || [])
+    } catch (err) {
+      console.error('Error loading patient files:', err)
+      setPatientFiles([])
+    }
+  }
+
+  // =============================================
+  // COMMUNICATION HANDLERS
+  // =============================================
+  const handleSendSMS = useCallback(async () => {
+    if (!smsTo || !smsMessage.trim()) return
+    
+    setIsSendingSMS(true)
+    setError(null)
+    
+    try {
+      const response = await fetch('/api/communication/sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: smsTo,
+          message: smsMessage,
+          patient_id: selectedPatient?.id || null  // Optional - works without patient
+        })
+      })
+      
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Failed to send SMS')
+      }
+      
+      setSmsMessage('')
+      // Only refresh history if patient selected
+      if (selectedPatient) {
+        await loadCommunicationHistory(selectedPatient.id)
+      }
+      
+    } catch (err: any) {
+      console.error('SMS error:', err)
+      setError(`SMS Error: ${err.message}`)
+    } finally {
+      setIsSendingSMS(false)
+    }
+  }, [smsTo, smsMessage, selectedPatient])
+
+  const handleMakeCall = useCallback(async () => {
+    if (!callPhoneNumber) return
+    
+    setIsCallLoading(true)
+    setCallStatus('Connecting...')
+    setError(null)
+    
+    try {
+      // Your existing Twilio call logic
+      const response = await fetch('/api/communication/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: callPhoneNumber,
+          patient_id: selectedPatient?.id || null  // Optional - works without patient
+        })
+      })
+      
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Failed to initiate call')
+      }
+      
+      setIsCalling(true)
+      setCallStatus('Ringing...')
+      
+    } catch (err: any) {
+      console.error('Call error:', err)
+      setError(`Call Error: ${err.message}`)
+      setCallStatus('Ready')
+    } finally {
+      setIsCallLoading(false)
+    }
+  }, [callPhoneNumber, selectedPatient])
+
+  const handleEndCall = useCallback(() => {
+    setIsCalling(false)
+    setCallStatus('Ready')
+    setCallDuration(0)
+    if (selectedPatient) {
+      loadCommunicationHistory(selectedPatient.id)
+    }
+  }, [selectedPatient])
+
+  const handleToggleMute = useCallback(() => {
+    setIsMuted(prev => !prev)
+  }, [])
+
+  const formatDuration = useCallback((seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+    const s = (seconds % 60).toString().padStart(2, '0')
+    return `${m}:${s}`
+  }, [])
+
+  const formatHistoryDate = useCallback((dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (days === 0) {
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    } else if (days === 1) {
+      return 'Yesterday'
+    } else if (days < 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short' })
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+  }, [])
+
+  const handlePlayRecording = useCallback((id: string) => {
+    const audio = audioRefs.current[id]
+    if (!audio) return
+    
+    if (playingRecordingId === id) {
+      audio.pause()
+      setPlayingRecordingId(null)
+    } else {
+      // Pause any currently playing
+      if (playingRecordingId && audioRefs.current[playingRecordingId]) {
+        audioRefs.current[playingRecordingId]?.pause()
+      }
+      audio.play()
+      setPlayingRecordingId(id)
+    }
+  }, [playingRecordingId])
+
+  // Video call callbacks
+  const handleSaveTranscript = useCallback(async (transcriptText: string) => {
+    if (!selectedPatient) return
+    
+    try {
+      await fetch('/api/video-visits/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: selectedPatient.id,
+          transcript: transcriptText
+        })
+      })
+      console.log('✅ Transcript saved')
+    } catch (err) {
+      console.error('❌ Error saving transcript:', err)
+    }
+  }, [selectedPatient])
+
+  const handleSaveSOAP = useCallback(async (soap: { 
+    subjective: string
+    objective: string
+    assessment: string
+    plan: string 
+  }) => {
+    if (!selectedPatient) return
+    
+    try {
+      await fetch('/api/video-visits/soap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: selectedPatient.id,
+          ...soap
+        })
+      })
+      console.log('✅ SOAP note saved')
+    } catch (err) {
+      console.error('❌ Error saving SOAP:', err)
+    }
+  }, [selectedPatient])
+
+  // =============================================
+  // CLEAR / GO BACK
+  // =============================================
+  const handleClearSelection = () => {
+    setSelectedPatient(null)
+    setCommunicationHistory([])
+    setPatientFiles([])
+    setSmsTo('')
+    setSmsMessage('')
+    setCallPhoneNumber('')
+    setError(null)
+  }
+
+  const handleClearSearch = () => {
+    setSearchTerm('')
+    setSearchResults([])
+    searchInputRef.current?.focus()
+  }
+
+  // =============================================
+  // COMPUTED VALUES
+  // =============================================
+  const displayedPatients = useMemo(() => {
+    if (searchTerm.trim().length >= 2) {
+      return searchResults
+    }
+    return recentPatients
+  }, [searchTerm, searchResults, recentPatients])
+
+  const formatPatientName = (patient: Patient) => {
+    return `${patient.first_name} ${patient.last_name}`
+  }
+
+  const formatDOB = (dob: string | null) => {
+    if (!dob) return 'N/A'
+    return new Date(dob).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })
+  }
+
+  const calculateAge = (dob: string | null) => {
+    if (!dob) return null
+    const birth = new Date(dob)
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  // =============================================
+  // RENDER
+  // =============================================
+  return (
+    <div className="min-h-screen bg-slate-900 text-white">
+      {/* Header */}
+      <div className="bg-[#0f1318] border-b border-slate-700 px-4 py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {(selectedPatient || showStandaloneCommunication) && (
+              <button
+                onClick={() => {
+                  if (selectedPatient) handleClearSelection()
+                  if (showStandaloneCommunication) setShowStandaloneCommunication(false)
+                }}
+                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div className="flex items-center">
+              <span className="text-orange-500 font-bold text-xl tracking-wider">MEDAZON</span>
+              <span className="text-white font-bold text-xl mx-1.5">+</span>
+              <span className="text-teal-400 font-bold text-xl tracking-wider">HEALTH</span>
+            </div>
+          </div>
+          
+          <h1 className="text-lg font-semibold text-white">
+            {selectedPatient 
+              ? formatPatientName(selectedPatient) 
+              : showStandaloneCommunication 
+                ? 'Quick Communication' 
+                : 'Patient Communication Center'
+            }
+          </h1>
+          
+          <div className="w-24" /> {/* Spacer for centering */}
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto p-4">
+        {showStandaloneCommunication ? (
+          // =============================================
+          // STANDALONE COMMUNICATION MODE (No Patient)
+          // =============================================
+          <div className="max-w-3xl mx-auto">
+            <CommunicationPanel
+              smsTo={smsTo}
+              smsMessage={smsMessage}
+              isSendingSMS={isSendingSMS}
+              callPhoneNumber={callPhoneNumber}
+              isCalling={isCalling}
+              isCallLoading={isCallLoading}
+              callStatus={callStatus}
+              callDuration={callDuration}
+              isMuted={isMuted}
+              isDeviceReady={isDeviceReady}
+              communicationHistory={[]}
+              loadingHistory={false}
+              playingRecordingId={playingRecordingId}
+              error={error}
+              patientName=""
+              patientPhone=""
+              patientId={null}
+              doctorName={doctorName}
+              onSmsToChange={setSmsTo}
+              onSmsMessageChange={setSmsMessage}
+              onCallPhoneNumberChange={setCallPhoneNumber}
+              onSendSMS={handleSendSMS}
+              onMakeCall={handleMakeCall}
+              onEndCall={handleEndCall}
+              onToggleMute={handleToggleMute}
+              formatDuration={formatDuration}
+              formatHistoryDate={formatHistoryDate}
+              onPlayRecording={handlePlayRecording}
+              audioRefs={audioRefs}
+            />
+          </div>
+        ) : !selectedPatient ? (
+          // =============================================
+          // PATIENT SEARCH VIEW
+          // =============================================
+          <div className="space-y-6">
+            {/* Quick Action Bar */}
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <p className="text-slate-400 text-sm">
+                Search for a patient or use quick communication
+              </p>
+              <button
+                onClick={() => setShowStandaloneCommunication(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg transition-colors text-sm font-medium"
+              >
+                <Phone className="w-4 h-4 text-teal-400" />
+                <span>Quick Call / SMS</span>
+                <span className="text-slate-500 text-xs">(Non-Patient)</span>
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search patients by name, email, or phone..."
+                  className="w-full h-14 pl-12 pr-12 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-lg"
+                  autoFocus
+                />
+                {searchTerm && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded-full transition-colors"
+                  >
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
+                )}
+              </div>
+              
+              {/* Search Status */}
+              {isSearching && (
+                <div className="absolute right-14 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                </div>
+              )}
+            </div>
+
+            {/* Search Error */}
+            {searchError && (
+              <div className="flex items-center gap-2 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-400" />
+                <span className="text-red-400 text-sm">{searchError}</span>
+              </div>
+            )}
+
+            {/* Section Header */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">
+                {searchTerm.trim().length >= 2 
+                  ? `Search Results (${searchResults.length})`
+                  : 'Recent Patients'
+                }
+              </h2>
+              {searchTerm.trim().length >= 2 && searchResults.length > 0 && (
+                <span className="text-sm text-slate-400">
+                  Showing {searchResults.length} results
+                </span>
+              )}
+            </div>
+
+            {/* Patient List */}
+            <div className="grid gap-3">
+              {displayedPatients.length === 0 ? (
+                <div className="text-center py-12">
+                  {searchTerm.trim().length >= 2 ? (
+                    <div className="space-y-2">
+                      <User className="w-12 h-12 text-slate-600 mx-auto" />
+                      <p className="text-slate-400">No patients found for "{searchTerm}"</p>
+                      <p className="text-slate-500 text-sm">Try a different search term</p>
+                    </div>
+                  ) : searchTerm.trim().length > 0 ? (
+                    <p className="text-slate-400">Type at least 2 characters to search</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <User className="w-12 h-12 text-slate-600 mx-auto" />
+                      <p className="text-slate-400">No recent patients</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                displayedPatients.map((patient) => (
+                  <div
+                    key={patient.id}
+                    onClick={() => handleSelectPatient(patient)}
+                    className="flex items-center gap-4 p-4 bg-slate-800/50 border border-slate-700 rounded-xl cursor-pointer hover:bg-slate-800 hover:border-cyan-500/50 transition-all group"
+                  >
+                    {/* Avatar */}
+                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white font-semibold text-lg">
+                        {patient.first_name[0]}{patient.last_name[0]}
+                      </span>
+                    </div>
+                    
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-white font-medium truncate">
+                          {formatPatientName(patient)}
+                        </h3>
+                        {calculateAge(patient.date_of_birth) && (
+                          <span className="text-slate-400 text-sm">
+                            ({calculateAge(patient.date_of_birth)} yrs)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
+                        {patient.email && (
+                          <span className="flex items-center gap-1 truncate">
+                            <Mail className="w-3 h-3" />
+                            {patient.email}
+                          </span>
+                        )}
+                        {patient.mobile_phone && (
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {patient.mobile_phone}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Quick Actions */}
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelectPatient(patient)
+                        }}
+                        className="p-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg transition-colors"
+                        title="Video Call + AI Scribe"
+                      >
+                        <Video className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelectPatient(patient)
+                        }}
+                        className="p-2 bg-teal-600/20 hover:bg-teal-600/40 text-teal-400 rounded-lg transition-colors"
+                        title="Call"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelectPatient(patient)
+                        }}
+                        className="p-2 bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 rounded-lg transition-colors"
+                        title="SMS"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
+                    </div>
+                    
+                    <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          // =============================================
+          // SELECTED PATIENT VIEW
+          // =============================================
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column: Patient Info + Files */}
+            <div className="space-y-4">
+              {/* Patient Card */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-white font-bold text-2xl">
+                      {selectedPatient.first_name[0]}{selectedPatient.last_name[0]}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-xl font-bold text-white">
+                      {formatPatientName(selectedPatient)}
+                    </h2>
+                    <div className="flex items-center gap-2 mt-1 text-sm text-slate-400">
+                      {calculateAge(selectedPatient.date_of_birth) && (
+                        <span>{calculateAge(selectedPatient.date_of_birth)} yrs</span>
+                      )}
+                      {selectedPatient.gender && (
+                        <>
+                          <span>•</span>
+                          <span className="capitalize">{selectedPatient.gender}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-4 space-y-2">
+                  {selectedPatient.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="w-4 h-4 text-slate-500" />
+                      <span className="text-slate-300">{selectedPatient.email}</span>
+                    </div>
+                  )}
+                  {selectedPatient.mobile_phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="w-4 h-4 text-slate-500" />
+                      <span className="text-slate-300">{selectedPatient.mobile_phone}</span>
+                    </div>
+                  )}
+                  {selectedPatient.date_of_birth && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="w-4 h-4 text-slate-500" />
+                      <span className="text-slate-300">DOB: {formatDOB(selectedPatient.date_of_birth)}</span>
+                    </div>
+                  )}
+                  {selectedPatient.address && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <User className="w-4 h-4 text-slate-500 mt-0.5" />
+                      <span className="text-slate-300">
+                        {selectedPatient.address}
+                        {selectedPatient.city && `, ${selectedPatient.city}`}
+                        {selectedPatient.state && `, ${selectedPatient.state}`}
+                        {selectedPatient.zip_code && ` ${selectedPatient.zip_code}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Patient Files */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-cyan-400" />
+                  Patient Files
+                </h3>
+                
+                {loadingPatientData ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                  </div>
+                ) : patientFiles.length === 0 ? (
+                  <p className="text-slate-500 text-sm text-center py-4">No files uploaded</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {patientFiles.map((file) => (
+                      <a
+                        key={file.id}
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-2 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition-colors"
+                      >
+                        <FileText className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{file.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {new Date(file.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Actions */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-white mb-3">Quick Actions</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="flex items-center justify-center gap-2 p-3 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm">
+                    <Calendar className="w-4 h-4 text-cyan-400" />
+                    <span>Schedule</span>
+                  </button>
+                  <button className="flex items-center justify-center gap-2 p-3 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm">
+                    <FileText className="w-4 h-4 text-cyan-400" />
+                    <span>View Chart</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Communication Panel (2 cols wide) */}
+            <div className="lg:col-span-2">
+              <CommunicationPanel
+                smsTo={smsTo}
+                smsMessage={smsMessage}
+                isSendingSMS={isSendingSMS}
+                callPhoneNumber={callPhoneNumber}
+                isCalling={isCalling}
+                isCallLoading={isCallLoading}
+                callStatus={callStatus}
+                callDuration={callDuration}
+                isMuted={isMuted}
+                isDeviceReady={isDeviceReady}
+                communicationHistory={communicationHistory}
+                loadingHistory={loadingHistory}
+                playingRecordingId={playingRecordingId}
+                error={error}
+                patientName={formatPatientName(selectedPatient)}
+                patientPhone={selectedPatient.mobile_phone || ''}
+                patientId={selectedPatient.id}
+                doctorName={doctorName}
+                onSmsToChange={setSmsTo}
+                onSmsMessageChange={setSmsMessage}
+                onCallPhoneNumberChange={setCallPhoneNumber}
+                onSendSMS={handleSendSMS}
+                onMakeCall={handleMakeCall}
+                onEndCall={handleEndCall}
+                onToggleMute={handleToggleMute}
+                formatDuration={formatDuration}
+                formatHistoryDate={formatHistoryDate}
+                onPlayRecording={handlePlayRecording}
+                audioRefs={audioRefs}
+                onSaveTranscript={handleSaveTranscript}
+                onSaveSOAP={handleSaveSOAP}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
