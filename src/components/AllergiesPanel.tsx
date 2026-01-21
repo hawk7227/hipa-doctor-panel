@@ -21,7 +21,7 @@ interface Allergy {
   status: string
   recorded_at: string
 }
-
+ 
 interface AllergiesPanelProps {
   isOpen: boolean
   onClose: () => void

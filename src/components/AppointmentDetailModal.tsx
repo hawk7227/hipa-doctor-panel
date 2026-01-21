@@ -46,6 +46,7 @@ import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/util
 
 // Styles
 import '../app/doctor/availability/availability.css'
+import DailyMeetingEmbed from './DailycoMeetingPanel'
 
 interface CalendarAppointment {
   id: string
@@ -1058,9 +1059,16 @@ export default function AppointmentDetailModal({
 
         case 'meeting-info':
           return (
-            <ZoomMeetingEmbed
+            <DailyMeetingEmbed
               key={sectionId}
-              appointment={appointment}
+              appointment={appointment && {
+                id: appointment.id,
+                requested_date_time: appointment.requested_date_time,
+                dailyco_meeting_url: (appointment as any).dailyco_meeting_url || null,
+                dailyco_room_name: (appointment as any).dailyco_room_name || null,
+                dailyco_owner_token: (appointment as any).dailyco_owner_token || null,
+                recording_url: (appointment as any).recording_url || null
+              }}
               currentUser={currentUser}
               isCustomizeMode={layout.isCustomizeMode}
               sectionProps={sectionProps}
