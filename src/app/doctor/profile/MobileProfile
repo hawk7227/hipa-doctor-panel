@@ -1,0 +1,262 @@
+'use client'
+
+import { useState } from 'react'
+import './mobile-first.css'
+
+// ============================================
+// MOBILE-FIRST PROFILE PAGE
+// ============================================
+export default function MobileProfile() {
+  const [activeNav, setActiveNav] = useState('profile')
+
+  // Doctor profile data
+  const doctor = {
+    name: 'Dr. Sarah Smith',
+    specialty: 'Internal Medicine',
+    license: 'FL-12345',
+    rate: '$79/visit',
+    yearsExp: 15,
+    rating: 4.9,
+    patients: '500+',
+    languages: ['English', 'Spanish'],
+    insurance: ['Aetna', 'BlueCross', 'United', 'Cigna']
+  }
+
+  const settingsItems = [
+    { icon: '👤', label: 'Personal Info', value: '', action: true },
+    { icon: '📜', label: 'Credentials', value: '', action: true },
+    { icon: '💳', label: 'Payment', value: '$79/visit', action: true },
+    { icon: '🔔', label: 'Notifications', value: 'On', action: true },
+    { icon: '🔒', label: 'Password', value: '', action: true },
+  ]
+
+  return (
+    <div className="mobile-page">
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px',
+        paddingTop: 'calc(16px + env(safe-area-inset-top))',
+        background: 'var(--bg-white)',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>My Profile</h1>
+        <button style={{
+          padding: '8px 16px',
+          background: 'var(--primary-blue)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}>
+          Edit
+        </button>
+      </div>
+
+      {/* Profile Card */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        padding: '20px 16px',
+        background: 'var(--bg-white)',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <div style={{
+          width: '64px',
+          height: '64px',
+          borderRadius: '16px',
+          background: 'var(--primary-blue)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '24px',
+          fontWeight: 700,
+          color: 'white'
+        }}>
+          DS
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {doctor.name}
+          </div>
+          <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            {doctor.specialty}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            License: {doctor.license} • {doctor.rate}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Row */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '12px',
+        padding: '16px',
+        background: 'var(--bg-white)',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <div style={{
+          textAlign: 'center',
+          padding: '16px 8px',
+          background: 'var(--bg-gray-50)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)' }}>
+            {doctor.yearsExp}
+          </div>
+          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)', marginTop: '4px' }}>
+            Years Exp.
+          </div>
+        </div>
+        <div style={{
+          textAlign: 'center',
+          padding: '16px 8px',
+          background: 'var(--bg-gray-50)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)' }}>
+            {doctor.rating}
+          </div>
+          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)', marginTop: '4px' }}>
+            Rating
+          </div>
+        </div>
+        <div style={{
+          textAlign: 'center',
+          padding: '16px 8px',
+          background: 'var(--bg-gray-50)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)' }}>
+            {doctor.patients}
+          </div>
+          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)', marginTop: '4px' }}>
+            Patients
+          </div>
+        </div>
+      </div>
+
+      {/* Languages */}
+      <div style={{ padding: '16px', background: 'var(--bg-white)', borderBottom: '1px solid var(--border-light)' }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          marginBottom: '8px' 
+        }}>
+          Languages
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {doctor.languages.map(lang => (
+            <span key={lang} style={{
+              padding: '6px 14px',
+              background: 'var(--bg-gray-100)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '20px',
+              fontSize: '13px',
+              color: 'var(--text-secondary)'
+            }}>
+              {lang}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Insurance Accepted */}
+      <div style={{ padding: '16px', background: 'var(--bg-white)', borderBottom: '1px solid var(--border-light)' }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          marginBottom: '8px' 
+        }}>
+          Insurance Accepted
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {doctor.insurance.map(ins => (
+            <span key={ins} style={{
+              padding: '6px 14px',
+              background: 'var(--bg-gray-100)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '20px',
+              fontSize: '13px',
+              color: 'var(--text-secondary)'
+            }}>
+              {ins}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Settings Section */}
+      <div style={{ padding: '16px 16px 8px' }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          marginBottom: '8px',
+          paddingLeft: '4px'
+        }}>
+          Settings
+        </div>
+      </div>
+
+      <div className="settings-list">
+        {settingsItems.map((item, index) => (
+          <div key={index} className="settings-item">
+            <div className="settings-item-left">
+              <div className="settings-item-icon">{item.icon}</div>
+              <span className="settings-item-label">{item.label}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {item.value && <span className="settings-item-value">{item.value}</span>}
+              {item.action && <span className="settings-item-arrow">›</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sign Out Button */}
+      <button className="signout-btn">
+        Sign Out
+      </button>
+
+      {/* Bottom Navigation */}
+      <nav className="bottom-nav">
+        <div className="nav-item" onClick={() => setActiveNav('home')}>
+          <span className="nav-icon">🏠</span>
+          <span className="nav-label">Home</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('calendar')}>
+          <span className="nav-icon">📅</span>
+          <span className="nav-label">Calendar</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('patients')}>
+          <span className="nav-icon">👥</span>
+          <span className="nav-label">Patients</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('records')}>
+          <span className="nav-icon">📁</span>
+          <span className="nav-label">Records</span>
+        </div>
+        <div className={`nav-item ${activeNav === 'profile' ? 'active' : ''}`} onClick={() => setActiveNav('profile')}>
+          <span className="nav-icon">👤</span>
+          <span className="nav-label">Profile</span>
+        </div>
+      </nav>
+    </div>
+  )
+}

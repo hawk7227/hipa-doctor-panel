@@ -1,0 +1,354 @@
+'use client'
+
+import { useState } from 'react'
+import './mobile-first.css'
+
+// ============================================
+// TYPES
+// ============================================
+interface CommunicationLog {
+  id: string
+  type: 'call' | 'sms' | 'video' | 'email'
+  details: string
+  time: string
+  direction: 'in' | 'out'
+}
+
+// ============================================
+// MOBILE-FIRST COMMUNICATION PAGE
+// ============================================
+export default function MobileCommunication({ patientId }: { patientId?: string }) {
+  const [message, setMessage] = useState('')
+  const [sendMethod, setSendMethod] = useState<'sms' | 'email'>('sms')
+  const [activeNav, setActiveNav] = useState('messages')
+
+  // Patient data
+  const patient = {
+    name: 'Maria Garcia',
+    phone: '+1 (555) 123-4567',
+    initials: 'MG'
+  }
+
+  // Quick message templates
+  const templates = [
+    'Appt reminder',
+    'Rx ready',
+    'Lab results',
+    'Follow-up'
+  ]
+
+  // Communication log
+  const logs: CommunicationLog[] = [
+    { id: '1', type: 'call', details: 'Call (5:23)', time: '2h ago', direction: 'out' },
+    { id: '2', type: 'sms', details: 'Thank you for the...', time: '4h ago', direction: 'in' },
+    { id: '3', type: 'video', details: 'Video (15:00)', time: '1d ago', direction: 'out' },
+    { id: '4', type: 'sms', details: 'Your appointment is...', time: '1d ago', direction: 'out' },
+    { id: '5', type: 'call', details: 'Missed call', time: '2d ago', direction: 'in' },
+  ]
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'call': return '📞'
+      case 'sms': return '💬'
+      case 'video': return '📹'
+      case 'email': return '✉️'
+      default: return '📱'
+    }
+  }
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'call': return 'var(--danger-red)'
+      case 'sms': return 'var(--primary-blue)'
+      case 'video': return 'var(--purple)'
+      default: return 'var(--text-secondary)'
+    }
+  }
+
+  return (
+    <div className="mobile-page">
+      {/* Header */}
+      <header className="mobile-header">
+        <div className="mobile-header-row">
+          <div className="mobile-header-left">
+            <button className="mobile-back-btn">←</button>
+            <h1 className="mobile-header-title">Communication</h1>
+          </div>
+          <div className="mobile-header-actions">
+            <button className="icon-btn">⚙️</button>
+          </div>
+        </div>
+      </header>
+
+      {/* Patient Info */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px',
+        background: 'var(--bg-white)',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'var(--bg-gray-200)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+            fontWeight: 700,
+            color: 'var(--text-secondary)'
+          }}>
+            {patient.initials}
+          </div>
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {patient.name}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              {patient.phone}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="icon-btn" style={{ 
+            background: 'rgba(239, 68, 68, 0.1)', 
+            borderColor: 'rgba(239, 68, 68, 0.3)',
+            color: 'var(--danger-red)'
+          }}>
+            📞
+          </button>
+          <button className="icon-btn primary">📹</button>
+        </div>
+      </div>
+
+      {/* Send Message Section */}
+      <div style={{ padding: '16px', background: 'var(--bg-white)', borderBottom: '1px solid var(--border-light)' }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          marginBottom: '12px'
+        }}>
+          Send Message
+        </div>
+        
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Type message..."
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: 'var(--bg-gray-50)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '12px',
+            fontSize: '15px',
+            color: 'var(--text-primary)',
+            resize: 'none',
+            minHeight: '80px',
+            outline: 'none',
+            fontFamily: 'inherit'
+          }}
+        />
+
+        {/* Quick Templates */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          {templates.map(template => (
+            <button
+              key={template}
+              onClick={() => setMessage(template + ': ')}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--bg-gray-100)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '20px',
+                fontSize: '13px',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer'
+              }}
+            >
+              {template}
+            </button>
+          ))}
+        </div>
+
+        {/* Send Method Toggle */}
+        <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+          <button
+            onClick={() => setSendMethod('sms')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '12px',
+              background: sendMethod === 'sms' ? 'var(--primary-blue)' : 'var(--bg-white)',
+              border: `1px solid ${sendMethod === 'sms' ? 'var(--primary-blue)' : 'var(--border-light)'}`,
+              borderRadius: '10px',
+              fontSize: '14px',
+              fontWeight: 600,
+              color: sendMethod === 'sms' ? 'white' : 'var(--text-primary)',
+              cursor: 'pointer'
+            }}
+          >
+            💬 Send SMS
+          </button>
+          <button
+            onClick={() => setSendMethod('email')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '12px',
+              background: sendMethod === 'email' ? 'var(--primary-blue)' : 'var(--bg-white)',
+              border: `1px solid ${sendMethod === 'email' ? 'var(--primary-blue)' : 'var(--border-light)'}`,
+              borderRadius: '10px',
+              fontSize: '14px',
+              fontWeight: 600,
+              color: sendMethod === 'email' ? 'white' : 'var(--text-primary)',
+              cursor: 'pointer'
+            }}
+          >
+            ○ Email
+          </button>
+        </div>
+      </div>
+
+      {/* Communication Log */}
+      <div style={{ padding: '16px 16px 8px' }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase'
+        }}>
+          Communication Log
+        </div>
+      </div>
+
+      <div style={{ 
+        background: 'var(--bg-white)', 
+        margin: '0 16px 16px',
+        borderRadius: '12px',
+        border: '1px solid var(--border-light)',
+        overflow: 'hidden'
+      }}>
+        {/* Table Header */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 80px 50px',
+          gap: '12px',
+          padding: '12px 16px',
+          background: 'var(--bg-gray-50)',
+          borderBottom: '1px solid var(--border-light)',
+          fontSize: '11px',
+          fontWeight: 600,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase'
+        }}>
+          <span>DETAILS</span>
+          <span>TIME</span>
+          <span>DIR</span>
+        </div>
+
+        {/* Log Rows */}
+        {logs.map(log => (
+          <div 
+            key={log.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 80px 50px',
+              gap: '12px',
+              padding: '14px 16px',
+              borderBottom: '1px solid var(--border-light)',
+              alignItems: 'center'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ color: getTypeColor(log.type), fontSize: '16px' }}>
+                {getTypeIcon(log.type)}
+              </span>
+              <div>
+                <div style={{ 
+                  fontSize: '14px', 
+                  fontWeight: 500, 
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '150px'
+                }}>
+                  {log.type === 'sms' ? 'SMS' : log.type.charAt(0).toUpperCase() + log.type.slice(1)}
+                  {log.type !== 'sms' && ` ${log.details.split(' ')[1] || ''}`}
+                </div>
+                {log.type === 'sms' && (
+                  <div style={{ 
+                    fontSize: '12px', 
+                    color: 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '150px'
+                  }}>
+                    {log.details}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              {log.time}
+            </div>
+            <div>
+              <span style={{
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: log.direction === 'in' 
+                  ? 'rgba(59, 130, 246, 0.1)' 
+                  : 'rgba(100, 116, 139, 0.1)',
+                color: log.direction === 'in' 
+                  ? 'var(--primary-blue)' 
+                  : 'var(--text-secondary)'
+              }}>
+                {log.direction === 'in' ? 'In' : 'Out'}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bottom Navigation */}
+      <nav className="bottom-nav">
+        <div className="nav-item" onClick={() => setActiveNav('home')}>
+          <span className="nav-icon">🏠</span>
+          <span className="nav-label">Home</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('calendar')}>
+          <span className="nav-icon">📅</span>
+          <span className="nav-label">Calendar</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('patients')}>
+          <span className="nav-icon">👥</span>
+          <span className="nav-label">Patients</span>
+        </div>
+        <div className={`nav-item ${activeNav === 'messages' ? 'active' : ''}`} onClick={() => setActiveNav('messages')}>
+          <span className="nav-icon">💬</span>
+          <span className="nav-label">Messages</span>
+        </div>
+        <div className="nav-item" onClick={() => setActiveNav('profile')}>
+          <span className="nav-icon">👤</span>
+          <span className="nav-label">Profile</span>
+        </div>
+      </nav>
+    </div>
+  )
+}
