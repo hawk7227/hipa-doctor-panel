@@ -118,7 +118,22 @@ export default function DoctorAppointments() {
   const [loading, setLoading] = useState(true)
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null)
-  const [currentDate, setCurrentDate] = useState(new Date())
+  
+  // Initialize currentDate based on Phoenix timezone
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    console.log('🗓️ Initializing calendar to Phoenix date:', month, '/', day, '/', year)
+    return new Date(year, month - 1, day, 12, 0, 0) // Use noon to avoid DST issues
+  })
+  
   const [viewType, setViewType] = useState<ViewType>('calendar')
   const [currentDoctorId, setCurrentDoctorId] = useState<string | null>(null)
   const [calendarViewType, setCalendarViewType] = useState<'week' | 'month' | '3month'>('week')
@@ -144,9 +159,51 @@ export default function DoctorAppointments() {
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
+  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number, formatted: string, dateStr: string}>({ hour: 0, minute: 0, formatted: '', dateStr: '' })
   const celebrationTriggeredRef = useRef(false)
   const calendarScrollRef = useRef<HTMLDivElement>(null)
   const currentTimeRowRef = useRef<HTMLDivElement>(null)
+
+  // Update current Phoenix time every minute
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date()
+      
+      // Get Phoenix date
+      const phoenixDateFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+      const phoenixDateStr = phoenixDateFormatter.format(now)
+      
+      // Get Phoenix time in 24-hour format for calculations
+      const phoenixTime24 = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+      }).format(now)
+      const [hour24, minute] = phoenixTime24.split(':').map(Number)
+      
+      // Also get the 12-hour formatted time for display
+      const phoenixTimeFormatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(now)
+      
+      setCurrentPhoenixTime({ hour: hour24, minute, formatted: phoenixTimeFormatted, dateStr: phoenixDateStr })
+      console.log('🕐 Phoenix NOW:', phoenixDateStr, phoenixTimeFormatted, '(24h:', hour24 + ':' + String(minute).padStart(2, '0') + ')')
+    }
+    
+    updateTime() // Run immediately
+    const interval = setInterval(updateTime, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
 
   // Generate particles IMMEDIATELY on mount (no waiting for loading)
   useEffect(() => {
@@ -226,32 +283,20 @@ export default function DoctorAppointments() {
   // AUTO-SCROLL TO CURRENT TIME - FRONTEND ONLY
   // ============================================
   useEffect(() => {
-    if (!loading && calendarScrollRef.current) {
+    if (!loading && calendarScrollRef.current && currentPhoenixTime.hour > 0) {
       // Wait a bit for DOM to render
       setTimeout(() => {
         if (currentTimeRowRef.current) {
           currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          console.log('📍 Auto-scrolled to current time row')
         }
-      }, 500)
+      }, 800)
     }
-  }, [loading])
-
-  // Get current hour in Phoenix timezone for highlighting
-  const getCurrentPhoenixHour = useCallback(() => {
-    const now = new Date()
-    const phoenixTime = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Phoenix',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    }).format(now)
-    const [hour, minute] = phoenixTime.split(':').map(Number)
-    return { hour, minute }
-  }, [])
+  }, [loading, currentPhoenixTime.hour])
 
   // Check if a time slot is the current time slot
   const isCurrentTimeSlot = useCallback((time: Date) => {
-    const { hour, minute } = getCurrentPhoenixHour()
+    const { hour, minute } = currentPhoenixTime
     const slotHour = time.getUTCHours()
     const slotMinute = time.getUTCMinutes()
     // Match if within the same 30-minute slot
@@ -260,27 +305,52 @@ export default function DoctorAppointments() {
       if (minute >= 30 && slotMinute === 30) return true
     }
     return false
-  }, [getCurrentPhoenixHour])
+  }, [currentPhoenixTime])
 
-  // Check if a date is today
+  // Check if a date is today (in Phoenix timezone)
   const isToday = useCallback((date: Date) => {
-    const today = new Date()
-    const phoenixToday = new Intl.DateTimeFormat('en-US', {
+    // Get today in Phoenix timezone using the server/client time
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Phoenix',
       year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(today)
-    const [month, day, year] = phoenixToday.split('/')
-    const todayStr = `${year}-${month}-${day}`
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixTodayStr = phoenixFormatter.format(now)
+    const [todayMonth, todayDay, todayYear] = phoenixTodayStr.split('/').map(Number)
     
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    return dateStr === todayStr
+    // The calendar date is a local Date object
+    const calMonth = date.getMonth() + 1
+    const calDay = date.getDate()
+    const calYear = date.getFullYear()
+    
+    const isMatch = calYear === todayYear && calMonth === todayMonth && calDay === todayDay
+    
+    // Debug logging
+    console.log('📍 isToday check:', {
+      phoenixToday: `${todayMonth}/${todayDay}/${todayYear}`,
+      calendarDate: `${calMonth}/${calDay}/${calYear}`,
+      isMatch
+    })
+    
+    return isMatch
   }, [])
 
-  // Go to today
+  // Go to today (in Phoenix timezone)
   const goToToday = () => {
-    setCurrentDate(new Date())
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    const phoenixDate = new Date(year, month - 1, day, 12, 0, 0)
+    console.log('📍 Going to Phoenix today:', month, '/', day, '/', year)
+    setCurrentDate(phoenixDate)
     // Scroll to current time after state update
     setTimeout(() => {
       if (currentTimeRowRef.current) {
@@ -370,17 +440,32 @@ export default function DoctorAppointments() {
   }
 
   const getWeekDates = (date: Date) => {
-    const start = new Date(date)
-    const day = start.getDay()
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
-    start.setDate(diff)
+    // Use the passed date to calculate the week
+    // The date passed is currentDate which represents what week we want to show
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const day = date.getDate()
+    
+    // Create a date for the start calculation
+    const targetDate = new Date(year, month, day, 12, 0, 0) // Use noon to avoid DST issues
+    
+    // Calculate the Monday of the week containing this date
+    const dayOfWeek = targetDate.getDay() // 0 = Sunday, 1 = Monday, etc.
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Get to Monday
+    
+    const monday = new Date(targetDate)
+    monday.setDate(targetDate.getDate() + mondayOffset)
     
     const dates = []
     for (let i = 0; i < 7; i++) {
-      const date = new Date(start)
-      date.setDate(start.getDate() + i)
-      dates.push(date)
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      dates.push(d)
     }
+    
+    console.log('📆 Showing week for date:', month + 1, '/', day, '/', year)
+    console.log('📆 Week dates:', dates.map(d => `${d.getMonth()+1}/${d.getDate()}`).join(', '))
+    
     return dates
   }
 
@@ -426,18 +511,61 @@ export default function DoctorAppointments() {
   // Memoize time slots to avoid recreating on every render
   // CRITICAL: Create time slots explicitly as Phoenix time, not browser local time
   // This ensures the calendar works correctly regardless of where the doctor views it from
+  // Normal doctor hours: 9 AM to 6 PM, but also include any appointment times outside this range
   const timeSlots = useMemo(() => {
-    const slots = []
-    // Start from 5:00 AM to catch early morning appointments
-    for (let hour = 5; hour <= 20; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        // Create time slot explicitly as Phoenix time
-        const time = createPhoenixTimeSlot(hour, minute)
-        slots.push(time)
-      }
+    const slots: Date[] = []
+    const hoursSet = new Set<string>()
+    
+    // Default doctor hours: 9 AM to 6 PM
+    for (let hour = 9; hour <= 18; hour++) {
+      hoursSet.add(`${hour}:0`)
+      hoursSet.add(`${hour}:30`)
     }
+    
+    // Also include hours for any existing appointments outside normal hours
+    if (appointments && appointments.length > 0) {
+      appointments.forEach(apt => {
+        if (apt.requested_date_time) {
+          try {
+            const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+            const aptHour = aptDate.getUTCHours()
+            const aptMinute = aptDate.getUTCMinutes() < 30 ? 0 : 30
+            
+            // Add this slot
+            hoursSet.add(`${aptHour}:${aptMinute}`)
+            
+            // Add surrounding slots for context
+            if (aptMinute === 0 && aptHour > 0) {
+              hoursSet.add(`${aptHour - 1}:30`)
+            }
+            if (aptMinute === 30 && aptHour < 23) {
+              hoursSet.add(`${aptHour + 1}:0`)
+            }
+          } catch (e) {
+            console.error('Error processing appointment time:', e)
+          }
+        }
+      })
+    }
+    
+    // Convert to sorted array and create time slots
+    const sortedHours = Array.from(hoursSet)
+      .map(h => {
+        const [hour, minute] = h.split(':').map(Number)
+        return { hour, minute }
+      })
+      .filter(h => h.hour >= 0 && h.hour <= 23)
+      .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute))
+    
+    sortedHours.forEach(({ hour, minute }) => {
+      const time = createPhoenixTimeSlot(hour, minute)
+      slots.push(time)
+    })
+    
+    console.log('📅 Time slots generated:', sortedHours.length, 'slots from', sortedHours[0]?.hour + ':' + sortedHours[0]?.minute, 'to', sortedHours[sortedHours.length-1]?.hour + ':' + sortedHours[sortedHours.length-1]?.minute)
+    
     return slots
-  }, [])
+  }, [appointments])
 
   const formatTime = (date: Date) => {
     // CRITICAL: Time slots are now Phoenix time (UTC values representing Phoenix local time)
@@ -1242,8 +1370,24 @@ export default function DoctorAppointments() {
         .availability-cal {
           border: 1px solid rgba(0, 245, 255, 0.2) !important;
           border-radius: 12px !important;
-          overflow: hidden !important;
           box-shadow: 0 0 40px rgba(0, 245, 255, 0.1), 0 0 80px rgba(20, 184, 166, 0.05) !important;
+        }
+
+        /* Scrollbar styling */
+        .availability-page ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .availability-page ::-webkit-scrollbar-track {
+          background: rgba(0, 20, 40, 0.5);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, #00f5ff, #14b8a6);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, #00ffff, #20d0b8);
         }
 
         /* ============================================ */
@@ -1485,15 +1629,18 @@ export default function DoctorAppointments() {
       {/* ============================================ */}
       {/* ORIGINAL CALENDAR - COMPLETELY UNCHANGED */}
       {/* ============================================ */}
-      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* ============================================ */}
         {/* CALENDAR HEADER BAR - FRONTEND ONLY */}
         {/* ============================================ */}
-        <div className="calendar-header">
+        <div className="calendar-header" style={{ flexShrink: 0 }}>
           <div className="calendar-header-left">
             <h1 className="calendar-title">📅 Your Appointments</h1>
             <span className="calendar-date-display">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              {currentPhoenixTime.dateStr || currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+            <span style={{ fontSize: '12px', color: '#00ff88', marginLeft: '8px', padding: '4px 8px', background: 'rgba(0,255,136,0.2)', borderRadius: '6px' }}>
+              🕐 {currentPhoenixTime.formatted || '--:--'} PHX
             </span>
           </div>
           
@@ -1538,22 +1685,23 @@ export default function DoctorAppointments() {
         </div>
 
         {/* Full Screen Calendar Container */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           {viewType === 'calendar' ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
             {calendarViewType === 'week' ? (
-              <div ref={calendarScrollRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+              <div ref={calendarScrollRef} style={{ flex: 1, overflow: 'auto' }}>
                 {/* Week Calendar Grid - Using availability page structure */}
-                <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div className="availability-cal" style={{ display: 'flex', flexDirection: 'column', minHeight: 'max-content' }}>
                   {/* Header Row */}
-                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
-                    <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
+                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10, background: '#081226' }}>
+                    <div className="availability-dayhead" style={{ background: '#081226' }}>TIME</div>
                     {visibleDates.map((date, idx) => (
                       <div 
                         key={`header-${idx}`} 
                         className={`availability-dayhead ${isToday(date) ? 'today-header' : ''}`}
+                        style={{ background: isToday(date) ? undefined : '#081226' }}
                       >
-                        {date.toLocaleDateString('en-US', { weekday: 'short' })} {date.getDate()}
+                        {date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} {date.getDate()}
                       </div>
                     ))}
                   </div>
@@ -1626,7 +1774,8 @@ export default function DoctorAppointments() {
                         )
                       })}
                     </div>
-                  ))}
+                  )
+                  })}
                 </div>
                 <div className="availability-hint" style={{ marginTop: '8px' }}>
                   Tip: Click a slot to schedule or view appointment details.
@@ -1912,6 +2061,11 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
+
+
+
+
 
 
 
