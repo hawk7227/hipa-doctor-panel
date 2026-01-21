@@ -1626,7 +1626,8 @@ export default function DoctorAppointments() {
                         )
                       })}
                     </div>
-                  ))}
+                  )
+                  })}
                 </div>
                 <div className="availability-hint" style={{ marginTop: '8px' }}>
                   Tip: Click a slot to schedule or view appointment details.
@@ -1912,6 +1913,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
