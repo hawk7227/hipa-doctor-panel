@@ -144,7 +144,7 @@ export default function DoctorAppointments() {
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
-  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number}>({ hour: 0, minute: 0 })
+  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number, formatted: string}>({ hour: 0, minute: 0, formatted: '' })
   const celebrationTriggeredRef = useRef(false)
   const calendarScrollRef = useRef<HTMLDivElement>(null)
   const currentTimeRowRef = useRef<HTMLDivElement>(null)
@@ -153,15 +153,25 @@ export default function DoctorAppointments() {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date()
-      const phoenixTime = new Intl.DateTimeFormat('en-US', {
+      // Get Phoenix time in 24-hour format for calculations
+      const phoenixTime24 = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Phoenix',
         hour: 'numeric',
         minute: 'numeric',
         hour12: false
       }).format(now)
-      const [hour, minute] = phoenixTime.split(':').map(Number)
-      setCurrentPhoenixTime({ hour, minute })
-      console.log('🕐 Current Phoenix time:', hour + ':' + minute)
+      const [hour24, minute] = phoenixTime24.split(':').map(Number)
+      
+      // Also get the 12-hour formatted time for display
+      const phoenixTimeFormatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(now)
+      
+      setCurrentPhoenixTime({ hour: hour24, minute, formatted: phoenixTimeFormatted })
+      console.log('🕐 Current Phoenix time:', phoenixTimeFormatted, '(24h:', hour24 + ':' + minute + ')')
     }
     
     updateTime() // Run immediately
@@ -284,12 +294,18 @@ export default function DoctorAppointments() {
     const phoenixToday = phoenixFormatter.format(now)
     const [todayMonth, todayDay, todayYear] = phoenixToday.split('/')
     
-    // Get the input date as a string
+    // Get the input date as a string (the calendar dates are local Date objects)
     const dateMonth = String(date.getMonth() + 1).padStart(2, '0')
     const dateDay = String(date.getDate()).padStart(2, '0')
     const dateYear = String(date.getFullYear())
     
     const isMatch = dateYear === todayYear && dateMonth === todayMonth && dateDay === todayDay
+    
+    // Debug logging
+    if (isMatch) {
+      console.log('📍 TODAY match:', { phoenixToday, calendarDate: `${dateMonth}/${dateDay}/${dateYear}` })
+    }
+    
     return isMatch
   }, [])
 
@@ -385,33 +401,44 @@ export default function DoctorAppointments() {
   }
 
   const getWeekDates = (date: Date) => {
-    // Use Phoenix timezone to determine the week
+    // Always use Phoenix timezone for the current date
+    const now = new Date()
     const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Phoenix',
       year: 'numeric',
       month: '2-digit',
-      day: '2-digit'
+      day: '2-digit',
+      weekday: 'short'
     })
     
-    // Get today in Phoenix time
-    const phoenixParts = phoenixFormatter.formatToParts(date)
-    const getValue = (type: string) => phoenixParts.find(p => p.type === type)?.value || '0'
-    const phoenixYear = parseInt(getValue('year'))
-    const phoenixMonth = parseInt(getValue('month')) - 1
-    const phoenixDay = parseInt(getValue('day'))
+    // Get current Phoenix date (for reference)
+    const phoenixNowParts = phoenixFormatter.formatToParts(now)
+    const getPhoenixValue = (type: string) => phoenixNowParts.find(p => p.type === type)?.value || '0'
+    const phoenixYear = parseInt(getPhoenixValue('year'))
+    const phoenixMonth = parseInt(getPhoenixValue('month')) - 1
+    const phoenixDay = parseInt(getPhoenixValue('day'))
     
-    const start = new Date(phoenixYear, phoenixMonth, phoenixDay)
-    const day = start.getDay()
-    // Week starts on Sunday (day 0), adjust to start on Monday
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1)
-    start.setDate(diff)
+    console.log('📆 Phoenix NOW:', phoenixMonth + 1, '/', phoenixDay, '/', phoenixYear)
+    
+    // Create a date object for Phoenix today
+    const phoenixToday = new Date(phoenixYear, phoenixMonth, phoenixDay, 12, 0, 0) // Use noon to avoid DST issues
+    
+    // Calculate the Monday of the week containing Phoenix today
+    const dayOfWeek = phoenixToday.getDay() // 0 = Sunday
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Adjust to get Monday
+    
+    const monday = new Date(phoenixToday)
+    monday.setDate(phoenixToday.getDate() + mondayOffset)
     
     const dates = []
     for (let i = 0; i < 7; i++) {
-      const d = new Date(start)
-      d.setDate(start.getDate() + i)
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
       dates.push(d)
     }
+    
+    console.log('📆 Week dates:', dates.map(d => `${d.getMonth()+1}/${d.getDate()}`).join(', '))
+    
     return dates
   }
 
@@ -460,38 +487,42 @@ export default function DoctorAppointments() {
   // Normal doctor hours: 9 AM to 6 PM, but also include any appointment times outside this range
   const timeSlots = useMemo(() => {
     const slots: Date[] = []
-    const hoursNeeded = new Set<string>()
+    const hoursSet = new Set<string>()
     
     // Default doctor hours: 9 AM to 6 PM
     for (let hour = 9; hour <= 18; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        hoursNeeded.add(`${hour}:${minute}`)
-      }
+      hoursSet.add(`${hour}:0`)
+      hoursSet.add(`${hour}:30`)
     }
     
-    // Also include hours for any existing appointments
-    appointments.forEach(apt => {
-      if (apt.requested_date_time) {
-        const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
-        const aptHour = aptDate.getUTCHours()
-        const aptMinute = aptDate.getUTCMinutes() < 30 ? 0 : 30
-        hoursNeeded.add(`${aptHour}:${aptMinute}`)
-        // Also add the slot before and after for context
-        if (aptMinute === 0) {
-          hoursNeeded.add(`${aptHour - 1}:30`)
-        } else {
-          hoursNeeded.add(`${aptHour}:0`)
+    // Also include hours for any existing appointments outside normal hours
+    if (appointments && appointments.length > 0) {
+      appointments.forEach(apt => {
+        if (apt.requested_date_time) {
+          try {
+            const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+            const aptHour = aptDate.getUTCHours()
+            const aptMinute = aptDate.getUTCMinutes() < 30 ? 0 : 30
+            
+            // Add this slot
+            hoursSet.add(`${aptHour}:${aptMinute}`)
+            
+            // Add surrounding slots for context
+            if (aptMinute === 0 && aptHour > 0) {
+              hoursSet.add(`${aptHour - 1}:30`)
+            }
+            if (aptMinute === 30 && aptHour < 23) {
+              hoursSet.add(`${aptHour + 1}:0`)
+            }
+          } catch (e) {
+            console.error('Error processing appointment time:', e)
+          }
         }
-        if (aptMinute === 30) {
-          hoursNeeded.add(`${aptHour + 1}:0`)
-        } else {
-          hoursNeeded.add(`${aptHour}:30`)
-        }
-      }
-    })
+      })
+    }
     
     // Convert to sorted array and create time slots
-    const sortedHours = Array.from(hoursNeeded)
+    const sortedHours = Array.from(hoursSet)
       .map(h => {
         const [hour, minute] = h.split(':').map(Number)
         return { hour, minute }
@@ -503,6 +534,8 @@ export default function DoctorAppointments() {
       const time = createPhoenixTimeSlot(hour, minute)
       slots.push(time)
     })
+    
+    console.log('📅 Time slots generated:', sortedHours.length, 'slots from', sortedHours[0]?.hour + ':' + sortedHours[0]?.minute, 'to', sortedHours[sortedHours.length-1]?.hour + ':' + sortedHours[sortedHours.length-1]?.minute)
     
     return slots
   }, [appointments])
@@ -1580,7 +1613,7 @@ export default function DoctorAppointments() {
               {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </span>
             <span style={{ fontSize: '12px', color: '#ff6600', marginLeft: '8px', padding: '4px 8px', background: 'rgba(255,102,0,0.2)', borderRadius: '6px' }}>
-              🕐 {currentPhoenixTime.hour}:{String(currentPhoenixTime.minute).padStart(2, '0')} PHX
+              🕐 {currentPhoenixTime.formatted || '--:--'} PHX
             </span>
           </div>
           
@@ -2001,6 +2034,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
