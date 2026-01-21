@@ -12,7 +12,6 @@ interface DailyRoomConfig {
     enable_knocking?: boolean;
     enable_prejoin_ui?: boolean;
     enable_recording?: string; // 'cloud' for cloud recording
-    enable_recording_ui?: boolean;
   };
 }
 
@@ -31,7 +30,6 @@ interface MeetingTokenConfig {
     room_name: string;
     is_owner?: boolean;
     user_name?: string;
-    enable_recording?: boolean;
     start_cloud_recording?: boolean;
   };
 }

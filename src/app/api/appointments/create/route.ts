@@ -312,7 +312,6 @@ export async function POST(request: NextRequest) {
                 start_audio_off: false,
                 start_video_off: false,
                 enable_recording: 'cloud', // Enable cloud recording
-                enable_recording_ui: true // Show recording UI controls
               }
             }
             
@@ -326,7 +325,6 @@ export async function POST(request: NextRequest) {
                 room_name: dailyMeeting.name,
                 is_owner: true,
                 user_name: doctorName,
-                enable_recording: true,
                 start_cloud_recording: false // Doctor can manually start recording
               }
             })
@@ -477,6 +475,7 @@ export async function POST(request: NextRequest) {
           ? {
               name: dailyMeeting.name,
               url: dailyMeeting.url,
+              owner_token: dailyMeeting.owner_token,
             }
           : null,
         zoomMeeting: zoomMeeting
