@@ -144,9 +144,30 @@ export default function DoctorAppointments() {
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
+  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number}>({ hour: 0, minute: 0 })
   const celebrationTriggeredRef = useRef(false)
   const calendarScrollRef = useRef<HTMLDivElement>(null)
   const currentTimeRowRef = useRef<HTMLDivElement>(null)
+
+  // Update current Phoenix time every minute
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date()
+      const phoenixTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+      }).format(now)
+      const [hour, minute] = phoenixTime.split(':').map(Number)
+      setCurrentPhoenixTime({ hour, minute })
+      console.log('🕐 Current Phoenix time:', hour + ':' + minute)
+    }
+    
+    updateTime() // Run immediately
+    const interval = setInterval(updateTime, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
 
   // Generate particles IMMEDIATELY on mount (no waiting for loading)
   useEffect(() => {
@@ -226,32 +247,20 @@ export default function DoctorAppointments() {
   // AUTO-SCROLL TO CURRENT TIME - FRONTEND ONLY
   // ============================================
   useEffect(() => {
-    if (!loading && calendarScrollRef.current) {
+    if (!loading && calendarScrollRef.current && currentPhoenixTime.hour > 0) {
       // Wait a bit for DOM to render
       setTimeout(() => {
         if (currentTimeRowRef.current) {
           currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          console.log('📍 Auto-scrolled to current time row')
         }
-      }, 500)
+      }, 800)
     }
-  }, [loading])
-
-  // Get current hour in Phoenix timezone for highlighting
-  const getCurrentPhoenixHour = useCallback(() => {
-    const now = new Date()
-    const phoenixTime = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Phoenix',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    }).format(now)
-    const [hour, minute] = phoenixTime.split(':').map(Number)
-    return { hour, minute }
-  }, [])
+  }, [loading, currentPhoenixTime.hour])
 
   // Check if a time slot is the current time slot
   const isCurrentTimeSlot = useCallback((time: Date) => {
-    const { hour, minute } = getCurrentPhoenixHour()
+    const { hour, minute } = currentPhoenixTime
     const slotHour = time.getUTCHours()
     const slotMinute = time.getUTCMinutes()
     // Match if within the same 30-minute slot
@@ -260,7 +269,7 @@ export default function DoctorAppointments() {
       if (minute >= 30 && slotMinute === 30) return true
     }
     return false
-  }, [getCurrentPhoenixHour])
+  }, [currentPhoenixTime])
 
   // Check if a date is today
   const isToday = useCallback((date: Date) => {
@@ -1242,8 +1251,24 @@ export default function DoctorAppointments() {
         .availability-cal {
           border: 1px solid rgba(0, 245, 255, 0.2) !important;
           border-radius: 12px !important;
-          overflow: hidden !important;
           box-shadow: 0 0 40px rgba(0, 245, 255, 0.1), 0 0 80px rgba(20, 184, 166, 0.05) !important;
+        }
+
+        /* Scrollbar styling */
+        .availability-page ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .availability-page ::-webkit-scrollbar-track {
+          background: rgba(0, 20, 40, 0.5);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, #00f5ff, #14b8a6);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, #00ffff, #20d0b8);
         }
 
         /* ============================================ */
@@ -1485,15 +1510,18 @@ export default function DoctorAppointments() {
       {/* ============================================ */}
       {/* ORIGINAL CALENDAR - COMPLETELY UNCHANGED */}
       {/* ============================================ */}
-      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* ============================================ */}
         {/* CALENDAR HEADER BAR - FRONTEND ONLY */}
         {/* ============================================ */}
-        <div className="calendar-header">
+        <div className="calendar-header" style={{ flexShrink: 0 }}>
           <div className="calendar-header-left">
             <h1 className="calendar-title">📅 Your Appointments</h1>
             <span className="calendar-date-display">
               {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+            <span style={{ fontSize: '12px', color: '#ff6600', marginLeft: '8px', padding: '4px 8px', background: 'rgba(255,102,0,0.2)', borderRadius: '6px' }}>
+              🕐 {currentPhoenixTime.hour}:{String(currentPhoenixTime.minute).padStart(2, '0')} PHX
             </span>
           </div>
           
@@ -1538,22 +1566,23 @@ export default function DoctorAppointments() {
         </div>
 
         {/* Full Screen Calendar Container */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           {viewType === 'calendar' ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
             {calendarViewType === 'week' ? (
-              <div ref={calendarScrollRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+              <div ref={calendarScrollRef} style={{ flex: 1, overflow: 'auto' }}>
                 {/* Week Calendar Grid - Using availability page structure */}
-                <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div className="availability-cal" style={{ display: 'flex', flexDirection: 'column', minHeight: 'max-content' }}>
                   {/* Header Row */}
-                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
-                    <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
+                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10, background: '#081226' }}>
+                    <div className="availability-dayhead" style={{ background: '#081226' }}>TIME</div>
                     {visibleDates.map((date, idx) => (
                       <div 
                         key={`header-${idx}`} 
                         className={`availability-dayhead ${isToday(date) ? 'today-header' : ''}`}
+                        style={{ background: isToday(date) ? undefined : '#081226' }}
                       >
-                        {date.toLocaleDateString('en-US', { weekday: 'short' })} {date.getDate()}
+                        {date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} {date.getDate()}
                       </div>
                     ))}
                   </div>
@@ -1913,6 +1942,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
