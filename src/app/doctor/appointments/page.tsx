@@ -143,7 +143,10 @@ export default function DoctorAppointments() {
   const [particles, setParticles] = useState<Array<{id: number, x: number, color: string, size: number, duration: number, delay: number, shape: string}>>([])
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
+  const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
   const celebrationTriggeredRef = useRef(false)
+  const calendarScrollRef = useRef<HTMLDivElement>(null)
+  const currentTimeRowRef = useRef<HTMLDivElement>(null)
 
   // Generate particles IMMEDIATELY on mount (no waiting for loading)
   useEffect(() => {
@@ -218,6 +221,93 @@ export default function DoctorAppointments() {
       setTimeout(() => setConfetti([]), 6000)
     }
   }, [loading])
+
+  // ============================================
+  // AUTO-SCROLL TO CURRENT TIME - FRONTEND ONLY
+  // ============================================
+  useEffect(() => {
+    if (!loading && calendarScrollRef.current) {
+      // Wait a bit for DOM to render
+      setTimeout(() => {
+        if (currentTimeRowRef.current) {
+          currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 500)
+    }
+  }, [loading])
+
+  // Get current hour in Phoenix timezone for highlighting
+  const getCurrentPhoenixHour = useCallback(() => {
+    const now = new Date()
+    const phoenixTime = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).format(now)
+    const [hour, minute] = phoenixTime.split(':').map(Number)
+    return { hour, minute }
+  }, [])
+
+  // Check if a time slot is the current time slot
+  const isCurrentTimeSlot = useCallback((time: Date) => {
+    const { hour, minute } = getCurrentPhoenixHour()
+    const slotHour = time.getUTCHours()
+    const slotMinute = time.getUTCMinutes()
+    // Match if within the same 30-minute slot
+    if (slotHour === hour) {
+      if (minute < 30 && slotMinute === 0) return true
+      if (minute >= 30 && slotMinute === 30) return true
+    }
+    return false
+  }, [getCurrentPhoenixHour])
+
+  // Check if a date is today
+  const isToday = useCallback((date: Date) => {
+    const today = new Date()
+    const phoenixToday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(today)
+    const [month, day, year] = phoenixToday.split('/')
+    const todayStr = `${year}-${month}-${day}`
+    
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return dateStr === todayStr
+  }, [])
+
+  // Go to today
+  const goToToday = () => {
+    setCurrentDate(new Date())
+    // Scroll to current time after state update
+    setTimeout(() => {
+      if (currentTimeRowRef.current) {
+        currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+  }
+
+  // Toggle effects (particles + confetti)
+  const toggleEffects = () => {
+    setShowEffects(!showEffects)
+    if (!showEffects) {
+      // Re-generate particles when turning back on
+      const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ff0080', '#00ffcc']
+      const shapes = ['circle', 'square', 'diamond']
+      const newParticles = Array.from({ length: 60 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: Math.random() * 16 + 8,
+        duration: Math.random() * 12 + 8,
+        delay: Math.random() * 8,
+        shape: shapes[Math.floor(Math.random() * shapes.length)]
+      }))
+      setParticles(newParticles)
+    }
+  }
 
   // ============================================
   // SOUND EFFECTS - FRONTEND ONLY (Added)
@@ -1155,33 +1245,212 @@ export default function DoctorAppointments() {
           overflow: hidden !important;
           box-shadow: 0 0 40px rgba(0, 245, 255, 0.1), 0 0 80px rgba(20, 184, 166, 0.05) !important;
         }
+
+        /* ============================================ */
+        /* CALENDAR HEADER BAR STYLES */
+        /* ============================================ */
+        .calendar-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 20px;
+          background: linear-gradient(180deg, rgba(0, 20, 40, 0.95), rgba(10, 30, 50, 0.9));
+          border-bottom: 2px solid rgba(0, 245, 255, 0.3);
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+
+        .calendar-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .calendar-header-center {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .calendar-header-right {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .calendar-title {
+          font-size: 20px;
+          font-weight: 800;
+          color: #00f5ff;
+          text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+          margin: 0;
+        }
+
+        .calendar-date-display {
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.8);
+          padding: 6px 12px;
+          background: rgba(0, 245, 255, 0.1);
+          border-radius: 8px;
+          border: 1px solid rgba(0, 245, 255, 0.2);
+        }
+
+        .nav-btn {
+          padding: 8px 16px;
+          background: linear-gradient(135deg, rgba(0, 200, 150, 0.3), rgba(0, 150, 200, 0.3));
+          border: 2px solid rgba(0, 245, 255, 0.4);
+          border-radius: 8px;
+          color: #00f5ff;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 14px;
+        }
+
+        .nav-btn:hover {
+          background: linear-gradient(135deg, rgba(0, 200, 150, 0.5), rgba(0, 150, 200, 0.5));
+          border-color: #00f5ff;
+          transform: scale(1.05);
+          box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .nav-btn.active {
+          background: linear-gradient(135deg, rgba(0, 255, 150, 0.4), rgba(0, 200, 255, 0.4));
+          border-color: #00ff96;
+          box-shadow: 0 0 15px rgba(0, 255, 150, 0.4);
+        }
+
+        .today-btn {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.3), rgba(255, 100, 50, 0.3));
+          border-color: rgba(255, 180, 0, 0.5);
+          color: #ffcc00;
+        }
+
+        .today-btn:hover {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.5), rgba(255, 100, 50, 0.5));
+          border-color: #ffcc00;
+          box-shadow: 0 0 20px rgba(255, 180, 0, 0.4);
+        }
+
+        .effects-btn {
+          background: linear-gradient(135deg, rgba(255, 0, 150, 0.3), rgba(150, 0, 255, 0.3));
+          border-color: rgba(255, 0, 150, 0.5);
+          color: #ff00ff;
+        }
+
+        .effects-btn:hover {
+          background: linear-gradient(135deg, rgba(255, 0, 150, 0.5), rgba(150, 0, 255, 0.5));
+          border-color: #ff00ff;
+          box-shadow: 0 0 20px rgba(255, 0, 150, 0.4);
+        }
+
+        .effects-btn.off {
+          background: rgba(100, 100, 100, 0.3);
+          border-color: rgba(150, 150, 150, 0.4);
+          color: rgba(200, 200, 200, 0.6);
+        }
+
+        /* Current time row highlighting */
+        .current-time-row {
+          position: relative;
+        }
+
+        .current-time-row::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, rgba(255, 100, 0, 0.15), rgba(255, 50, 100, 0.1), transparent);
+          pointer-events: none;
+          z-index: 1;
+        }
+
+        .current-time-indicator {
+          position: absolute;
+          left: 0;
+          width: 4px;
+          height: 100%;
+          background: linear-gradient(180deg, #ff6600, #ff0066);
+          box-shadow: 0 0 10px #ff6600, 0 0 20px #ff0066;
+          animation: timeIndicatorPulse 2s ease-in-out infinite;
+          z-index: 5;
+        }
+
+        @keyframes timeIndicatorPulse {
+          0%, 100% { box-shadow: 0 0 10px #ff6600, 0 0 20px #ff0066; }
+          50% { box-shadow: 0 0 20px #ff6600, 0 0 40px #ff0066, 0 0 60px #ff6600; }
+        }
+
+        .current-time-label {
+          position: absolute;
+          left: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: linear-gradient(135deg, #ff6600, #ff0066);
+          color: white;
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 700;
+          z-index: 6;
+          white-space: nowrap;
+        }
+
+        /* Today column highlight */
+        .today-column {
+          background: rgba(0, 255, 150, 0.08) !important;
+        }
+
+        .today-header {
+          background: linear-gradient(180deg, rgba(0, 255, 150, 0.3), rgba(0, 200, 100, 0.2)) !important;
+          color: #00ff96 !important;
+          position: relative;
+        }
+
+        .today-header::after {
+          content: 'TODAY';
+          position: absolute;
+          bottom: 2px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 8px;
+          background: #00ff96;
+          color: #000;
+          padding: 1px 6px;
+          border-radius: 4px;
+          font-weight: 800;
+        }
       `}</style>
 
       {/* ============================================ */}
       {/* FLOATING PARTICLES - FRONTEND ONLY (Added) */}
       {/* ============================================ */}
-      <div className="particles-container">
-        {particles.map(particle => (
-          <div
-            key={particle.id}
-            className={`particle ${particle.shape}`}
-            style={{
-              left: `${particle.x}%`,
-              width: `${particle.size}px`,
-              height: `${particle.size}px`,
-              backgroundColor: particle.color,
-              color: particle.color,
-              animationDuration: `${particle.duration}s`,
-              animationDelay: `${particle.delay}s`
-            }}
-          />
-        ))}
-      </div>
+      {showEffects && (
+        <div className="particles-container">
+          {particles.map(particle => (
+            <div
+              key={particle.id}
+              className={`particle ${particle.shape}`}
+              style={{
+                left: `${particle.x}%`,
+                width: `${particle.size}px`,
+                height: `${particle.size}px`,
+                backgroundColor: particle.color,
+                color: particle.color,
+                animationDuration: `${particle.duration}s`,
+                animationDelay: `${particle.delay}s`
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* ============================================ */}
       {/* CONFETTI BURST - FRONTEND ONLY (Added) */}
       {/* ============================================ */}
-      {confetti.length > 0 && (
+      {showEffects && confetti.length > 0 && (
         <div className="confetti-container">
           {confetti.map(piece => (
             <div
@@ -1217,58 +1486,123 @@ export default function DoctorAppointments() {
       {/* ORIGINAL CALENDAR - COMPLETELY UNCHANGED */}
       {/* ============================================ */}
       <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {/* ============================================ */}
+        {/* CALENDAR HEADER BAR - FRONTEND ONLY */}
+        {/* ============================================ */}
+        <div className="calendar-header">
+          <div className="calendar-header-left">
+            <h1 className="calendar-title">📅 Your Appointments</h1>
+            <span className="calendar-date-display">
+              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+          </div>
+          
+          <div className="calendar-header-center">
+            <button className="nav-btn" onClick={() => navigateCalendar('prev')}>
+              ◀ Prev
+            </button>
+            <button className="nav-btn today-btn" onClick={goToToday}>
+              📍 Today
+            </button>
+            <button className="nav-btn" onClick={() => navigateCalendar('next')}>
+              Next ▶
+            </button>
+          </div>
+
+          <div className="calendar-header-right">
+            <button 
+              className={`nav-btn ${calendarViewType === 'week' ? 'active' : ''}`}
+              onClick={() => setCalendarViewType('week')}
+            >
+              Week
+            </button>
+            <button 
+              className={`nav-btn ${calendarViewType === 'month' ? 'active' : ''}`}
+              onClick={() => setCalendarViewType('month')}
+            >
+              Month
+            </button>
+            <button 
+              className={`nav-btn ${viewType === 'list' ? 'active' : ''}`}
+              onClick={() => setViewType(viewType === 'calendar' ? 'list' : 'calendar')}
+            >
+              {viewType === 'calendar' ? '📋 List' : '📅 Calendar'}
+            </button>
+            <button 
+              className={`nav-btn effects-btn ${!showEffects ? 'off' : ''}`}
+              onClick={toggleEffects}
+            >
+              {showEffects ? '✨ Effects ON' : '✨ Effects OFF'}
+            </button>
+          </div>
+        </div>
+
         {/* Full Screen Calendar Container */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
           {viewType === 'calendar' ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
             {calendarViewType === 'week' ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+              <div ref={calendarScrollRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
                 {/* Week Calendar Grid - Using availability page structure */}
                 <div className="availability-cal" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   {/* Header Row */}
                   <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
                     <div className="availability-dayhead" style={{ background: '#081226' }}>Time</div>
                     {visibleDates.map((date, idx) => (
-                      <div key={`header-${idx}`} className="availability-dayhead">
+                      <div 
+                        key={`header-${idx}`} 
+                        className={`availability-dayhead ${isToday(date) ? 'today-header' : ''}`}
+                      >
                         {date.toLocaleDateString('en-US', { weekday: 'short' })} {date.getDate()}
                       </div>
                     ))}
                   </div>
 
                   {/* Time Slots */}
-                  {timeSlots.map((time, timeIndex) => (
-                    <div key={`row-${timeIndex}`} className="availability-cal-row">
-                      <div className="availability-time">{formatTime(time)}</div>
-                      {visibleDates.map((date, dayIndex) => {
-                        const appointment = getAppointmentForSlot(date, time)
-                        const isAvailable = !appointment
+                  {timeSlots.map((time, timeIndex) => {
+                    const isCurrent = isCurrentTimeSlot(time)
+                    return (
+                      <div 
+                        key={`row-${timeIndex}`} 
+                        className={`availability-cal-row ${isCurrent ? 'current-time-row' : ''}`}
+                        ref={isCurrent ? currentTimeRowRef : null}
+                      >
+                        {isCurrent && <div className="current-time-indicator" />}
+                        <div className="availability-time" style={isCurrent ? { color: '#ff6600', fontWeight: 800 } : {}}>
+                          {formatTime(time)}
+                          {isCurrent && <span style={{ marginLeft: 4, fontSize: 10 }}>◀ NOW</span>}
+                        </div>
+                        {visibleDates.map((date, dayIndex) => {
+                          const appointment = getAppointmentForSlot(date, time)
+                          const isAvailable = !appointment
+                          const isTodayCol = isToday(date)
                         
-                        return (
-                          <div
-                            key={`cell-${dayIndex}-${timeIndex}`}
-                            className="availability-cell"
-                            onMouseEnter={() => playHoverSound()}
-                            onClick={() => {
-                              playClickSound()
-                              if (isAvailable) {
-                                setSelectedSlotDate(date)
-                                setSelectedSlotTime(time)
-                                setShowCreateDialog(true)
-                              } else {
-                                setSelectedAppointmentId(appointment.id)
-                              }
-                            }}
-                          >
-                            {isAvailable ? (
-                              <div className="availability-event available">
-                                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: 'white' }}>Available</div>
-                                <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
-                              </div>
-                            ) : (
-                              <div className={`availability-event blocked ${appointment.visit_type || 'video'}`}>
-                                <div className="appointment-name">
-                                  {appointment.patients?.first_name} {appointment.patients?.last_name}
+                          return (
+                            <div
+                              key={`cell-${dayIndex}-${timeIndex}`}
+                              className={`availability-cell ${isTodayCol ? 'today-column' : ''}`}
+                              onMouseEnter={() => playHoverSound()}
+                              onClick={() => {
+                                playClickSound()
+                                if (isAvailable) {
+                                  setSelectedSlotDate(date)
+                                  setSelectedSlotTime(time)
+                                  setShowCreateDialog(true)
+                                } else {
+                                  setSelectedAppointmentId(appointment.id)
+                                }
+                              }}
+                            >
+                              {isAvailable ? (
+                                <div className="availability-event available">
+                                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: 'white' }}>Available</div>
+                                  <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
                                 </div>
+                              ) : (
+                                <div className={`availability-event blocked ${appointment.visit_type || 'video'}`}>
+                                  <div className="appointment-name">
+                                    {appointment.patients?.first_name} {appointment.patients?.last_name}
+                                  </div>
                                 <span className={`appointment-type-badge ${appointment.visit_type || 'video'}`}>
                                   {appointment.visit_type === 'instant' ? '⚡ INSTANT' :
                                    appointment.visit_type === 'video' ? 'VIDEO' :
