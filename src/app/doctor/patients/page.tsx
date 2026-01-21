@@ -761,21 +761,12 @@ export default function DoctorPatients() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSuggestionClick = (patient: Patient) => {
-    setSearchTerm(`${patient.first_name} ${patient.last_name}`)
-    setShowSuggestions(false)
-    // Optionally scroll to the patient in the list
-    setTimeout(() => {
-      const element = document.getElementById(`patient-${patient.id}`)
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        element.classList.add('bg-teal-500/20')
-        setTimeout(() => {
-          element.classList.remove('bg-teal-500/20')
-        }, 2000)
-      }
-    }, 100)
-  }
+const handleSuggestionClick = (patient: Patient) => {
+  setSearchTerm(`${patient.first_name} ${patient.last_name}`)
+  setShowSuggestions(false)
+  // Open patient chart directly when selecting from dropdown
+  handleViewPatient(patient)
+}
 
   const filteredPatients = patients.filter(patient => {
     // First filter by search term
