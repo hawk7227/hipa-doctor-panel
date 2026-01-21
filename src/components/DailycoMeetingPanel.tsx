@@ -20,7 +20,8 @@ interface DailyMeetingProps {
 }
 
 const DailyMeeting: React.FC<DailyMeetingProps> = ({ roomUrl, token }) => {
-  if (!roomUrl) return <div className="text-white p-4">Error: No Meeting URL found.</div>;
+  if (!roomUrl)
+    return <div className="text-white p-4">Error: No Meeting URL found.</div>;
 
   return (
     <iframe
@@ -183,9 +184,17 @@ export default function DailyMeetingEmbed({
   const [recordingLoading, setRecordingLoading] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<string>("");
   const [openMeetingModal, setOpenMeetingModal] = useState(false);
+  const [allRecordings, setAllRecordings] = useState<
+    Array<{
+      id: string;
+      duration: number;
+      startTime: string;
+      download_link?: string;
+    }>
+  >([]);
   const joinUrl = useMemo(() => {
     if (!appointment?.dailyco_meeting_url) return "";
-    
+
     try {
       const url = new URL(appointment?.dailyco_meeting_url);
       if (appointment?.dailyco_owner_token) {
@@ -231,7 +240,6 @@ export default function DailyMeetingEmbed({
     if (!appointment?.id) return;
     setRecordingLoading(true);
     try {
-      // Assuming your backend handles Daily.co recording retrieval
       const response = await fetch(
         `/api/appointments/recordings?appointmentId=${appointment.id}`,
       );
@@ -239,6 +247,17 @@ export default function DailyMeetingEmbed({
       if (data.success && data.recordingUrl) {
         setRecordingUrl(data.recordingUrl);
         setRecordingStatus("Recording available");
+        // Store all recordings if available
+        if (data.allRecordings) {
+          setAllRecordings(
+            data.allRecordings.map((rec: any) => ({
+              id: rec.id,
+              duration: rec.duration,
+              startTime: new Date(rec.start_ts * 1000).toISOString(),
+              download_link: data.recordingUrl, // For the latest one
+            })),
+          );
+        }
       } else {
         setRecordingStatus(data.message || "No recording found");
       }
@@ -376,8 +395,9 @@ export default function DailyMeetingEmbed({
 
         <h4 className="text-md font-bold text-white mb-2 flex items-center gap-2">
           <Play className="h-4 w-4 text-green-400" />
-          Meeting Recording
+          Meeting Recordings
         </h4>
+
         <div className="text-sm text-gray-400 mb-3">
           {recordingLoading
             ? "Checking..."
@@ -385,10 +405,49 @@ export default function DailyMeetingEmbed({
               "Recordings appear here after the meeting ends."}
         </div>
 
-        {recordingUrl && (
+        {/* Display all recordings */}
+        {allRecordings.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {allRecordings.map((recording, index) => (
+              <div
+                key={recording.id}
+                className="p-3 bg-slate-700/50 rounded-lg border border-white/10"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-white">
+                      Recording #{allRecordings.length - index}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      Duration: {Math.floor(recording.duration / 60)}m{" "}
+                      {recording.duration % 60}s
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(recording.startTime).toLocaleString()}
+                    </div>
+                  </div>
+                  {index === 0 && recordingUrl && (
+                    <a
+                      href={recordingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                    >
+                      <Play className="h-3 w-3" /> View
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Single recording view (fallback) */}
+        {recordingUrl && allRecordings.length === 0 && (
           <a
             href={recordingUrl}
             target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors mb-3"
           >
             <Play className="h-4 w-4" /> View Recording
@@ -401,7 +460,7 @@ export default function DailyMeetingEmbed({
             disabled={recordingLoading || !appointment?.id}
             className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
           >
-            Refresh Recording Status
+            {recordingLoading ? "Checking..." : "Refresh Recording Status"}
           </button>
         </div>
       </div>

@@ -38,6 +38,22 @@ interface MeetingToken {
   token: string;
 }
 
+// Add these interfaces at the top with your existing interfaces
+interface DailyRecording {
+  id: string;
+  room_name: string;
+  start_ts: number;
+  duration: number;
+  share_token: string;
+  download_link?: string;
+  status: string; // 'finished', 'processing', etc.
+}
+
+interface DailyRecordingsResponse {
+  total_count: number;
+  data: DailyRecording[];
+}
+
 export const dailyService = {
   async createRoom(config: DailyRoomConfig): Promise<DailyRoom> {
     console.log("🔑 Daily.co API Key present:", !!DAILY_API_KEY);
@@ -106,5 +122,57 @@ export const dailyService = {
         `Daily.co API error: ${error.error || response.statusText}`,
       );
     }
+  },
+
+  async getRecordings(roomName: string): Promise<DailyRecordingsResponse> {
+    console.log("📹 Fetching recordings for room:", roomName);
+
+    const response = await fetch(
+      `${DAILY_API_URL}/recordings?room_name=${roomName}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${DAILY_API_KEY}`,
+        },
+      }
+    );
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ Daily.co get recordings error:", responseData);
+      throw new Error(
+        `Daily.co API error: ${responseData.error || responseData.info || response.statusText}`
+      );
+    }
+
+    console.log("✅ Daily.co recordings fetched:", responseData.total_count);
+    return responseData;
+  },
+
+  async getRecordingAccessLink(recordingId: string): Promise<{ download_link: string }> {
+    console.log("🔗 Getting access link for recording:", recordingId);
+
+    const response = await fetch(
+      `${DAILY_API_URL}/recordings/${recordingId}/access-link`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${DAILY_API_KEY}`,
+        },
+      }
+    );
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ Daily.co get access link error:", responseData);
+      throw new Error(
+        `Daily.co API error: ${responseData.error || responseData.info || response.statusText}`
+      );
+    }
+
+    console.log("✅ Daily.co access link retrieved");
+    return responseData;
   },
 };

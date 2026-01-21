@@ -5,7 +5,7 @@ import { Video, Play, GripVertical, Clock, X } from 'lucide-react'
 import ZoomMtgEmbedded from '@zoomus/websdk/embedded';
 import { ZoomMtg } from '@zoom/meetingsdk';
 import { supabase } from '@/lib/supabase'
- 
+
 ZoomMtg.setZoomJSLib("https://source.zoom.us/2.18.2/lib", "/av");
 ZoomMtg.preLoadWasm();
 ZoomMtg.prepareWebSDK();
