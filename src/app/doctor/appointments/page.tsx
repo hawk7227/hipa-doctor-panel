@@ -271,20 +271,26 @@ export default function DoctorAppointments() {
     return false
   }, [currentPhoenixTime])
 
-  // Check if a date is today
+  // Check if a date is today (in Phoenix timezone)
   const isToday = useCallback((date: Date) => {
-    const today = new Date()
-    const phoenixToday = new Intl.DateTimeFormat('en-US', {
+    // Get today in Phoenix timezone
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Phoenix',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(today)
-    const [month, day, year] = phoenixToday.split('/')
-    const todayStr = `${year}-${month}-${day}`
+    })
+    const phoenixToday = phoenixFormatter.format(now)
+    const [todayMonth, todayDay, todayYear] = phoenixToday.split('/')
     
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    return dateStr === todayStr
+    // Get the input date as a string
+    const dateMonth = String(date.getMonth() + 1).padStart(2, '0')
+    const dateDay = String(date.getDate()).padStart(2, '0')
+    const dateYear = String(date.getFullYear())
+    
+    const isMatch = dateYear === todayYear && dateMonth === todayMonth && dateDay === todayDay
+    return isMatch
   }, [])
 
   // Go to today
@@ -379,16 +385,32 @@ export default function DoctorAppointments() {
   }
 
   const getWeekDates = (date: Date) => {
-    const start = new Date(date)
+    // Use Phoenix timezone to determine the week
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    
+    // Get today in Phoenix time
+    const phoenixParts = phoenixFormatter.formatToParts(date)
+    const getValue = (type: string) => phoenixParts.find(p => p.type === type)?.value || '0'
+    const phoenixYear = parseInt(getValue('year'))
+    const phoenixMonth = parseInt(getValue('month')) - 1
+    const phoenixDay = parseInt(getValue('day'))
+    
+    const start = new Date(phoenixYear, phoenixMonth, phoenixDay)
     const day = start.getDay()
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
+    // Week starts on Sunday (day 0), adjust to start on Monday
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1)
     start.setDate(diff)
     
     const dates = []
     for (let i = 0; i < 7; i++) {
-      const date = new Date(start)
-      date.setDate(start.getDate() + i)
-      dates.push(date)
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      dates.push(d)
     }
     return dates
   }
@@ -435,18 +457,55 @@ export default function DoctorAppointments() {
   // Memoize time slots to avoid recreating on every render
   // CRITICAL: Create time slots explicitly as Phoenix time, not browser local time
   // This ensures the calendar works correctly regardless of where the doctor views it from
+  // Normal doctor hours: 9 AM to 6 PM, but also include any appointment times outside this range
   const timeSlots = useMemo(() => {
-    const slots = []
-    // Start from 5:00 AM to catch early morning appointments
-    for (let hour = 5; hour <= 20; hour++) {
+    const slots: Date[] = []
+    const hoursNeeded = new Set<string>()
+    
+    // Default doctor hours: 9 AM to 6 PM
+    for (let hour = 9; hour <= 18; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
-        // Create time slot explicitly as Phoenix time
-        const time = createPhoenixTimeSlot(hour, minute)
-        slots.push(time)
+        hoursNeeded.add(`${hour}:${minute}`)
       }
     }
+    
+    // Also include hours for any existing appointments
+    appointments.forEach(apt => {
+      if (apt.requested_date_time) {
+        const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+        const aptHour = aptDate.getUTCHours()
+        const aptMinute = aptDate.getUTCMinutes() < 30 ? 0 : 30
+        hoursNeeded.add(`${aptHour}:${aptMinute}`)
+        // Also add the slot before and after for context
+        if (aptMinute === 0) {
+          hoursNeeded.add(`${aptHour - 1}:30`)
+        } else {
+          hoursNeeded.add(`${aptHour}:0`)
+        }
+        if (aptMinute === 30) {
+          hoursNeeded.add(`${aptHour + 1}:0`)
+        } else {
+          hoursNeeded.add(`${aptHour}:30`)
+        }
+      }
+    })
+    
+    // Convert to sorted array and create time slots
+    const sortedHours = Array.from(hoursNeeded)
+      .map(h => {
+        const [hour, minute] = h.split(':').map(Number)
+        return { hour, minute }
+      })
+      .filter(h => h.hour >= 0 && h.hour <= 23)
+      .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute))
+    
+    sortedHours.forEach(({ hour, minute }) => {
+      const time = createPhoenixTimeSlot(hour, minute)
+      slots.push(time)
+    })
+    
     return slots
-  }, [])
+  }, [appointments])
 
   const formatTime = (date: Date) => {
     // CRITICAL: Time slots are now Phoenix time (UTC values representing Phoenix local time)
@@ -1942,6 +2001,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
