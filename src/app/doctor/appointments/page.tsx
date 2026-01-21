@@ -118,7 +118,22 @@ export default function DoctorAppointments() {
   const [loading, setLoading] = useState(true)
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null)
-  const [currentDate, setCurrentDate] = useState(new Date())
+  
+  // Initialize currentDate based on Phoenix timezone
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    console.log('🗓️ Initializing calendar to Phoenix date:', month, '/', day, '/', year)
+    return new Date(year, month - 1, day, 12, 0, 0) // Use noon to avoid DST issues
+  })
+  
   const [viewType, setViewType] = useState<ViewType>('calendar')
   const [currentDoctorId, setCurrentDoctorId] = useState<string | null>(null)
   const [calendarViewType, setCalendarViewType] = useState<'week' | 'month' | '3month'>('week')
@@ -144,7 +159,7 @@ export default function DoctorAppointments() {
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
-  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number, formatted: string}>({ hour: 0, minute: 0, formatted: '' })
+  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number, formatted: string, dateStr: string}>({ hour: 0, minute: 0, formatted: '', dateStr: '' })
   const celebrationTriggeredRef = useRef(false)
   const calendarScrollRef = useRef<HTMLDivElement>(null)
   const currentTimeRowRef = useRef<HTMLDivElement>(null)
@@ -153,6 +168,17 @@ export default function DoctorAppointments() {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date()
+      
+      // Get Phoenix date
+      const phoenixDateFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+      const phoenixDateStr = phoenixDateFormatter.format(now)
+      
       // Get Phoenix time in 24-hour format for calculations
       const phoenixTime24 = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Phoenix',
@@ -170,8 +196,8 @@ export default function DoctorAppointments() {
         hour12: true
       }).format(now)
       
-      setCurrentPhoenixTime({ hour: hour24, minute, formatted: phoenixTimeFormatted })
-      console.log('🕐 Current Phoenix time:', phoenixTimeFormatted, '(24h:', hour24 + ':' + minute + ')')
+      setCurrentPhoenixTime({ hour: hour24, minute, formatted: phoenixTimeFormatted, dateStr: phoenixDateStr })
+      console.log('🕐 Phoenix NOW:', phoenixDateStr, phoenixTimeFormatted, '(24h:', hour24 + ':' + String(minute).padStart(2, '0') + ')')
     }
     
     updateTime() // Run immediately
@@ -283,35 +309,48 @@ export default function DoctorAppointments() {
 
   // Check if a date is today (in Phoenix timezone)
   const isToday = useCallback((date: Date) => {
-    // Get today in Phoenix timezone
+    // Get today in Phoenix timezone using the server/client time
     const now = new Date()
     const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Phoenix',
       year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
+      month: 'numeric',
+      day: 'numeric'
     })
-    const phoenixToday = phoenixFormatter.format(now)
-    const [todayMonth, todayDay, todayYear] = phoenixToday.split('/')
+    const phoenixTodayStr = phoenixFormatter.format(now)
+    const [todayMonth, todayDay, todayYear] = phoenixTodayStr.split('/').map(Number)
     
-    // Get the input date as a string (the calendar dates are local Date objects)
-    const dateMonth = String(date.getMonth() + 1).padStart(2, '0')
-    const dateDay = String(date.getDate()).padStart(2, '0')
-    const dateYear = String(date.getFullYear())
+    // The calendar date is a local Date object
+    const calMonth = date.getMonth() + 1
+    const calDay = date.getDate()
+    const calYear = date.getFullYear()
     
-    const isMatch = dateYear === todayYear && dateMonth === todayMonth && dateDay === todayDay
+    const isMatch = calYear === todayYear && calMonth === todayMonth && calDay === todayDay
     
     // Debug logging
-    if (isMatch) {
-      console.log('📍 TODAY match:', { phoenixToday, calendarDate: `${dateMonth}/${dateDay}/${dateYear}` })
-    }
+    console.log('📍 isToday check:', {
+      phoenixToday: `${todayMonth}/${todayDay}/${todayYear}`,
+      calendarDate: `${calMonth}/${calDay}/${calYear}`,
+      isMatch
+    })
     
     return isMatch
   }, [])
 
-  // Go to today
+  // Go to today (in Phoenix timezone)
   const goToToday = () => {
-    setCurrentDate(new Date())
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    const phoenixDate = new Date(year, month - 1, day, 12, 0, 0)
+    console.log('📍 Going to Phoenix today:', month, '/', day, '/', year)
+    setCurrentDate(phoenixDate)
     // Scroll to current time after state update
     setTimeout(() => {
       if (currentTimeRowRef.current) {
@@ -401,34 +440,21 @@ export default function DoctorAppointments() {
   }
 
   const getWeekDates = (date: Date) => {
-    // Always use Phoenix timezone for the current date
-    const now = new Date()
-    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Phoenix',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      weekday: 'short'
-    })
+    // Use the passed date to calculate the week
+    // The date passed is currentDate which represents what week we want to show
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const day = date.getDate()
     
-    // Get current Phoenix date (for reference)
-    const phoenixNowParts = phoenixFormatter.formatToParts(now)
-    const getPhoenixValue = (type: string) => phoenixNowParts.find(p => p.type === type)?.value || '0'
-    const phoenixYear = parseInt(getPhoenixValue('year'))
-    const phoenixMonth = parseInt(getPhoenixValue('month')) - 1
-    const phoenixDay = parseInt(getPhoenixValue('day'))
+    // Create a date for the start calculation
+    const targetDate = new Date(year, month, day, 12, 0, 0) // Use noon to avoid DST issues
     
-    console.log('📆 Phoenix NOW:', phoenixMonth + 1, '/', phoenixDay, '/', phoenixYear)
+    // Calculate the Monday of the week containing this date
+    const dayOfWeek = targetDate.getDay() // 0 = Sunday, 1 = Monday, etc.
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Get to Monday
     
-    // Create a date object for Phoenix today
-    const phoenixToday = new Date(phoenixYear, phoenixMonth, phoenixDay, 12, 0, 0) // Use noon to avoid DST issues
-    
-    // Calculate the Monday of the week containing Phoenix today
-    const dayOfWeek = phoenixToday.getDay() // 0 = Sunday
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Adjust to get Monday
-    
-    const monday = new Date(phoenixToday)
-    monday.setDate(phoenixToday.getDate() + mondayOffset)
+    const monday = new Date(targetDate)
+    monday.setDate(targetDate.getDate() + mondayOffset)
     
     const dates = []
     for (let i = 0; i < 7; i++) {
@@ -437,6 +463,7 @@ export default function DoctorAppointments() {
       dates.push(d)
     }
     
+    console.log('📆 Showing week for date:', month + 1, '/', day, '/', year)
     console.log('📆 Week dates:', dates.map(d => `${d.getMonth()+1}/${d.getDate()}`).join(', '))
     
     return dates
@@ -1610,9 +1637,9 @@ export default function DoctorAppointments() {
           <div className="calendar-header-left">
             <h1 className="calendar-title">📅 Your Appointments</h1>
             <span className="calendar-date-display">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              {currentPhoenixTime.dateStr || currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
-            <span style={{ fontSize: '12px', color: '#ff6600', marginLeft: '8px', padding: '4px 8px', background: 'rgba(255,102,0,0.2)', borderRadius: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#00ff88', marginLeft: '8px', padding: '4px 8px', background: 'rgba(0,255,136,0.2)', borderRadius: '6px' }}>
               🕐 {currentPhoenixTime.formatted || '--:--'} PHX
             </span>
           </div>
@@ -2034,6 +2061,7 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
 
 
 
