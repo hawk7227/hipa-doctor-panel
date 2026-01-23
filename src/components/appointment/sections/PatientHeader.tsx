@@ -5,6 +5,7 @@ interface PatientHeaderProps {
   appointment: any
   surgeriesDetails?: string
   medicalIssuesDetails?: string
+  chiefComplaint?: string
   isCustomizeMode?: boolean
   sectionProps?: any
   sectionId?: string
@@ -14,6 +15,7 @@ const PatientHeader = memo(function PatientHeader({
   appointment,
   surgeriesDetails = '',
   medicalIssuesDetails = '',
+  chiefComplaint = '',
   isCustomizeMode = false,
   sectionProps = {},
   sectionId = 'patient-header'
@@ -65,10 +67,10 @@ const PatientHeader = memo(function PatientHeader({
             <div className="text-xs text-gray-400 mb-3 font-semibold">Patient Intake</div>
             
             {/* Chief Complaint / Symptoms */}
-            {(appointment?.chief_complaint || appointment?.patients?.chief_complaint || appointment?.subjective_notes) && (
+            {(chiefComplaint || appointment?.chief_complaint || appointment?.patients?.chief_complaint || appointment?.subjective_notes) && (
               <div className="mb-4 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
                 <div className="text-xs text-gray-400 mb-3">Reason For Visit / Symptoms</div>
-                <div className="text-red-500 text-sm">{appointment?.chief_complaint || appointment?.patients?.chief_complaint || appointment?.subjective_notes}</div>
+                <div className="text-red-500 text-sm">{chiefComplaint || appointment?.chief_complaint || appointment?.patients?.chief_complaint || appointment?.subjective_notes}</div>
               </div>
             )}
             
@@ -87,18 +89,27 @@ const PatientHeader = memo(function PatientHeader({
                     <div className={`text-sm font-semibold ${(appointment?.patients?.has_drug_allergies || appointment?.has_drug_allergies) ? 'text-red-500' : 'text-green-400'}`}>
                       {(appointment?.patients?.has_drug_allergies || appointment?.has_drug_allergies) ? 'Yes' : 'No'}
                     </div>
+                    {(appointment?.patients?.has_drug_allergies || appointment?.has_drug_allergies) && (appointment?.patients?.allergies || appointment?.allergies) && (
+                      <div className="text-xs text-gray-300 mt-1">{appointment?.patients?.allergies || appointment?.allergies}</div>
+                    )}
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Ongoing Medical Issues</div>
                     <div className={`text-sm font-semibold ${(appointment?.patients?.has_ongoing_medical_issues || appointment?.has_ongoing_medical_issues) ? 'text-red-500' : 'text-green-400'}`}>
                       {(appointment?.patients?.has_ongoing_medical_issues || appointment?.has_ongoing_medical_issues) ? 'Yes' : 'No'}
                     </div>
+                    {(appointment?.patients?.has_ongoing_medical_issues || appointment?.has_ongoing_medical_issues) && (appointment?.patients?.ongoing_medical_issues_details || appointment?.ongoing_medical_issues_details || medicalIssuesDetails) && (
+                      <div className="text-xs text-gray-300 mt-1">{appointment?.patients?.ongoing_medical_issues_details || appointment?.ongoing_medical_issues_details || medicalIssuesDetails}</div>
+                    )}
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Recent Surgeries</div>
                     <div className={`text-sm font-semibold ${(appointment?.patients?.has_recent_surgeries || appointment?.has_recent_surgeries) ? 'text-red-500' : 'text-green-400'}`}>
                       {(appointment?.patients?.has_recent_surgeries || appointment?.has_recent_surgeries) ? 'Yes' : 'No'}
                     </div>
+                    {(appointment?.patients?.has_recent_surgeries || appointment?.has_recent_surgeries) && (appointment?.patients?.recent_surgeries_details || appointment?.recent_surgeries_details || surgeriesDetails) && (
+                      <div className="text-xs text-gray-300 mt-1">{appointment?.patients?.recent_surgeries_details || appointment?.recent_surgeries_details || surgeriesDetails}</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -180,10 +191,12 @@ const PatientHeader = memo(function PatientHeader({
     prevProps.appointment?.patients?.id === nextProps.appointment?.patients?.id &&
     prevProps.surgeriesDetails === nextProps.surgeriesDetails &&
     prevProps.medicalIssuesDetails === nextProps.medicalIssuesDetails &&
+    prevProps.chiefComplaint === nextProps.chiefComplaint &&
     prevProps.isCustomizeMode === nextProps.isCustomizeMode
   )
 })
 
 export default PatientHeader
+
 
 
