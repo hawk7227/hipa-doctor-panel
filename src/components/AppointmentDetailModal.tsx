@@ -1049,6 +1049,7 @@ export default function AppointmentDetailModal({
               appointment={appointment}
               surgeriesDetails={surgeriesDetails}
               medicalIssuesDetails={problemsMedications.medicalIssuesDetails}
+              chiefComplaint={soapNotes.chiefComplaint}
               isCustomizeMode={layout.isCustomizeMode}
               sectionProps={sectionProps}
             />
