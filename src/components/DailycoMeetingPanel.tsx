@@ -7,7 +7,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { Video, Play, GripVertical, Clock, X, Mic, MicOff, VideoOff, PhoneOff, Maximize2, Minimize2 } from "lucide-react";
+import { Video, Play, GripVertical, Clock, X, Maximize2, Minimize2 } from "lucide-react";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
 
 interface DailyMeetingEmbedProps {
@@ -161,18 +161,13 @@ interface DailyMeetingProps {
 const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const callFrameRef = useRef<DailyCall | null>(null);
-  const [isJoining, setIsJoining] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false);
-  const [participantCount, setParticipantCount] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current || !roomUrl) return;
 
     const initCall = async () => {
       try {
-        setIsJoining(true);
         setError(null);
 
         // Destroy existing call frame if any
@@ -200,7 +195,6 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
         // Set up event listeners
         callFrame.on('joined-meeting', () => {
           console.log('Joined Daily.co meeting');
-          setIsJoining(false);
         });
 
         callFrame.on('left-meeting', () => {
@@ -212,17 +206,6 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
           console.error('Daily.co error:', event);
           const errorMessage = (event as { errorMsg?: string })?.errorMsg || 'An error occurred';
           setError(errorMessage);
-          setIsJoining(false);
-        });
-
-        callFrame.on('participant-joined', () => {
-          const participants = callFrame.participants();
-          setParticipantCount(Object.keys(participants).length);
-        });
-
-        callFrame.on('participant-left', () => {
-          const participants = callFrame.participants();
-          setParticipantCount(Object.keys(participants).length);
         });
 
         // Join the room
@@ -232,16 +215,11 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
         }
 
         await callFrame.join(joinConfig);
-        
-        // Get initial participant count
-        const participants = callFrame.participants();
-        setParticipantCount(Object.keys(participants).length);
 
       } catch (err: unknown) {
         console.error('Failed to initialize Daily.co:', err);
         const errorMessage = err instanceof Error ? err.message : 'Failed to join meeting';
         setError(errorMessage);
-        setIsJoining(false);
       }
     };
 
@@ -255,29 +233,6 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
       }
     };
   }, [roomUrl, token, onLeave]);
-
-  const toggleMute = useCallback(async () => {
-    if (callFrameRef.current) {
-      const newMutedState = !isMuted;
-      await callFrameRef.current.setLocalAudio(!newMutedState);
-      setIsMuted(newMutedState);
-    }
-  }, [isMuted]);
-
-  const toggleVideo = useCallback(async () => {
-    if (callFrameRef.current) {
-      const newVideoOffState = !isVideoOff;
-      await callFrameRef.current.setLocalVideo(!newVideoOffState);
-      setIsVideoOff(newVideoOffState);
-    }
-  }, [isVideoOff]);
-
-  const leaveCall = useCallback(async () => {
-    if (callFrameRef.current) {
-      await callFrameRef.current.leave();
-      onLeave?.();
-    }
-  }, [onLeave]);
 
   if (error) {
     return (
@@ -297,55 +252,9 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-900 relative">
-      {/* Loading overlay */}
-      {isJoining && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 z-10">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-500 border-t-transparent mx-auto mb-4"></div>
-            <div className="text-white text-lg">Joining meeting...</div>
-            <div className="text-gray-400 text-sm mt-2">Setting up camera and microphone</div>
-          </div>
-        </div>
-      )}
-      
+    <div className="w-full h-full min-h-[700px] flex flex-col bg-slate-900 relative">
       {/* Daily.co frame container - this is where the prebuilt UI renders */}
-      <div ref={containerRef} className="flex-1 w-full" />
-      
-      {/* Custom control bar (optional - Daily's prebuilt UI has its own controls) */}
-      <div className="h-14 bg-slate-800 border-t border-white/10 flex items-center justify-center gap-4 px-4">
-        <button
-          onClick={toggleMute}
-          className={`p-3 rounded-full transition-colors ${
-            isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-600 hover:bg-slate-500'
-          }`}
-          title={isMuted ? 'Unmute' : 'Mute'}
-        >
-          {isMuted ? <MicOff className="h-5 w-5 text-white" /> : <Mic className="h-5 w-5 text-white" />}
-        </button>
-        
-        <button
-          onClick={toggleVideo}
-          className={`p-3 rounded-full transition-colors ${
-            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-600 hover:bg-slate-500'
-          }`}
-          title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
-        >
-          {isVideoOff ? <VideoOff className="h-5 w-5 text-white" /> : <Video className="h-5 w-5 text-white" />}
-        </button>
-        
-        <button
-          onClick={leaveCall}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-700 transition-colors"
-          title="Leave meeting"
-        >
-          <PhoneOff className="h-5 w-5 text-white" />
-        </button>
-        
-        <div className="ml-4 text-sm text-gray-400">
-          {participantCount} participant{participantCount !== 1 ? 's' : ''}
-        </div>
-      </div>
+      <div ref={containerRef} className="flex-1 w-full min-h-[700px]" />
     </div>
   );
 };
@@ -544,7 +453,8 @@ export default function DailyMeetingEmbed({
           onClose={handleLeaveMeeting}
           title={`Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
           initialPosition={{ x: 20, y: 20 }}
-          initialSize={{ width: 900, height: 600 }}
+          initialSize={{ width: 1100, height: 800 }}
+          minHeight={600}
         >
           <DailyMeetingSDK
             roomUrl={joinUrl}
@@ -629,4 +539,5 @@ export default function DailyMeetingEmbed({
     </div>
   );
 }
+
 
