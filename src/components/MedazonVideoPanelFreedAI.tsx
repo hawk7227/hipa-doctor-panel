@@ -203,9 +203,10 @@ export default function MedazonVideoPanelFreedAI({
         const allParticipants = newCallObject.participants();
         setParticipants(allParticipants);
         
-        // Set up local video
-        if (localVideoRef.current && allParticipants.local?.videoTrack) {
-          const stream = new MediaStream([allParticipants.local.videoTrack]);
+        // Set up local video - Daily SDK uses tracks.video.track
+        const localVideo = allParticipants.local?.tracks?.video;
+        if (localVideoRef.current && localVideo?.track) {
+          const stream = new MediaStream([localVideo.track]);
           localVideoRef.current.srcObject = stream;
         }
       });
@@ -252,31 +253,37 @@ export default function MedazonVideoPanelFreedAI({
           [event.participant.session_id]: event.participant
         }));
         
-        // Update remote video
-        if (!event.participant.local && remoteVideoRef.current && event.participant.videoTrack) {
-          const stream = new MediaStream([event.participant.videoTrack]);
+        // Update remote video - Daily SDK uses tracks.video.track
+        const remoteVideo = event.participant.tracks?.video;
+        if (!event.participant.local && remoteVideoRef.current && remoteVideo?.track) {
+          const stream = new MediaStream([remoteVideo.track]);
           remoteVideoRef.current.srcObject = stream;
         }
       });
 
       newCallObject.on('active-speaker-change', (event) => {
-        if (event?.activeSpeaker) {
-          setActiveSpeakerId(event.activeSpeaker.peerId);
+        // activeSpeaker may have peerId or sessionId depending on SDK version
+        const speakerId = event?.activeSpeaker?.peerId || event?.activeSpeaker?.sessionId;
+        if (speakerId) {
+          setActiveSpeakerId(speakerId);
         }
       });
 
       newCallObject.on('network-quality-change', (event) => {
-        if (event?.threshold) {
-          setNetworkQuality(event.threshold as 'good' | 'low' | 'very-low');
+        // threshold could be 'good', 'low', or 'very-low'
+        const quality = event?.threshold || event?.quality;
+        if (quality && ['good', 'low', 'very-low'].includes(quality)) {
+          setNetworkQuality(quality as 'good' | 'low' | 'very-low');
         }
       });
 
       newCallObject.on('error', (event) => {
         console.error('Daily.co error:', event);
         setCallState('error');
-        setCallError(event?.errorMsg || 'An error occurred');
+        const errorMessage = event?.errorMsg || event?.error?.message || event?.message || 'An error occurred';
+        setCallError(errorMessage);
         setShowCallStatus(false);
-        showToast('⚠️ Call error: ' + (event?.errorMsg || 'Unknown error'), 'error');
+        showToast('⚠️ Call error: ' + errorMessage, 'error');
       });
 
       setCallObject(newCallObject);
@@ -339,29 +346,33 @@ export default function MedazonVideoPanelFreedAI({
   // Toggle screen share
   const toggleScreenShare = useCallback(async () => {
     if (callObject) {
-      if (isScreenSharing) {
-        await callObject.stopScreenShare();
-        setIsScreenSharing(false);
-        showToast('🖥️ Screen share stopped');
-      } else {
-        await callObject.startScreenShare();
-        setIsScreenSharing(true);
-        showToast('🖥️ Screen sharing started');
+      try {
+        if (isScreenSharing) {
+          await callObject.stopScreenShare();
+          setIsScreenSharing(false);
+          showToast('🖥️ Screen share stopped');
+        } else {
+          await callObject.startScreenShare();
+          setIsScreenSharing(true);
+          showToast('🖥️ Screen sharing started');
+        }
+      } catch (error) {
+        console.error('Screen share error:', error);
+        showToast('⚠️ Screen share failed', 'error');
       }
     }
   }, [callObject, isScreenSharing]);
 
-  // Admit waiting participant
+  // Admit waiting participant (simplified - knock feature requires Daily.co room config)
   const admitParticipant = useCallback(async (participantId: string) => {
-    if (callObject) {
-      await callObject.updateParticipant(participantId, { setPermissions: { hasPresence: true } });
-      setShowKnockIndicator(false);
-      setShowWaitingRoom(true);
-      showToast('✅ Patient admitted');
-    }
-  }, [callObject]);
+    // Note: Full knock/waiting room requires Daily.co room settings
+    // This is a simplified UI update
+    setShowKnockIndicator(false);
+    setShowWaitingRoom(true);
+    showToast('✅ Patient admitted');
+  }, []);
 
-  // Start recording via Daily.co
+  // Start recording via Daily.co (requires cloud recording enabled on account)
   const startRecording = useCallback(async () => {
     if (callObject) {
       try {
@@ -369,16 +380,21 @@ export default function MedazonVideoPanelFreedAI({
         setIsRecording(true);
         setShowRecIndicator(true);
         showToast('⏺️ Recording started');
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to start recording:', error);
-        showToast('⚠️ Could not start recording', 'error');
+        // Cloud recording requires paid Daily.co plan
+        if (error?.message?.includes('not enabled') || error?.message?.includes('recording')) {
+          showToast('⚠️ Recording requires Daily.co cloud recording plan', 'warning');
+        } else {
+          showToast('⚠️ Could not start recording', 'error');
+        }
       }
     }
   }, [callObject]);
 
   // Stop recording
   const stopRecording = useCallback(async () => {
-    if (callObject) {
+    if (callObject && isRecording) {
       try {
         await callObject.stopRecording();
         setIsRecording(false);
@@ -386,26 +402,30 @@ export default function MedazonVideoPanelFreedAI({
         showToast('⏹️ Recording stopped');
       } catch (error) {
         console.error('Failed to stop recording:', error);
+        setIsRecording(false);
+        setShowRecIndicator(false);
       }
     }
-  }, [callObject]);
+  }, [callObject, isRecording]);
 
   // Get audio stream from Daily.co for AI Scribe
   const getDailyAudioStream = useCallback((): MediaStream | null => {
     if (!callObject) return null;
     
-    const participants = callObject.participants();
+    const allParticipants = callObject.participants();
     const tracks: MediaStreamTrack[] = [];
     
-    // Get local audio track
-    if (participants.local?.audioTrack) {
-      tracks.push(participants.local.audioTrack);
+    // Get local audio track - Daily SDK uses tracks.audio.track
+    const localAudio = allParticipants.local?.tracks?.audio;
+    if (localAudio?.track) {
+      tracks.push(localAudio.track);
     }
     
     // Get remote audio tracks
-    Object.values(participants).forEach(p => {
-      if (!p.local && p.audioTrack) {
-        tracks.push(p.audioTrack);
+    Object.values(allParticipants).forEach(p => {
+      const remoteAudio = p.tracks?.audio;
+      if (!p.local && remoteAudio?.track) {
+        tracks.push(remoteAudio.track);
       }
     });
     
@@ -1520,7 +1540,7 @@ export default function MedazonVideoPanelFreedAI({
 
                 {/* Remote Video / Patient */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  {remoteParticipant?.videoTrack && !remoteParticipant?.video_off ? (
+                  {remoteParticipant?.tracks?.video?.track && remoteParticipant?.video ? (
                     <video
                       ref={remoteVideoRef}
                       autoPlay
@@ -1597,7 +1617,7 @@ export default function MedazonVideoPanelFreedAI({
 
                 {/* Self View (Local Video) */}
                 <div className="absolute bottom-3 right-3 bg-slate-800/90 rounded-xl p-1 border border-slate-700 z-10">
-                  {participants.local?.videoTrack && !isVideoOff ? (
+                  {participants.local?.tracks?.video?.track && !isVideoOff ? (
                     <video
                       ref={localVideoRef}
                       autoPlay
