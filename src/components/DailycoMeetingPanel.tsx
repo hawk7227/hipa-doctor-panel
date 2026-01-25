@@ -304,21 +304,24 @@ export default function DailyMeetingEmbed({
       });
 
       // Track started - most reliable way to know when video is ready
-      newCallObject.on('track-started', (event: { participant?: DailyParticipant; track?: MediaStreamTrack } | null) => {
-        if (!event?.participant || !event?.track) return;
+      newCallObject.on('track-started', (event) => {
+        const participant = event?.participant;
+        const track = event?.track;
         
-        if (event.track.kind === 'video') {
-          if (event.participant.local) {
+        if (!participant || !track) return;
+        
+        if (track.kind === 'video') {
+          if (participant.local) {
             // Local video track started
             if (localVideoRef.current) {
-              const stream = new MediaStream([event.track]);
+              const stream = new MediaStream([track]);
               localVideoRef.current.srcObject = stream;
               localVideoRef.current.play().catch(console.error);
             }
           } else {
             // Remote video track started
             if (remoteVideoRef.current) {
-              const stream = new MediaStream([event.track]);
+              const stream = new MediaStream([track]);
               remoteVideoRef.current.srcObject = stream;
               remoteVideoRef.current.play().catch(console.error);
             }
@@ -882,6 +885,7 @@ export default function DailyMeetingEmbed({
     </>
   );
 }
+
 
 
 
