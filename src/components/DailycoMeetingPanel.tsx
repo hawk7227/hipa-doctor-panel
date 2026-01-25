@@ -407,8 +407,37 @@ export default function DailyMeetingEmbed({
   void checkMeetingStatus;
   void currentUser;
 
-  // Video panel is always shown as a movable floating window
-  const [videoPanelOpen, setVideoPanelOpen] = useState(true);
+  // Draggable panel state
+  const [panelPosition, setPanelPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const panelPosRef = useRef(panelPosition);
+  
+  useEffect(() => {
+    panelPosRef.current = panelPosition;
+  }, [panelPosition]);
+
+  const startPanelDrag = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startPos = panelPosRef.current;
+    setIsDragging(true);
+
+    const onMove = (ev: MouseEvent) => {
+      setPanelPosition({
+        x: startPos.x + (ev.clientX - startX),
+        y: startPos.y + (ev.clientY - startY),
+      });
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   return (
     <div key={sectionId} {...sectionProps} className="relative">
@@ -418,28 +447,31 @@ export default function DailyMeetingEmbed({
         </div>
       )}
 
-      {/* Placeholder when panel is minimized */}
-      {!videoPanelOpen && (
-        <button
-          onClick={() => setVideoPanelOpen(true)}
-          className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all"
-        >
-          <Video className="h-5 w-5 text-cyan-400" />
-          <span className="text-white font-medium">Open Video Consultation</span>
-        </button>
-      )}
-
-      {/* Movable Video Consultation Panel */}
-      <FloatingWindow
-        open={videoPanelOpen}
-        onClose={() => setVideoPanelOpen(false)}
-        title="📹 Video Consultation"
-        initialPosition={{ x: 20, y: 20 }}
-        initialSize={{ width: 500, height: 1300 }}
-        minWidth={400}
-        minHeight={600}
+      {/* Video Consultation Panel - Draggable */}
+      <div 
+        className="bg-slate-800/50 rounded-2xl border border-white/10"
+        style={{
+          transform: `translate(${panelPosition.x}px, ${panelPosition.y}px)`,
+          cursor: isDragging ? 'grabbing' : 'default',
+          minHeight: '1300px',
+        }}
       >
-        <div className="h-full overflow-y-auto bg-slate-900 p-6">
+        {/* Drag Handle Header */}
+        <div 
+          className="flex items-center justify-between p-4 border-b border-white/10 cursor-grab active:cursor-grabbing bg-slate-900/50 rounded-t-2xl"
+          onMouseDown={startPanelDrag}
+        >
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Video className="h-5 w-5 text-cyan-400" />
+            Video Consultation
+          </h3>
+          <div className="flex items-center gap-2 text-gray-400 text-xs">
+            <GripVertical className="h-4 w-4" />
+            <span>Drag to move</span>
+          </div>
+        </div>
+
+        <div className="p-6">
           {/* Countdown */}
           {timeRemaining && (
             <div className="mb-4 p-4 bg-slate-700/50 rounded-lg border border-cyan-500/30">
@@ -484,9 +516,9 @@ export default function DailyMeetingEmbed({
             )}
           </div>
 
-          {/* Daily.co Video Call Area */}
+          {/* Embedded Video Call Area */}
           {openMeetingModal && appointment?.dailyco_meeting_url && (
-            <div className="mb-4 rounded-lg overflow-hidden border border-cyan-500/30" style={{ height: '700px' }}>
+            <div className="mb-4 rounded-xl overflow-hidden border-2 border-cyan-500/50" style={{ height: '800px' }}>
               <DailyMeetingSDK
                 roomUrl={joinUrl}
                 token={appointment?.dailyco_owner_token ?? undefined}
@@ -568,10 +600,11 @@ export default function DailyMeetingEmbed({
             </button>
           </div>
         </div>
-      </FloatingWindow>
+      </div>
     </div>
   );
 }
+
 
 
 
