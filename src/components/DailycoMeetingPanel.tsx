@@ -8,7 +8,7 @@ import React, {
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
-import DailyIframe, { DailyCall } from "@daily-co/daily-js";
+import DailyIframe from "@daily-co/daily-js";
 
 // =============================================
 // TYPES
@@ -57,11 +57,15 @@ interface BillingCode {
   type: "icd10" | "cpt";
 }
 
+// Daily Frame type
+type DailyFrame = ReturnType<typeof DailyIframe.createFrame>;
+
 // =============================================
 // PANEL STATES
 // =============================================
-type PanelState = "closed" | "expanded" | "minimized" | "pip";
+type PanelState = "closed" | "expanded" | "minimized";
 type ActiveTab = "transcript" | "soap" | "codes" | "instructions";
+type CallState = "idle" | "joining" | "joined" | "error" | "left";
 
 // =============================================
 // MAIN COMPONENT
@@ -113,6 +117,12 @@ export default function DailyMeetingEmbed({
 
     return () => {
       window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  // Cleanup portal on unmount
+  useEffect(() => {
+    return () => {
       const el = document.getElementById("medazon-video-portal");
       if (el && document.body.contains(el)) {
         document.body.removeChild(el);
@@ -134,19 +144,20 @@ export default function DailyMeetingEmbed({
   useEffect(() => { sizeRef.current = size; }, [size]);
 
   // =============================================
-  // DAILY.CO STATE
+  // DAILY.CO STATE - Single Frame Connection
   // =============================================
-  const [dailyFrame, setDailyFrame] = useState<ReturnType<typeof DailyIframe.createFrame> | null>(null);
-  const [callObject, setCallObject] = useState<DailyCall | null>(null);
-  const [isInCall, setIsInCall] = useState(false);
+  const dailyFrameRef = useRef<DailyFrame | null>(null);
+  const prebuiltContainerRef = useRef<HTMLDivElement>(null);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [callState, setCallState] = useState<CallState>("idle");
+  const [callError, setCallError] = useState<string | null>(null);
   const [callSeconds, setCallSeconds] = useState(0);
   const [participantCount, setParticipantCount] = useState(1);
-
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [networkQuality, setNetworkQuality] = useState<"good" | "low" | "very-low">("good");
-  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const prebuiltContainerRef = useRef<HTMLDivElement>(null);
 
   // =============================================
   // AI SCRIBE STATE
@@ -266,21 +277,34 @@ export default function DailyMeetingEmbed({
   // DAILY PREBUILT INITIALIZATION
   // =============================================
   const initializeDailyPrebuilt = useCallback(async () => {
-    if (!joinUrl || !prebuiltContainerRef.current) return;
+    if (!joinUrl) {
+      setCallError("No meeting URL available");
+      setCallState("error");
+      return;
+    }
+
+    if (!prebuiltContainerRef.current) {
+      setCallError("Video container not ready");
+      setCallState("error");
+      return;
+    }
 
     try {
-      // Cleanup existing
-      if (dailyFrame) {
-        await dailyFrame.destroy();
-      }
-      if (callObject) {
-        await callObject.destroy();
+      setCallState("joining");
+      setCallError(null);
+
+      // Cleanup existing frame if any
+      if (dailyFrameRef.current) {
+        try {
+          await dailyFrameRef.current.destroy();
+        } catch (e) {
+          console.warn("Error destroying existing frame:", e);
+        }
+        dailyFrameRef.current = null;
       }
 
       // Clear container
-      if (prebuiltContainerRef.current) {
-        prebuiltContainerRef.current.innerHTML = "";
-      }
+      prebuiltContainerRef.current.innerHTML = "";
 
       // Create Daily Prebuilt Frame
       const frame = DailyIframe.createFrame(prebuiltContainerRef.current, {
@@ -289,6 +313,7 @@ export default function DailyMeetingEmbed({
           height: "100%",
           border: "0",
           borderRadius: "12px",
+          background: "#0f1419",
         },
         showLeaveButton: true,
         showFullscreenButton: true,
@@ -296,150 +321,228 @@ export default function DailyMeetingEmbed({
         showParticipantsBar: true,
       });
 
-      // Event handlers
+      dailyFrameRef.current = frame;
+
+      // ========== EVENT HANDLERS ==========
+      
+      // Meeting joined
       frame.on("joined-meeting", () => {
-        setIsInCall(true);
+        console.log("Daily: joined-meeting");
+        setCallState("joined");
+        setCallError(null);
+        // Start call timer
         callTimerRef.current = setInterval(() => {
           setCallSeconds((prev) => prev + 1);
         }, 1000);
+        // Get initial participant count
+        const participants = frame.participants();
+        setParticipantCount(Object.keys(participants).length);
       });
 
+      // Meeting left
       frame.on("left-meeting", () => {
-        setIsInCall(false);
+        console.log("Daily: left-meeting");
+        setCallState("left");
         setCallSeconds(0);
-        if (callTimerRef.current) clearInterval(callTimerRef.current);
+        if (callTimerRef.current) {
+          clearInterval(callTimerRef.current);
+          callTimerRef.current = null;
+        }
       });
 
-      frame.on("participant-joined", () => {
+      // Participant events
+      frame.on("participant-joined", (event) => {
+        console.log("Daily: participant-joined", event?.participant?.user_name);
         const participants = frame.participants();
         setParticipantCount(Object.keys(participants).length);
       });
 
-      frame.on("participant-left", () => {
+      frame.on("participant-left", (event) => {
+        console.log("Daily: participant-left", event?.participant?.user_name);
         const participants = frame.participants();
         setParticipantCount(Object.keys(participants).length);
       });
 
+      // Recording events
+      frame.on("recording-started", () => {
+        console.log("Daily: recording-started");
+        setIsRecording(true);
+      });
+
+      frame.on("recording-stopped", () => {
+        console.log("Daily: recording-stopped");
+        setIsRecording(false);
+      });
+
+      // Transcription events
+      frame.on("transcription-started", () => {
+        console.log("Daily: transcription-started");
+        setIsAIScribeActive(true);
+      });
+
+      frame.on("transcription-stopped", () => {
+        console.log("Daily: transcription-stopped");
+        setIsAIScribeActive(false);
+      });
+
+      // Transcription message
+      frame.on("transcription-message", (event) => {
+        console.log("Daily: transcription-message", event);
+        if (event?.text) {
+          const newEntry: TranscriptEntry = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            speaker: event.participantId === frame.participants()?.local?.session_id ? "doctor" : "patient",
+            text: event.text,
+            timestamp: new Date(),
+            isFinal: event.is_final ?? true,
+          };
+          setTranscript((prev) => [...prev, newEntry]);
+          onTranscriptUpdate?.(event.text);
+        }
+      });
+
+      // Network quality
+      frame.on("network-quality-change", (event) => {
+        console.log("Daily: network-quality-change", event?.threshold);
+        if (event?.threshold) {
+          setNetworkQuality(event.threshold as "good" | "low" | "very-low");
+        }
+      });
+
+      // Error handling
       frame.on("error", (event) => {
-        console.error("Daily Prebuilt error:", event);
+        console.error("Daily: error", event);
+        setCallError(event?.errorMsg || "An error occurred");
+        setCallState("error");
       });
 
-      setDailyFrame(frame);
+      frame.on("camera-error", (event) => {
+        console.error("Daily: camera-error", event);
+      });
 
-      // Join the meeting
+      // ========== JOIN THE MEETING ==========
+      console.log("Daily: Joining meeting...", joinUrl);
+      
       await frame.join({
         url: joinUrl,
         token: appointment?.dailyco_owner_token || undefined,
         userName: currentUser?.name || "Dr. Provider",
       });
 
-      // Also create a Call Object for AI features
-      const callObj = DailyIframe.createCallObject({
-        subscribeToTracksAutomatically: false,
-      });
-
-
-      callObj.on("network-quality-change", (event) => {
-        if (event?.threshold) {
-          setNetworkQuality(event.threshold as "good" | "low" | "very-low");
-        }
-      });
-
-      callObj.on("transcription-started", () => setIsAIScribeActive(true));
-      callObj.on("transcription-stopped", () => setIsAIScribeActive(false));
-
-      callObj.on("app-message", (event) => {
-        if (event?.fromId === "transcription" && event?.data?.is_final) {
-          const newEntry: TranscriptEntry = {
-            id: `${Date.now()}-${Math.random()}`,
-            speaker: event.data.session_id === "local" ? "doctor" : "patient",
-            text: event.data.text,
-            timestamp: new Date(),
-            isFinal: true,
-          };
-          setTranscript((prev) => [...prev, newEntry]);
-          onTranscriptUpdate?.(event.data.text);
-        }
-      });
-
-      setCallObject(callObj);
-
-      await callObj.join({
-        url: joinUrl,
-        token: appointment?.dailyco_owner_token || undefined,
-        audioSource: false,
-        videoSource: false,
-        subscribeToTracksAutomatically: false,
-      });
+      console.log("Daily: Join call completed");
 
     } catch (error) {
       console.error("Failed to initialize Daily:", error);
+      setCallError(error instanceof Error ? error.message : "Failed to join meeting");
+      setCallState("error");
     }
-  }, [joinUrl, appointment?.dailyco_owner_token, currentUser?.name, dailyFrame, callObject, onTranscriptUpdate]);
+  }, [joinUrl, appointment?.dailyco_owner_token, currentUser?.name, onTranscriptUpdate]);
 
   // =============================================
-  // CALL CONTROLS
+  // CALL CONTROLS - All use dailyFrameRef
   // =============================================
   const toggleMute = useCallback(async () => {
-    if (dailyFrame) {
-      const newState = !isMuted;
-      await dailyFrame.setLocalAudio(!newState);
-      setIsMuted(newState);
+    const frame = dailyFrameRef.current;
+    if (!frame) return;
+    
+    try {
+      const newMutedState = !isMuted;
+      frame.setLocalAudio(!newMutedState);
+      setIsMuted(newMutedState);
+    } catch (error) {
+      console.error("Toggle mute error:", error);
     }
-  }, [dailyFrame, isMuted]);
+  }, [isMuted]);
 
   const toggleVideo = useCallback(async () => {
-    if (dailyFrame) {
-      const newState = !isVideoOff;
-      await dailyFrame.setLocalVideo(!newState);
-      setIsVideoOff(newState);
+    const frame = dailyFrameRef.current;
+    if (!frame) return;
+    
+    try {
+      const newVideoOffState = !isVideoOff;
+      frame.setLocalVideo(!newVideoOffState);
+      setIsVideoOff(newVideoOffState);
+    } catch (error) {
+      console.error("Toggle video error:", error);
     }
-  }, [dailyFrame, isVideoOff]);
+  }, [isVideoOff]);
+
+  const toggleRecording = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame || callState !== "joined") return;
+    
+    try {
+      if (isRecording) {
+        await frame.stopRecording();
+      } else {
+        await frame.startRecording({ layout: { preset: "default" } });
+      }
+    } catch (error) {
+      console.error("Recording error:", error);
+      alert("Recording requires a paid Daily.co plan with cloud recording enabled.");
+    }
+  }, [isRecording, callState]);
 
   const toggleTranscription = useCallback(async () => {
-    if (!callObject) return;
+    const frame = dailyFrameRef.current;
+    if (!frame || callState !== "joined") return;
+    
     try {
       if (isAIScribeActive) {
-        await callObject.stopTranscription();
+        await frame.stopTranscription();
       } else {
-        await callObject.startTranscription();
+        await frame.startTranscription();
       }
     } catch (error) {
       console.error("Transcription error:", error);
       alert("Transcription requires a paid Daily.co plan.");
     }
-  }, [callObject, isAIScribeActive]);
+  }, [isAIScribeActive, callState]);
 
   const dialOut = useCallback(async () => {
-    if (!callObject || !dialNumber) return;
+    const frame = dailyFrameRef.current;
+    if (!frame || !dialNumber || callState !== "joined") return;
+    
     setIsDialing(true);
     try {
-      await callObject.startDialOut({ phoneNumber: dialNumber });
+      await frame.startDialOut({ phoneNumber: dialNumber });
       setShowDialpad(false);
     } catch (error) {
       console.error("Dial-out error:", error);
-      alert("Dial-out requires account approval. Contact help@daily.co");
+      alert("Dial-out requires account approval from Daily.co. Contact help@daily.co");
     } finally {
       setIsDialing(false);
     }
-  }, [callObject, dialNumber]);
+  }, [dialNumber, callState]);
 
   const leaveCall = useCallback(async () => {
-    if (dailyFrame) {
-      await dailyFrame.leave();
-      await dailyFrame.destroy();
-      setDailyFrame(null);
+    const frame = dailyFrameRef.current;
+    
+    if (frame) {
+      try {
+        await frame.leave();
+        await frame.destroy();
+      } catch (e) {
+        console.warn("Error leaving call:", e);
+      }
+      dailyFrameRef.current = null;
     }
-    if (callObject) {
-      await callObject.leave();
-      await callObject.destroy();
-      setCallObject(null);
+    
+    // Clear timer
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
     }
-    setIsInCall(false);
+    
+    // Reset state
+    setCallState("idle");
     setCallSeconds(0);
+    setIsRecording(false);
+    setIsAIScribeActive(false);
+    setIsMuted(false);
+    setIsVideoOff(false);
     setPanelState("closed");
-    if (callTimerRef.current) clearInterval(callTimerRef.current);
-  }, [dailyFrame, callObject]);
+  }, []);
 
   // =============================================
   // AI GENERATION
@@ -524,11 +627,16 @@ Questions? Call us at (XXX) XXX-XXXX`;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (dailyFrame) dailyFrame.destroy().catch(console.error);
-      if (callObject) callObject.destroy().catch(console.error);
-      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (dailyFrameRef.current) {
+        dailyFrameRef.current.destroy().catch(console.error);
+        dailyFrameRef.current = null;
+      }
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+        callTimerRef.current = null;
+      }
     };
-  }, [dailyFrame, callObject]);
+  }, []);
 
   // =============================================
   // HELPERS
@@ -540,6 +648,8 @@ Questions? Call us at (XXX) XXX-XXXX`;
     if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  const isInCall = callState === "joined";
 
   // =============================================
   // RENDER: TRIGGER BUTTON
@@ -601,7 +711,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
       }}
       onMouseDown={startDrag}
     >
-      <div className="w-3 h-3 bg-green-500 rounded-full" />
+      {isRecording && <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />}
       <span className="text-white font-mono text-sm">{formatTime(callSeconds)}</span>
       <span className="text-gray-400 text-sm hidden sm:block">{patientName}</span>
       
@@ -653,7 +763,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
             
             {isInCall && (
               <div className="flex items-center gap-2 ml-4 bg-slate-800/50 px-3 py-1 rounded-full flex-shrink-0">
-                <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500" />
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isRecording ? "bg-red-500 animate-pulse" : "bg-green-500"}`} />
                 <span className="text-white text-sm font-mono">{formatTime(callSeconds)}</span>
                 <span className="text-gray-500 text-sm">• {participantCount}</span>
               </div>
@@ -677,7 +787,8 @@ Questions? Call us at (XXX) XXX-XXXX`;
 
         {/* Video Container */}
         <div className="flex-1 relative min-h-0">
-          {!isInCall ? (
+          {/* Pre-call state */}
+          {callState === "idle" && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
               <div className="text-center p-6">
                 <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg shadow-cyan-500/30">
@@ -695,9 +806,49 @@ Questions? Call us at (XXX) XXX-XXXX`;
                 </button>
               </div>
             </div>
-          ) : (
-            <div ref={prebuiltContainerRef} className="absolute inset-0" />
           )}
+
+          {/* Joining state */}
+          {callState === "joining" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <div className="text-center p-6">
+                <div className="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
+                <h3 className="text-white text-xl font-semibold mb-2">Connecting...</h3>
+                <p className="text-gray-400">Setting up your video consultation</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {callState === "error" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <div className="text-center p-6">
+                <div className="w-20 h-20 bg-red-500/20 rounded-full mx-auto mb-4 flex items-center justify-center">
+                  <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-white text-xl font-semibold mb-2">Connection Error</h3>
+                <p className="text-red-400 mb-4">{callError || "Failed to join the meeting"}</p>
+                <button
+                  onClick={initializeDailyPrebuilt}
+                  className="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-500 transition-all"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Daily Prebuilt iframe container */}
+          <div 
+            ref={prebuiltContainerRef} 
+            className="absolute inset-0"
+            style={{ 
+              display: (callState === "joining" || callState === "joined") ? "block" : "none",
+              background: "#0f1419"
+            }}
+          />
         </div>
 
         {/* Bottom Controls */}
@@ -722,6 +873,12 @@ Questions? Call us at (XXX) XXX-XXXX`;
             <button onClick={() => setShowDialpad(!showDialpad)} className={`p-3 rounded-full transition-all ${showDialpad ? "bg-cyan-600" : patientPhone ? "bg-green-600 hover:bg-green-500" : "bg-slate-700 hover:bg-slate-600"}`} title={patientPhone ? `Call ${patientName}` : "Dialpad"}>
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+            </button>
+
+            <button onClick={toggleRecording} className={`p-3 rounded-full transition-all ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-slate-700 hover:bg-slate-600"}`} title={isRecording ? "Stop Recording" : "Start Recording"}>
+              <svg className="w-5 h-5 text-white" fill={isRecording ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" strokeWidth={2} />
               </svg>
             </button>
 
@@ -943,7 +1100,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
                 <span className="text-2xl font-bold text-white">{patientName.charAt(0).toUpperCase()}</span>
               </div>
               <h3 className="text-white font-bold text-lg">{patientName}</h3>
-              <p className="text-gray-400 text-sm">Call patient's phone</p>
+              <p className="text-gray-400 text-sm">Call patient&apos;s phone</p>
             </div>
 
             {/* Phone Number Display */}
@@ -973,7 +1130,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  Call {patientName.split(' ')[0]}
+                  Call {patientName.split(" ")[0]}
                 </>
               )}
             </button>
@@ -1054,6 +1211,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
     </>
   );
 }
+
 
 
 
