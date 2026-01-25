@@ -262,28 +262,23 @@ export default function MedazonVideoPanelFreedAI({
       });
 
       newCallObject.on('active-speaker-change', (event) => {
-        // activeSpeaker may have peerId or sessionId depending on SDK version
-        const speakerId = event?.activeSpeaker?.peerId || event?.activeSpeaker?.sessionId;
-        if (speakerId) {
-          setActiveSpeakerId(speakerId);
+        if (event?.activeSpeaker?.peerId) {
+          setActiveSpeakerId(event.activeSpeaker.peerId);
         }
       });
 
       newCallObject.on('network-quality-change', (event) => {
-        // threshold could be 'good', 'low', or 'very-low'
-        const quality = event?.threshold || event?.quality;
-        if (quality && ['good', 'low', 'very-low'].includes(quality)) {
-          setNetworkQuality(quality as 'good' | 'low' | 'very-low');
+        if (event?.threshold) {
+          setNetworkQuality(event.threshold as 'good' | 'low' | 'very-low');
         }
       });
 
       newCallObject.on('error', (event) => {
         console.error('Daily.co error:', event);
         setCallState('error');
-        const errorMessage = event?.errorMsg || event?.error?.message || event?.message || 'An error occurred';
-        setCallError(errorMessage);
+        setCallError(event?.errorMsg || 'An error occurred');
         setShowCallStatus(false);
-        showToast('⚠️ Call error: ' + errorMessage, 'error');
+        showToast('⚠️ Call error: ' + (event?.errorMsg || 'Unknown error'), 'error');
       });
 
       setCallObject(newCallObject);
@@ -1540,7 +1535,7 @@ export default function MedazonVideoPanelFreedAI({
 
                 {/* Remote Video / Patient */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  {remoteParticipant?.tracks?.video?.track && remoteParticipant?.video ? (
+                  {remoteParticipant?.tracks?.video?.track ? (
                     <video
                       ref={remoteVideoRef}
                       autoPlay
@@ -2166,6 +2161,7 @@ export default function MedazonVideoPanelFreedAI({
     </>
   );
 }
+
 
 
 
