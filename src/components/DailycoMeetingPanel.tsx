@@ -1213,9 +1213,27 @@ Questions? Call us at (XXX) XXX-XXXX`;
   // MAIN RENDER
   // =============================================
   const renderFloatingContent = () => {
-    if (panelState === "minimized") return renderMinimizedBar();
-    if (panelState === "expanded") return renderExpandedPanel();
-    return null;
+    // When minimized but in a call, we need to keep the expanded panel mounted (but hidden)
+    // so the Daily iframe doesn't get destroyed
+    const showMinimizedBar = panelState === "minimized";
+    const keepExpandedMounted = panelState === "expanded" || (panelState === "minimized" && isInCall);
+    const isExpandedVisible = panelState === "expanded";
+    
+    return (
+      <>
+        {showMinimizedBar && renderMinimizedBar()}
+        {keepExpandedMounted && (
+          <div 
+            style={{ 
+              visibility: isExpandedVisible ? "visible" : "hidden",
+              pointerEvents: isExpandedVisible ? "auto" : "none",
+            }}
+          >
+            {renderExpandedPanel()}
+          </div>
+        )}
+      </>
+    );
   };
 
   return (
