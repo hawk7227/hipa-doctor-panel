@@ -415,7 +415,7 @@ export default function DailyMeetingEmbed({
         </div>
       )}
 
-      <div className="bg-slate-800/50 rounded-2xl p-6 border border-white/10">
+      <div className="bg-slate-800/50 rounded-2xl p-6 border border-white/10 min-h-[800px]">
         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <Video className="h-5 w-5 text-cyan-400" />
           Video Consultation
@@ -464,23 +464,6 @@ export default function DailyMeetingEmbed({
             </div>
           )}
         </div>
-
-        {/* Daily.co Floating Window with SDK - Independent movable overlay */}
-        <FloatingWindow
-          open={openMeetingModal && !!appointment?.dailyco_meeting_url}
-          onClose={handleLeaveMeeting}
-          title={`📹 Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
-          initialPosition={{ x: 50, y: 30 }}
-          initialSize={{ width: 1200, height: 850 }}
-          minWidth={800}
-          minHeight={600}
-        >
-          <DailyMeetingSDK
-            roomUrl={joinUrl}
-            token={appointment?.dailyco_owner_token ?? undefined}
-            onLeave={handleLeaveMeeting}
-          />
-        </FloatingWindow>
 
         <hr className="border-white/10 my-4" />
 
@@ -555,9 +538,27 @@ export default function DailyMeetingEmbed({
           </button>
         </div>
       </div>
+
+      {/* Daily.co Floating Window - Rendered OUTSIDE the panel for true independence */}
+      <FloatingWindow
+        open={openMeetingModal && !!appointment?.dailyco_meeting_url}
+        onClose={handleLeaveMeeting}
+        title={`📹 Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
+        initialPosition={{ x: 50, y: 30 }}
+        initialSize={{ width: 1200, height: 850 }}
+        minWidth={800}
+        minHeight={600}
+      >
+        <DailyMeetingSDK
+          roomUrl={joinUrl}
+          token={appointment?.dailyco_owner_token ?? undefined}
+          onLeave={handleLeaveMeeting}
+        />
+      </FloatingWindow>
     </div>
   );
 }
+
 
 
 
