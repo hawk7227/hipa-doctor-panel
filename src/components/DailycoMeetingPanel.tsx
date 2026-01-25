@@ -208,9 +208,10 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
           onLeave?.();
         });
 
-        callFrame.on('error', (e) => {
-          console.error('Daily.co error:', e);
-          setError(e?.errorMsg || 'An error occurred');
+        callFrame.on('error', (event) => {
+          console.error('Daily.co error:', event);
+          const errorMessage = (event as { errorMsg?: string })?.errorMsg || 'An error occurred';
+          setError(errorMessage);
           setIsJoining(false);
         });
 
@@ -236,9 +237,10 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
         const participants = callFrame.participants();
         setParticipantCount(Object.keys(participants).length);
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to initialize Daily.co:', err);
-        setError(err.message || 'Failed to join meeting');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to join meeting';
+        setError(errorMessage);
         setIsJoining(false);
       }
     };
@@ -421,7 +423,7 @@ export default function DailyMeetingEmbed({
         // Store all recordings if available
         if (data.allRecordings) {
           setAllRecordings(
-            data.allRecordings.map((rec: any) => ({
+            data.allRecordings.map((rec: { id: string; duration: number; start_ts: number }) => ({
               id: rec.id,
               duration: rec.duration,
               startTime: new Date(rec.start_ts * 1000).toISOString(),
@@ -432,7 +434,7 @@ export default function DailyMeetingEmbed({
       } else {
         setRecordingStatus(data.message || "No recording found");
       }
-    } catch (err) {
+    } catch {
       setRecordingStatus("Error checking recording status.");
     } finally {
       setRecordingLoading(false);
@@ -473,6 +475,10 @@ export default function DailyMeetingEmbed({
     if (timeRemaining.isPast) return "Meeting has started";
     return `${timeRemaining.days > 0 ? timeRemaining.days + "d " : ""}${timeRemaining.hours}h ${timeRemaining.minutes}m ${timeRemaining.seconds}s`;
   };
+
+  // Suppress unused variable warnings
+  void checkMeetingStatus;
+  void currentUser;
 
   return (
     <div key={sectionId} {...sectionProps} className="relative">
@@ -623,3 +629,4 @@ export default function DailyMeetingEmbed({
     </div>
   );
 }
+
