@@ -184,9 +184,6 @@ export default function MedazonVideoPanelFreedAI({
       // Create new call object
       const newCallObject = DailyIframe.createCallObject({
         subscribeToTracksAutomatically: true,
-        dailyConfig: {
-          experimentalChromeVideoMuteLightOff: true,
-        },
       });
 
       // Set up event listeners
@@ -2156,3 +2153,4 @@ export default function MedazonVideoPanelFreedAI({
     </>
   );
 }
+
