@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import DailyIframe, { DailyCall, DailyParticipant, DailyEventObjectParticipant, DailyEventObjectActiveSpeakerChange } from '@daily-co/daily-js';
+import DailyIframe, { DailyCall, DailyParticipant } from '@daily-co/daily-js';
 
 interface MedazonVideoPanelProps {
   roomUrl?: string;
@@ -217,8 +217,8 @@ export default function MedazonVideoPanelFreedAI({
         handleCallEnd();
       });
 
-      newCallObject.on('participant-joined', (event: DailyEventObjectParticipant | undefined) => {
-        if (!event) return;
+      newCallObject.on('participant-joined', (event) => {
+        if (!event?.participant) return;
         console.log('Participant joined:', event.participant);
         setParticipants(prev => ({
           ...prev,
@@ -231,8 +231,8 @@ export default function MedazonVideoPanelFreedAI({
         }
       });
 
-      newCallObject.on('participant-left', (event: DailyEventObjectParticipant | undefined) => {
-        if (!event) return;
+      newCallObject.on('participant-left', (event) => {
+        if (!event?.participant) return;
         console.log('Participant left:', event.participant);
         setParticipants(prev => {
           const updated = { ...prev };
@@ -245,8 +245,8 @@ export default function MedazonVideoPanelFreedAI({
         }
       });
 
-      newCallObject.on('participant-updated', (event: DailyEventObjectParticipant | undefined) => {
-        if (!event) return;
+      newCallObject.on('participant-updated', (event) => {
+        if (!event?.participant) return;
         setParticipants(prev => ({
           ...prev,
           [event.participant.session_id]: event.participant
@@ -259,7 +259,7 @@ export default function MedazonVideoPanelFreedAI({
         }
       });
 
-      newCallObject.on('active-speaker-change', (event: DailyEventObjectActiveSpeakerChange | undefined) => {
+      newCallObject.on('active-speaker-change', (event) => {
         if (event?.activeSpeaker) {
           setActiveSpeakerId(event.activeSpeaker.peerId);
         }
@@ -2153,4 +2153,5 @@ export default function MedazonVideoPanelFreedAI({
     </>
   );
 }
+
 
