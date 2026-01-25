@@ -414,7 +414,7 @@ export default function DailyMeetingEmbed({
     if (!callObject || !dialNumber) return;
     setIsDialing(true);
     try {
-      await callObject.startDialout({ phoneNumber: dialNumber });
+      await callObject.startDialOut({ phoneNumber: dialNumber });
       setShowDialpad(false);
     } catch (error) {
       console.error("Dial-out error:", error);
@@ -1054,6 +1054,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
     </>
   );
 }
+
 
 
 
