@@ -72,9 +72,11 @@ export function FloatingWindow({
     const onMove = (ev: MouseEvent) => {
       const nextX = startPos.x + (ev.clientX - startX);
       const nextY = startPos.y + (ev.clientY - startY);
+      const currentSize = sizeRef.current;
+      // Allow free movement - only keep title bar on screen
       setPosition({
-        x: Math.min(Math.max(0, nextX), window.innerWidth - 80),
-        y: Math.min(Math.max(0, nextY), window.innerHeight - 60),
+        x: Math.max(-currentSize.width + 100, Math.min(nextX, window.innerWidth - 100)),
+        y: Math.max(0, Math.min(nextY, window.innerHeight - 50)),
       });
     };
     const onUp = () => {
@@ -535,8 +537,8 @@ export default function DailyMeetingEmbed({
           open={openMeetingModal && !!appointment?.dailyco_meeting_url}
           onClose={handleLeaveMeeting}
           title={`Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
-          initialPosition={{ x: 80, y: 60 }}
-          initialSize={{ width: 1000, height: 700 }}
+          initialPosition={{ x: 20, y: 20 }}
+          initialSize={{ width: 900, height: 600 }}
         >
           <DailyMeetingSDK
             roomUrl={joinUrl}
