@@ -222,15 +222,28 @@ export default function DailyMeetingEmbed({
           setCallSeconds(prev => prev + 1);
         }, 1000);
         
+        // Get all participants and set state
         const allParticipants = newCallObject.participants();
         setParticipants(allParticipants);
         
-        // Set up local video
+        // Try to set up local video immediately
         const localVideo = allParticipants.local?.tracks?.video;
         if (localVideoRef.current && localVideo?.track) {
           const stream = new MediaStream([localVideo.track]);
           localVideoRef.current.srcObject = stream;
         }
+        
+        // Also try after a short delay in case tracks aren't ready yet
+        setTimeout(() => {
+          const updatedParticipants = newCallObject.participants();
+          setParticipants(updatedParticipants);
+          
+          const localVid = updatedParticipants.local?.tracks?.video;
+          if (localVideoRef.current && localVid?.track) {
+            const stream = new MediaStream([localVid.track]);
+            localVideoRef.current.srcObject = stream;
+          }
+        }, 500);
       });
 
       newCallObject.on('left-meeting', () => {
@@ -265,10 +278,22 @@ export default function DailyMeetingEmbed({
           [event.participant.session_id]: event.participant
         }));
         
-        const remoteVideo = event.participant.tracks?.video;
-        if (!event.participant.local && remoteVideoRef.current && remoteVideo?.track) {
-          const stream = new MediaStream([remoteVideo.track]);
-          remoteVideoRef.current.srcObject = stream;
+        // Handle remote video
+        if (!event.participant.local) {
+          const remoteVideo = event.participant.tracks?.video;
+          if (remoteVideoRef.current && remoteVideo?.track) {
+            const stream = new MediaStream([remoteVideo.track]);
+            remoteVideoRef.current.srcObject = stream;
+          }
+        }
+        
+        // Handle local video
+        if (event.participant.local) {
+          const localVideo = event.participant.tracks?.video;
+          if (localVideoRef.current && localVideo?.track) {
+            const stream = new MediaStream([localVideo.track]);
+            localVideoRef.current.srcObject = stream;
+          }
         }
       });
 
@@ -276,6 +301,32 @@ export default function DailyMeetingEmbed({
         if (event?.threshold) {
           setNetworkQuality(event.threshold as 'good' | 'low' | 'very-low');
         }
+      });
+
+      // Track started - most reliable way to know when video is ready
+      newCallObject.on('track-started', (event: { participant?: DailyParticipant; track?: MediaStreamTrack } | null) => {
+        if (!event?.participant || !event?.track) return;
+        
+        if (event.track.kind === 'video') {
+          if (event.participant.local) {
+            // Local video track started
+            if (localVideoRef.current) {
+              const stream = new MediaStream([event.track]);
+              localVideoRef.current.srcObject = stream;
+              localVideoRef.current.play().catch(console.error);
+            }
+          } else {
+            // Remote video track started
+            if (remoteVideoRef.current) {
+              const stream = new MediaStream([event.track]);
+              remoteVideoRef.current.srcObject = stream;
+              remoteVideoRef.current.play().catch(console.error);
+            }
+          }
+        }
+        
+        // Update participants state
+        setParticipants(newCallObject.participants());
       });
 
       newCallObject.on('error', (event) => {
@@ -402,6 +453,27 @@ export default function DailyMeetingEmbed({
       }
     };
   }, [callObject]);
+
+  // Attach local video stream when track becomes available
+  useEffect(() => {
+    const localTrack = participants.local?.tracks?.video?.track;
+    if (localVideoRef.current && localTrack && !isVideoOff) {
+      const stream = new MediaStream([localTrack]);
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.play().catch(console.error);
+    }
+  }, [participants.local?.tracks?.video?.track, isVideoOff]);
+
+  // Attach remote video stream when track becomes available
+  useEffect(() => {
+    const remoteP = Object.values(participants).find(p => !p.local);
+    const remoteTrack = remoteP?.tracks?.video?.track;
+    if (remoteVideoRef.current && remoteTrack) {
+      const stream = new MediaStream([remoteTrack]);
+      remoteVideoRef.current.srcObject = stream;
+      remoteVideoRef.current.play().catch(console.error);
+    }
+  }, [participants]);
 
   // =============================================
   // HELPERS
@@ -810,6 +882,7 @@ export default function DailyMeetingEmbed({
     </>
   );
 }
+
 
 
 
