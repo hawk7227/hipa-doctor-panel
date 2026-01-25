@@ -394,7 +394,7 @@ export default function DailyMeetingEmbed({
             speaker: event.participantId === frame.participants()?.local?.session_id ? "doctor" : "patient",
             text: event.text,
             timestamp: new Date(),
-            isFinal: event.is_final ?? true,
+            isFinal: (event as unknown as { is_final?: boolean }).is_final ?? true,
           };
           setTranscript((prev) => [...prev, newEntry]);
           onTranscriptUpdate?.(event.text);
@@ -1211,6 +1211,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
     </>
   );
 }
+
 
 
 
