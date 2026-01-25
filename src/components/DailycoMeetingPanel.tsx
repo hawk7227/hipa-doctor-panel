@@ -306,19 +306,41 @@ export default function DailyMeetingEmbed({
       // Clear container
       prebuiltContainerRef.current.innerHTML = "";
 
-      // Create Daily Prebuilt Frame
+      // Create Daily Prebuilt Frame with dark theme
       const frame = DailyIframe.createFrame(prebuiltContainerRef.current, {
         iframeStyle: {
           width: "100%",
           height: "100%",
           border: "0",
           borderRadius: "12px",
-          background: "#0f1419",
+          background: "#0a0e14",
         },
         showLeaveButton: true,
         showFullscreenButton: true,
         showLocalVideo: true,
         showParticipantsBar: true,
+        // Dark theme customization
+        theme: {
+          colors: {
+            accent: "#06b6d4", // Cyan accent (Medazon brand)
+            accentText: "#ffffff",
+            background: "#0a0e14", // Dark background
+            backgroundAccent: "#1a2332", // Slightly lighter for cards
+            baseText: "#ffffff",
+            border: "#2d3748",
+            mainAreaBg: "#0a0e14",
+            mainAreaBgAccent: "#0f1419",
+            mainAreaText: "#ffffff",
+            supportiveText: "#94a3b8",
+          },
+        },
+        // Layout configuration
+        layoutConfig: {
+          grid: {
+            maxTilesPerPage: 9,
+            minTilesPerPage: 1,
+          },
+        },
       });
 
       dailyFrameRef.current = frame;
@@ -1211,6 +1233,7 @@ Questions? Call us at (XXX) XXX-XXXX`;
     </>
   );
 }
+
 
 
 
