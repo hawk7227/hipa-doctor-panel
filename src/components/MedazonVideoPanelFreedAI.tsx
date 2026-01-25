@@ -279,13 +279,6 @@ export default function MedazonVideoPanelFreedAI({
         showToast('⚠️ Call error: ' + (event?.errorMsg || 'Unknown error'), 'error');
       });
 
-      newCallObject.on('waiting-participant', (event) => {
-        if (event?.participant) {
-          setShowKnockIndicator(true);
-          showToast(`🚪 ${event.participant.user_name || 'Someone'} is waiting to join`);
-        }
-      });
-
       setCallObject(newCallObject);
 
       // Join the meeting
@@ -2153,5 +2146,6 @@ export default function MedazonVideoPanelFreedAI({
     </>
   );
 }
+
 
 
