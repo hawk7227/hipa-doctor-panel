@@ -407,6 +407,9 @@ export default function DailyMeetingEmbed({
   void checkMeetingStatus;
   void currentUser;
 
+  // Video panel is always shown as a movable floating window
+  const [videoPanelOpen, setVideoPanelOpen] = useState(true);
+
   return (
     <div key={sectionId} {...sectionProps} className="relative">
       {isCustomizeMode && (
@@ -415,149 +418,161 @@ export default function DailyMeetingEmbed({
         </div>
       )}
 
-      <div className="bg-slate-800/50 rounded-2xl p-6 border border-white/10 min-h-[800px]">
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+      {/* Placeholder when panel is minimized */}
+      {!videoPanelOpen && (
+        <button
+          onClick={() => setVideoPanelOpen(true)}
+          className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all"
+        >
           <Video className="h-5 w-5 text-cyan-400" />
-          Video Consultation
-        </h3>
+          <span className="text-white font-medium">Open Video Consultation</span>
+        </button>
+      )}
 
-        {/* Countdown */}
-        {timeRemaining && (
-          <div className="mb-4 p-4 bg-slate-700/50 rounded-lg border border-cyan-500/30">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="h-4 w-4 text-cyan-400" />
-              <span className="text-sm text-gray-400">
-                {timeRemaining.isPast ? "Status:" : "Starts in:"}
-              </span>
-            </div>
-            <div className="text-2xl font-bold text-cyan-400 font-mono">
-              {formatCountdown()}
-            </div>
-          </div>
-        )}
-
-        {/* Start Meeting Button */}
-        <div className="mb-4">
-          {appointment?.dailyco_meeting_url ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  onClick={handleStartMeeting}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 transition-all font-medium shadow-lg shadow-cyan-500/25"
-                >
-                  <Video className="h-5 w-5" />
-                  <span>Start Video Call</span>
-                </button>
-                {appointment?.dailyco_room_name && (
-                  <div className="text-sm">
-                    <span className="text-gray-400">Room: </span>
-                    <span className="font-bold text-white uppercase">
-                      {appointment.dailyco_room_name}
-                    </span>
-                  </div>
-                )}
+      {/* Movable Video Consultation Panel */}
+      <FloatingWindow
+        open={videoPanelOpen}
+        onClose={() => setVideoPanelOpen(false)}
+        title="📹 Video Consultation"
+        initialPosition={{ x: 20, y: 20 }}
+        initialSize={{ width: 500, height: 1300 }}
+        minWidth={400}
+        minHeight={600}
+      >
+        <div className="h-full overflow-y-auto bg-slate-900 p-6">
+          {/* Countdown */}
+          {timeRemaining && (
+            <div className="mb-4 p-4 bg-slate-700/50 rounded-lg border border-cyan-500/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-4 w-4 text-cyan-400" />
+                <span className="text-sm text-gray-400">
+                  {timeRemaining.isPast ? "Status:" : "Starts in:"}
+                </span>
+              </div>
+              <div className="text-2xl font-bold text-cyan-400 font-mono">
+                {formatCountdown()}
               </div>
             </div>
-          ) : (
-            <div className="text-sm text-gray-400">
-              Meeting link will be available once the appointment is confirmed.
-            </div>
           )}
-        </div>
 
-        <hr className="border-white/10 my-4" />
-
-        <h4 className="text-md font-bold text-white mb-2 flex items-center gap-2">
-          <Play className="h-4 w-4 text-green-400" />
-          Meeting Recordings
-        </h4>
-
-        <div className="text-sm text-gray-400 mb-3">
-          {recordingLoading
-            ? "Checking..."
-            : recordingStatus ||
-              "Recordings appear here after the meeting ends."}
-        </div>
-
-        {/* Display all recordings */}
-        {allRecordings.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {allRecordings.map((recording, index) => (
-              <div
-                key={recording.id}
-                className="p-3 bg-slate-700/50 rounded-lg border border-white/10"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-white">
-                      Recording #{allRecordings.length - index}
+          {/* Start Meeting Button */}
+          <div className="mb-4">
+            {appointment?.dailyco_meeting_url ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    onClick={handleStartMeeting}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 transition-all font-medium shadow-lg shadow-cyan-500/25"
+                  >
+                    <Video className="h-5 w-5" />
+                    <span>Start Video Call</span>
+                  </button>
+                  {appointment?.dailyco_room_name && (
+                    <div className="text-sm">
+                      <span className="text-gray-400">Room: </span>
+                      <span className="font-bold text-white uppercase">
+                        {appointment.dailyco_room_name}
+                      </span>
                     </div>
-                    <div className="text-xs text-gray-400">
-                      Duration: {Math.floor(recording.duration / 60)}m{" "}
-                      {recording.duration % 60}s
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {new Date(recording.startTime).toLocaleString()}
-                    </div>
-                  </div>
-                  {index === 0 && recordingUrl && (
-                    <a
-                      href={recordingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                    >
-                      <Play className="h-3 w-3" /> View
-                    </a>
                   )}
                 </div>
               </div>
-            ))}
+            ) : (
+              <div className="text-sm text-gray-400">
+                Meeting link will be available once the appointment is confirmed.
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Single recording view (fallback) */}
-        {recordingUrl && allRecordings.length === 0 && (
-          <a
-            href={recordingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors mb-3"
-          >
-            <Play className="h-4 w-4" /> View Recording
-          </a>
-        )}
+          {/* Daily.co Video Call Area */}
+          {openMeetingModal && appointment?.dailyco_meeting_url && (
+            <div className="mb-4 rounded-lg overflow-hidden border border-cyan-500/30" style={{ height: '700px' }}>
+              <DailyMeetingSDK
+                roomUrl={joinUrl}
+                token={appointment?.dailyco_owner_token ?? undefined}
+                onLeave={handleLeaveMeeting}
+              />
+            </div>
+          )}
 
-        <div>
-          <button
-            onClick={fetchRecordingInfo}
-            disabled={recordingLoading || !appointment?.id}
-            className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {recordingLoading ? "Checking..." : "Refresh Recording Status"}
-          </button>
+          <hr className="border-white/10 my-4" />
+
+          <h4 className="text-md font-bold text-white mb-2 flex items-center gap-2">
+            <Play className="h-4 w-4 text-green-400" />
+            Meeting Recordings
+          </h4>
+
+          <div className="text-sm text-gray-400 mb-3">
+            {recordingLoading
+              ? "Checking..."
+              : recordingStatus ||
+                "Recordings appear here after the meeting ends."}
+          </div>
+
+          {/* Display all recordings */}
+          {allRecordings.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {allRecordings.map((recording, index) => (
+                <div
+                  key={recording.id}
+                  className="p-3 bg-slate-700/50 rounded-lg border border-white/10"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-white">
+                        Recording #{allRecordings.length - index}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Duration: {Math.floor(recording.duration / 60)}m{" "}
+                        {recording.duration % 60}s
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {new Date(recording.startTime).toLocaleString()}
+                      </div>
+                    </div>
+                    {index === 0 && recordingUrl && (
+                      <a
+                        href={recordingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                      >
+                        <Play className="h-3 w-3" /> View
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Single recording view (fallback) */}
+          {recordingUrl && allRecordings.length === 0 && (
+            <a
+              href={recordingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors mb-3"
+            >
+              <Play className="h-4 w-4" /> View Recording
+            </a>
+          )}
+
+          <div>
+            <button
+              onClick={fetchRecordingInfo}
+              disabled={recordingLoading || !appointment?.id}
+              className="text-xs px-3 py-1.5 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
+            >
+              {recordingLoading ? "Checking..." : "Refresh Recording Status"}
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Daily.co Floating Window - Rendered OUTSIDE the panel for true independence */}
-      <FloatingWindow
-        open={openMeetingModal && !!appointment?.dailyco_meeting_url}
-        onClose={handleLeaveMeeting}
-        title={`📹 Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
-        initialPosition={{ x: 50, y: 30 }}
-        initialSize={{ width: 1200, height: 850 }}
-        minWidth={800}
-        minHeight={600}
-      >
-        <DailyMeetingSDK
-          roomUrl={joinUrl}
-          token={appointment?.dailyco_owner_token ?? undefined}
-          onLeave={handleLeaveMeeting}
-        />
       </FloatingWindow>
     </div>
   );
 }
+
 
 
 
