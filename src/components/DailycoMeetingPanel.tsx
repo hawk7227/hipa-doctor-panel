@@ -109,41 +109,56 @@ export function FloatingWindow({
 
   if (!open) return null;
 
+  // Render as a portal-like overlay at the highest z-index
   return (
-    <div id="FloatingWindow" className="fixed inset-0 z-50 pointer-events-none">
+    <div 
+      id="FloatingWindow" 
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 99999 }}
+    >
       <div
-        className="absolute bg-black rounded-xl shadow-2xl border border-white/20 pointer-events-auto overflow-hidden"
+        className="absolute bg-black rounded-xl shadow-2xl border-2 border-cyan-500/50 pointer-events-auto overflow-hidden"
         style={{
           left: position.x,
           top: position.y,
           width: size.width,
           height: minimized ? 44 : size.height,
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(6, 182, 212, 0.3)',
         }}
       >
         <div
-          className="flex items-center justify-between px-3 h-11 bg-slate-900 rounded-t-xl cursor-move select-none border-b border-white/10"
+          className="flex items-center justify-between px-4 h-12 bg-gradient-to-r from-slate-900 to-slate-800 rounded-t-xl cursor-move select-none border-b border-cyan-500/30"
           onMouseDown={startDrag}
         >
-          <span className="text-sm text-white font-medium">{title}</span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-cyan-500 animate-pulse"></div>
+            <span className="text-sm text-white font-semibold">{title}</span>
+          </div>
+          <div className="flex gap-1">
             <button
-              className="text-white text-sm px-2 hover:bg-white/10 rounded"
+              className="text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
               onClick={() => setMinimized((v) => !v)}
+              title={minimized ? "Maximize" : "Minimize"}
             >
               {minimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
             </button>
-            <button className="text-white text-sm px-2 hover:bg-red-500/20 rounded" onClick={onClose}>
+            <button 
+              className="text-white p-2 hover:bg-red-500/30 rounded-lg transition-colors" 
+              onClick={onClose}
+              title="Close"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
         {!minimized && (
-          <div className="w-full h-[calc(100%-44px)] bg-black">{children}</div>
+          <div className="w-full h-[calc(100%-48px)] bg-black relative">{children}</div>
         )}
         {!minimized && (
           <div
-            className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize bg-slate-700 rounded-tl"
+            className="absolute right-0 bottom-0 w-5 h-5 cursor-se-resize bg-cyan-600/50 rounded-tl-lg hover:bg-cyan-500/70 transition-colors"
             onMouseDown={startResize}
+            title="Resize"
           />
         )}
       </div>
@@ -179,9 +194,12 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
         // Create the call frame using Daily's prebuilt UI
         const callFrame = DailyIframe.createFrame(containerRef.current!, {
           iframeStyle: {
+            position: 'absolute',
+            top: '0',
+            left: '0',
             width: '100%',
             height: '100%',
-            border: '0',
+            border: 'none',
             borderRadius: '0',
           },
           showLeaveButton: true,
@@ -252,9 +270,9 @@ const DailyMeetingSDK: React.FC<DailyMeetingProps> = ({ roomUrl, token, onLeave 
   }
 
   return (
-    <div className="w-full h-full min-h-[700px] flex flex-col bg-slate-900 relative">
-      {/* Daily.co frame container - this is where the prebuilt UI renders */}
-      <div ref={containerRef} className="flex-1 w-full min-h-[700px]" />
+    <div className="w-full h-full bg-black relative">
+      {/* Daily.co frame container - fills entire space */}
+      <div ref={containerRef} className="absolute inset-0" />
     </div>
   );
 };
@@ -447,13 +465,14 @@ export default function DailyMeetingEmbed({
           )}
         </div>
 
-        {/* Daily.co Floating Window with SDK */}
+        {/* Daily.co Floating Window with SDK - Independent movable overlay */}
         <FloatingWindow
           open={openMeetingModal && !!appointment?.dailyco_meeting_url}
           onClose={handleLeaveMeeting}
-          title={`Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
-          initialPosition={{ x: 20, y: 20 }}
-          initialSize={{ width: 1100, height: 800 }}
+          title={`📹 Video Call: ${appointment?.dailyco_room_name || "Meeting"}`}
+          initialPosition={{ x: 50, y: 30 }}
+          initialSize={{ width: 1200, height: 850 }}
+          minWidth={800}
           minHeight={600}
         >
           <DailyMeetingSDK
@@ -539,5 +558,6 @@ export default function DailyMeetingEmbed({
     </div>
   );
 }
+
 
 
