@@ -544,6 +544,8 @@ export default function AppointmentDetailModal({
   // NOTE: handleLogSMSCommunication is defined later in the file (line ~1143).
   // We use a ref to avoid block-scoped "used before declaration" TS error.
   const handleLogSMSCommunicationRef = useRef<((entry: any) => Promise<void>) | null>(null)
+  const handleLogCallCommunicationRef = useRef<((entry: any) => Promise<void>) | null>(null)
+  const handleLogEmailCommunicationRef = useRef<((entry: any) => Promise<void>) | null>(null)
   
   const handleQuickSMS = useCallback(async () => {
     if (!quickSMSMessage.trim() || !appointment?.patients?.phone) return
@@ -585,19 +587,21 @@ export default function AppointmentDetailModal({
     try {
       communication.handleCallPhoneNumberChange(numberToCall)
       await communication.handleMakeCall()
-      await handleLogCallCommunication({
-        type: 'call', direction: 'outbound',
-        to_number: numberToCall,
-        status: 'initiated',
-        patient_id: appointment?.patient_id,
-        initiated_at: new Date().toISOString()
-      })
+      if (handleLogCallCommunicationRef.current) {
+        await handleLogCallCommunicationRef.current({
+          type: 'call', direction: 'outbound',
+          to_number: numberToCall,
+          status: 'initiated',
+          patient_id: appointment?.patient_id,
+          initiated_at: new Date().toISOString()
+        })
+      }
       setShowDialpad(false)
     } catch (err: any) {
       console.error('Dialpad call error:', err)
       setError(err.message || 'Failed to initiate call')
     }
-  }, [dialpadNumber, appointment, communication, handleLogCallCommunication, setError])
+  }, [dialpadNumber, appointment, communication, setError])
 
   const handleDialpadDigit = useCallback((digit: string) => {
     setDialpadNumber(prev => prev + digit)
@@ -1210,6 +1214,10 @@ export default function AppointmentDetailModal({
       }
     } catch (error) { console.error('Error logging email:', error) }
   }, [appointment?.patient_id])
+
+  // Populate refs so early callbacks (handleDialpadCall) can use them
+  handleLogCallCommunicationRef.current = handleLogCallCommunication
+  handleLogEmailCommunicationRef.current = handleLogEmailCommunication
 
   const handleApplyCDSSWithMedications = useCallback(async () => {
     if (!handleApplyCDSS) return
@@ -2823,6 +2831,7 @@ export default function AppointmentDetailModal({
     </>
   )
 }
+
 
 
 
