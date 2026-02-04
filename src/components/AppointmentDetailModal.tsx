@@ -307,6 +307,19 @@ export default function AppointmentDetailModal({
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
 
+  // Map EHR toolbar panel ids to their state setters
+  const handleToolbarPanelClick = useCallback((panelId: string) => {
+    switch (panelId) {
+      case 'medication-history': setShowMedicationHistoryPanel(v => !v); break
+      case 'orders': setShowOrdersPanel(v => !v); break
+      case 'prescription-history': setShowPrescriptionHistoryPanel(v => !v); break
+      case 'appointments': setShowAppointmentsOverlay(v => !v); break
+      case 'allergies': setShowAllergiesPanel(v => !v); break
+      case 'vitals': setShowVitalsPanel(v => !v); break
+      case 'medications': setShowMedicationsPanel(v => !v); break
+    }
+  }, [])
+
   // Embedded tool panels (inside video section)
   const [showFreedPanel, setShowFreedPanel] = useState(false)
   const [showDialerPanel, setShowDialerPanel] = useState(false)
