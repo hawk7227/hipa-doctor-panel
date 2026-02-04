@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
-import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
 import PrescriptionHistoryPanel from './PrescriptionHistoryPanel'
@@ -699,7 +698,7 @@ export default function AppointmentDetailModal({
         activeTab={activeTab}
         soapSaveStatus={soapSaveStatus}
         isSigning={isSigning}
-        isCustomizeMode={layout.isCustomizeMode}
+        isCustomizeMode={false}
         sectionProps={sectionProps}
         onSoapNotesChange={handleSoapNotesChange}
         onDoctorNotesChange={handleDoctorNotesChangeMemoized}
@@ -722,7 +721,7 @@ export default function AppointmentDetailModal({
         onDocumentDownload={handleDocumentDownload}
       />
     ),
-    [appointment, memoizedSoapNotes, doctorNotes, activeTab, soapSaveStatus, isSigning, layout.isCustomizeMode, handleSoapNotesChange, handleDoctorNotesChangeMemoized, setActiveTab, handleSignAndLock, handleGenerateCDSSMemoized, isGeneratingCDSS, showCDSSResults, memoizedCdssResponse, cdssError, isApplyingCDSS, handleApplyCDSSWithMedications, handleCloseCDSS, memoizedAppointmentDocuments, documentUpload.uploadingDocument, documentUpload.selectedDocument, documentUpload.uploadError, documentUpload.handleDocumentUpload, documentUpload.setSelectedDocument, handleDocumentDownload]
+    [appointment, memoizedSoapNotes, doctorNotes, activeTab, soapSaveStatus, isSigning, handleSoapNotesChange, handleDoctorNotesChangeMemoized, setActiveTab, handleSignAndLock, handleGenerateCDSSMemoized, isGeneratingCDSS, showCDSSResults, memoizedCdssResponse, cdssError, isApplyingCDSS, handleApplyCDSSWithMedications, handleCloseCDSS, memoizedAppointmentDocuments, documentUpload.uploadingDocument, documentUpload.selectedDocument, documentUpload.uploadError, documentUpload.handleDocumentUpload, documentUpload.setSelectedDocument, handleDocumentDownload]
   )
   
   const renderSection = useCallback(
@@ -732,99 +731,143 @@ export default function AppointmentDetailModal({
       switch (sectionId) {
         case 'patient-header':
           return (
-            <PatientHeader
-              key={sectionId}
-              appointment={appointment}
-              surgeriesDetails={surgeriesDetails}
-              medicalIssuesDetails={problemsMedications.medicalIssuesDetails}
-              chiefComplaint={soapNotes.chiefComplaint}
-              isCustomizeMode={layout.isCustomizeMode}
-              sectionProps={sectionProps}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <PatientHeader
+                appointment={appointment}
+                surgeriesDetails={surgeriesDetails}
+                medicalIssuesDetails={problemsMedications.medicalIssuesDetails}
+                chiefComplaint={soapNotes.chiefComplaint}
+                isCustomizeMode={false}
+                sectionProps={{}}
+                showIntakeAnswers={false}
+              />
+            </div>
           )
   
         case 'doctor-notes':
-          return <React.Fragment key={sectionId}>{renderDoctorNotes(sectionProps)}</React.Fragment>
+          return (
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              {renderDoctorNotes({})}
+            </div>
+          )
 
         case 'meeting-info':
           return (
-            <DailyMeetingEmbed
-              key={sectionId}
-              appointment={appointment && {
-                id: appointment.id,
-                requested_date_time: appointment.requested_date_time,
-                dailyco_meeting_url: (appointment as any).dailyco_meeting_url || null,
-                dailyco_room_name: (appointment as any).dailyco_room_name || null,
-                dailyco_owner_token: (appointment as any).dailyco_owner_token || null,
-                recording_url: (appointment as any).recording_url || null
-              }}
-              currentUser={currentUser}
-              isCustomizeMode={layout.isCustomizeMode}
-              sectionProps={sectionProps}
-              sectionId={sectionId}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <DailyMeetingEmbed
+                appointment={appointment && {
+                  id: appointment.id,
+                  requested_date_time: appointment.requested_date_time,
+                  dailyco_meeting_url: (appointment as any).dailyco_meeting_url || null,
+                  dailyco_room_name: (appointment as any).dailyco_room_name || null,
+                  dailyco_owner_token: (appointment as any).dailyco_owner_token || null,
+                  recording_url: (appointment as any).recording_url || null
+                }}
+                currentUser={currentUser}
+                isCustomizeMode={false}
+                sectionProps={{}}
+                sectionId={sectionId}
+              />
+            </div>
           )
   
         case 'problems-medications':
           return (
-            <ProblemsMedicationsSection
-              key={sectionId}
-              {...problemsMedications}
-              isCustomizeMode={layout.isCustomizeMode}
-              sectionProps={sectionProps}
-              {...problemsMedicationsHandlers}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <ProblemsMedicationsSection
+                {...problemsMedications}
+                isCustomizeMode={false}
+                sectionProps={{}}
+                {...problemsMedicationsHandlers}
+              />
+            </div>
           )
 
         case 'erx-composer':
           return (
-            <ErxComposer
-              key={sectionId}
-              rxData={prescriptions.rxData}
-              rxList={prescriptions.rxList}
-              recipientAddress={prescriptions.recipientAddress}
-              editingRxId={prescriptions.editingRxId}
-              editingRxData={prescriptions.editingRxData}
-              addingRx={prescriptions.addingRx}
-              sendingRx={prescriptions.sendingRx}
-              showRxHistory={prescriptions.showRxHistory}
-              isCustomizeMode={layout.isCustomizeMode}
-              sectionProps={sectionProps}
-              sectionId={sectionId}
-              onRxDataChange={(field: string, value: string) => {
-                prescriptions.handleRxDataChange(field as keyof typeof prescriptions.rxData, value)
-              }}
-              onRecipientAddressChange={prescriptions.setRecipientAddress}
-              onAddToRxList={prescriptions.handleAddToRxList}
-              onRemoveFromRxList={prescriptions.handleRemoveFromRxList}
-              onClearRxList={prescriptions.handleClearRxList}
-              onStartEditRx={prescriptions.handleStartEditRx}
-              onCancelEditRx={prescriptions.handleCancelEditRx}
-              onSaveEditRx={prescriptions.handleSaveEditRx}
-              onEditingRxDataChange={(data) => { prescriptions.setEditingRxData(data) }}
-              onSendERx={async () => {
-                if (appointment) await prescriptions.handleSendERx(appointment, setError)
-              }}
-              onToggleRxHistory={() => prescriptions.setShowRxHistory(!prescriptions.showRxHistory)}
-              rxHistory={prescriptions.rxHistory}
-              drugInteractions={prescriptions.drugInteractions}
-              isCheckingInteractions={prescriptions.isCheckingInteractions}
-              onCheckDrugInteractions={prescriptions.checkDrugInteractions}
-              favoriteMedications={prescriptions.favoriteMedications}
-              showFavoritesDropdown={prescriptions.showFavoritesDropdown}
-              onSelectFavoriteMedication={prescriptions.handleSelectFavoriteMedication}
-              onAddToFavorites={() => {
-                if (prescriptions.rxData?.medication) {
-                  prescriptions.handleAddToFavorites({
-                    medication: prescriptions.rxData.medication,
-                    sig: prescriptions.rxData.sig,
-                    quantity: prescriptions.rxData.quantity,
-                    refills: prescriptions.rxData.refills
-                  })
-                }
-              }}
-              onToggleFavoritesDropdown={() => prescriptions.setShowFavoritesDropdown(!prescriptions.showFavoritesDropdown)}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <ErxComposer
+                rxData={prescriptions.rxData}
+                rxList={prescriptions.rxList}
+                recipientAddress={prescriptions.recipientAddress}
+                editingRxId={prescriptions.editingRxId}
+                editingRxData={prescriptions.editingRxData}
+                addingRx={prescriptions.addingRx}
+                sendingRx={prescriptions.sendingRx}
+                showRxHistory={prescriptions.showRxHistory}
+                isCustomizeMode={false}
+                sectionProps={{}}
+                sectionId={sectionId}
+                onRxDataChange={(field: string, value: string) => {
+                  prescriptions.handleRxDataChange(field as keyof typeof prescriptions.rxData, value)
+                }}
+                onRecipientAddressChange={prescriptions.setRecipientAddress}
+                onAddToRxList={prescriptions.handleAddToRxList}
+                onRemoveFromRxList={prescriptions.handleRemoveFromRxList}
+                onClearRxList={prescriptions.handleClearRxList}
+                onStartEditRx={prescriptions.handleStartEditRx}
+                onCancelEditRx={prescriptions.handleCancelEditRx}
+                onSaveEditRx={prescriptions.handleSaveEditRx}
+                onEditingRxDataChange={(data) => { prescriptions.setEditingRxData(data) }}
+                onSendERx={async () => {
+                  if (appointment) await prescriptions.handleSendERx(appointment, setError)
+                }}
+                onToggleRxHistory={() => prescriptions.setShowRxHistory(!prescriptions.showRxHistory)}
+                rxHistory={prescriptions.rxHistory}
+                drugInteractions={prescriptions.drugInteractions}
+                isCheckingInteractions={prescriptions.isCheckingInteractions}
+                onCheckDrugInteractions={prescriptions.checkDrugInteractions}
+                favoriteMedications={prescriptions.favoriteMedications}
+                showFavoritesDropdown={prescriptions.showFavoritesDropdown}
+                onSelectFavoriteMedication={prescriptions.handleSelectFavoriteMedication}
+                onAddToFavorites={() => {
+                  if (prescriptions.rxData?.medication) {
+                    prescriptions.handleAddToFavorites({
+                      medication: prescriptions.rxData.medication,
+                      sig: prescriptions.rxData.sig,
+                      quantity: prescriptions.rxData.quantity,
+                      refills: prescriptions.rxData.refills
+                    })
+                  }
+                }}
+                onToggleFavoritesDropdown={() => prescriptions.setShowFavoritesDropdown(!prescriptions.showFavoritesDropdown)}
+              />
+            </div>
           )
 
         case 'sms-section':
@@ -913,29 +956,65 @@ export default function AppointmentDetailModal({
 
         case 'lab-results':
           return (
-            <LabResultsSection key={sectionId} labResults={labResults.labResults} isLoadingLabs={labResults.isLoadingLabs} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps} onLoadLabResults={labResults.loadLabResults} />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <LabResultsSection labResults={labResults.labResults} isLoadingLabs={labResults.isLoadingLabs} isCustomizeMode={false} sectionProps={{}} onLoadLabResults={labResults.loadLabResults} />
+            </div>
           )
 
         case 'referrals-followup':
           return (
-            <ReferralsFollowUpSection key={sectionId} referrals={referralsFollowUp.referrals} showReferralForm={referralsFollowUp.showReferralForm} setShowReferralForm={referralsFollowUp.setShowReferralForm} newReferral={referralsFollowUp.newReferral} setNewReferral={referralsFollowUp.setNewReferral} showFollowUpScheduler={referralsFollowUp.showFollowUpScheduler} setShowFollowUpScheduler={referralsFollowUp.setShowFollowUpScheduler} followUpData={referralsFollowUp.followUpData} setFollowUpData={referralsFollowUp.setFollowUpData} isSchedulingFollowUp={referralsFollowUp.isSchedulingFollowUp} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps}
-              onCreateReferral={async () => { try { await referralsFollowUp.handleCreateReferral() } catch (err: any) { setError(err.message) } }}
-              onScheduleFollowUp={async () => { try { await referralsFollowUp.handleScheduleFollowUp(); onStatusChange() } catch (err: any) { setError(err.message) } }}
-              error={error}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <ReferralsFollowUpSection referrals={referralsFollowUp.referrals} showReferralForm={referralsFollowUp.showReferralForm} setShowReferralForm={referralsFollowUp.setShowReferralForm} newReferral={referralsFollowUp.newReferral} setNewReferral={referralsFollowUp.setNewReferral} showFollowUpScheduler={referralsFollowUp.showFollowUpScheduler} setShowFollowUpScheduler={referralsFollowUp.setShowFollowUpScheduler} followUpData={referralsFollowUp.followUpData} setFollowUpData={referralsFollowUp.setFollowUpData} isSchedulingFollowUp={referralsFollowUp.isSchedulingFollowUp} isCustomizeMode={false} sectionProps={{}}
+                onCreateReferral={async () => { try { await referralsFollowUp.handleCreateReferral() } catch (err: any) { setError(err.message) } }}
+                onScheduleFollowUp={async () => { try { await referralsFollowUp.handleScheduleFollowUp(); onStatusChange() } catch (err: any) { setError(err.message) } }}
+                error={error}
+              />
+            </div>
           )
 
         case 'prior-auth':
           return (
-            <PriorAuthSection key={sectionId} priorAuths={priorAuth.priorAuths} showPriorAuthForm={priorAuth.showPriorAuthForm} setShowPriorAuthForm={priorAuth.setShowPriorAuthForm} newPriorAuth={priorAuth.newPriorAuth} setNewPriorAuth={priorAuth.setNewPriorAuth} isSubmitting={priorAuth.isSubmitting} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps}
-              onSubmitPriorAuth={async () => { try { await priorAuth.handleSubmitPriorAuth() } catch (err: any) { setError(err.message) } }}
-              error={error}
-            />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <PriorAuthSection priorAuths={priorAuth.priorAuths} showPriorAuthForm={priorAuth.showPriorAuthForm} setShowPriorAuthForm={priorAuth.setShowPriorAuthForm} newPriorAuth={priorAuth.newPriorAuth} setNewPriorAuth={priorAuth.setNewPriorAuth} isSubmitting={priorAuth.isSubmitting} isCustomizeMode={false} sectionProps={{}}
+                onSubmitPriorAuth={async () => { try { await priorAuth.handleSubmitPriorAuth() } catch (err: any) { setError(err.message) } }}
+                error={error}
+              />
+            </div>
           )
 
         case 'communication-history':
           return (
-            <CommunicationHistorySection key={sectionId} communicationHistory={communication.communicationHistory} loadingHistory={communication.loadingHistory} playingRecordingId={communication.playingRecordingId} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps} formatDuration={communication.formatDuration} formatHistoryDate={communication.formatHistoryDate} onPlayRecording={communication.handlePlayRecording} audioRefs={communication.audioRefs} />
+            <div key={sectionId} {...sectionProps}>
+              {layout.isCustomizeMode && (
+                <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
+              )}
+              <CommunicationHistorySection communicationHistory={communication.communicationHistory} loadingHistory={communication.loadingHistory} playingRecordingId={communication.playingRecordingId} isCustomizeMode={false} sectionProps={{}} formatDuration={communication.formatDuration} formatHistoryDate={communication.formatHistoryDate} onPlayRecording={communication.handlePlayRecording} audioRefs={communication.audioRefs} />
+            </div>
           )
 
         case 'medical-records':
@@ -956,7 +1035,7 @@ export default function AppointmentDetailModal({
           return null
       }
     },
-    [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, onStatusChange]
+    [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, soapNotes.chiefComplaint, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, onStatusChange, appointmentId]
   )
 
   // Fetch communication history when appointment loads
