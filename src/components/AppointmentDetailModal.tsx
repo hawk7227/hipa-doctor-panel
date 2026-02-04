@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity, Minimize2, Maximize2, ChevronDown, ChevronUp, MoreHorizontal, Copy, Check, Phone, PhoneCall, PhoneOff, Send, Link2, Lock, Unlock, GripVertical, MessageSquare, ExternalLink } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
@@ -82,21 +82,6 @@ interface AppointmentDetailModalProps {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// COPY BUTTON HELPER
-// ═══════════════════════════════════════════════════════════════
-function CopyBtn({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-      className="p-0.5 transition-colors"
-      style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? '#00cba9' : '#6b7280' }}
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-    </button>
-  )
-}
-
 // ═══════════════════════════════════════════════════════════════
 // TOOLBAR PANEL DEFINITIONS (for the grouped header bar)
 // ═══════════════════════════════════════════════════════════════
@@ -321,51 +306,6 @@ export default function AppointmentDetailModal({
   const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
-  
-  // NEW: Track which right-panel view is active (null = SOAP notes default)
-  const [activeRightPanel, setActiveRightPanel] = useState<string | null>(null)
-  // NEW: Patient card collapsed state
-  const [patientCardCollapsed, setPatientCardCollapsed] = useState(false)
-  // NEW: Actions dropdown
-  const [showActionsDropdown, setShowActionsDropdown] = useState(false)
-  // NEW: Call timer
-  const [callTime, setCallTime] = useState(0)
-  const [callActive, setCallActive] = useState(false)
-  
-  // NEW: Quick actions from video panel
-  const [showQuickSMS, setShowQuickSMS] = useState(false)
-  const [quickSMSMessage, setQuickSMSMessage] = useState('')
-  const [sendingQuickSMS, setSendingQuickSMS] = useState(false)
-  const [quickSMSSent, setQuickSMSSent] = useState(false)
-  const [showDialpad, setShowDialpad] = useState(false)
-  const [dialpadNumber, setDialpadNumber] = useState('')
-  const [showResendLink, setShowResendLink] = useState(false)
-  const [resendingLink, setResendingLink] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
-  const [linkResent, setLinkResent] = useState(false)
-  
-  // NEW: Daily.co Dialout
-  const [isDialingOut, setIsDialingOut] = useState(false)
-  const [dialoutActive, setDialoutActive] = useState(false)
-  const [dialoutError, setDialoutError] = useState<string | null>(null)
-  
-  // NEW: Video signal / call fallback
-  const [videoSignalWeak, setVideoSignalWeak] = useState(false)
-  const [showCallFallback, setShowCallFallback] = useState(false)
-  
-  // NEW: Resizable/movable/lockable panel
-  const [panelWidth, setPanelWidth] = useState<number | null>(null) // null = full width
-  const [panelHeight, setPanelHeight] = useState<number | null>(null) // null = full height
-  const [panelX, setPanelX] = useState<number | null>(null) // null = right-aligned
-  const [panelY, setPanelY] = useState<number | null>(null) // null = top-aligned
-  const [panelLocked, setPanelLocked] = useState(false)
-  const [isResizing, setIsResizing] = useState(false)
-  const [isDraggingPanel, setIsDraggingPanel] = useState(false)
-  const [panelMode, setPanelMode] = useState<'full' | 'floating'>('full') // full = old behavior, floating = resizable
-  const panelRef = useRef<HTMLDivElement>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number; edge: string } | null>(null)
-  const dragRef = useRef<{ startX: number; startY: number; startPanelX: number; startPanelY: number } | null>(null)
   
   const [patientAppointments, setPatientAppointments] = useState<Array<{
     id: string
@@ -375,363 +315,6 @@ export default function AppointmentDetailModal({
     created_at: string
     requested_date_time: string | null
   }>>([])
-
-  // ═══════════════════════════════════════════════════════════════
-  // CALL TIMER — Track active video calls
-  // ═══════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!callActive) return
-    const interval = setInterval(() => setCallTime(t => t + 1), 1000)
-    return () => clearInterval(interval)
-  }, [callActive])
-
-  const formatCallTime = (s: number) => {
-    const m = Math.floor(s / 60)
-    const sec = s % 60
-    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // COMMUNICATION LOGGING — log SMS/call/email to communication_history
-  // (Moved above handleQuickSMS/handleResendLinkSMS so they can reference these)
-  // ═══════════════════════════════════════════════════════════════
-  const handleLogSMSCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'sms', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_number || entry.to, from_number: entry.from_number || null,
-        message: entry.content || entry.message, status: entry.status || 'sent',
-        doctor_id: doctor.id, patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging SMS:', error)
-      }
-    } catch (error) { console.error('Error logging SMS:', error) }
-  }, [appointment?.patient_id])
-
-  const handleLogCallCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'call', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_number || entry.to, from_number: entry.from_number || null,
-        message: entry.message || null, status: entry.status || 'initiated',
-        duration: entry.duration || null, twilio_sid: entry.twilio_sid || null,
-        recording_url: entry.recording_url || null, doctor_id: doctor.id,
-        patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.initiated_at || entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging call:', error)
-      }
-    } catch (error) { console.error('Error logging call:', error) }
-  }, [appointment?.patient_id])
-
-  const handleLogEmailCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const emailContent = entry.subject ? `Subject: ${entry.subject}\n\n${entry.body || ''}` : entry.body || ''
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'email', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_email || null, from_number: entry.from_email || null,
-        message: emailContent, status: entry.status || 'sent', doctor_id: doctor.id,
-        patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging email:', error)
-      }
-    } catch (error) { console.error('Error logging email:', error) }
-  }, [appointment?.patient_id])
-
-  // ═══════════════════════════════════════════════════════════════
-  // QUICK SMS — send SMS directly from video panel
-  // ═══════════════════════════════════════════════════════════════
-  const handleQuickSMS = useCallback(async () => {
-    if (!quickSMSMessage.trim() || !appointment?.patients?.phone) return
-    setSendingQuickSMS(true)
-    try {
-      communication.handleSmsToChange(appointment.patients.phone)
-      communication.handleSmsMessageChange(quickSMSMessage)
-      await new Promise(resolve => setTimeout(resolve, 0))
-      await communication.handleSendSMS()
-      await handleLogSMSCommunication({
-        type: 'sms', direction: 'outbound',
-        to_number: appointment.patients.phone,
-        content: quickSMSMessage,
-        status: 'sent',
-        patient_id: appointment?.patient_id,
-        created_at: new Date().toISOString()
-      })
-      setQuickSMSMessage('')
-      setShowQuickSMS(false)
-    } catch (err: any) {
-      console.error('Quick SMS error:', err)
-      setError(err.message || 'Failed to send SMS')
-    } finally {
-      setSendingQuickSMS(false)
-    }
-  }, [quickSMSMessage, appointment, communication, handleLogSMSCommunication, setError])
-
-  // ═══════════════════════════════════════════════════════════════
-  // DIALPAD — call patient directly (Twilio fallback from video)
-  // ═══════════════════════════════════════════════════════════════
-  const handleDialpadCall = useCallback(async (phoneNumber?: string) => {
-    const numberToCall = phoneNumber || dialpadNumber || appointment?.patients?.phone
-    if (!numberToCall) {
-      setError('No phone number available')
-      return
-    }
-    try {
-      communication.handleCallPhoneNumberChange(numberToCall)
-      await communication.handleMakeCall()
-      await handleLogCallCommunication({
-        type: 'call', direction: 'outbound',
-        to_number: numberToCall,
-        status: 'initiated',
-        patient_id: appointment?.patient_id,
-        initiated_at: new Date().toISOString()
-      })
-      setShowDialpad(false)
-    } catch (err: any) {
-      console.error('Dialpad call error:', err)
-      setError(err.message || 'Failed to initiate call')
-    }
-  }, [dialpadNumber, appointment, communication, handleLogCallCommunication, setError])
-
-  const handleDialpadDigit = useCallback((digit: string) => {
-    setDialpadNumber(prev => prev + digit)
-  }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // RESEND APPOINTMENT LINK — copy or SMS the Daily.co link
-  // ═══════════════════════════════════════════════════════════════
-  const getMeetingLink = useCallback(() => {
-    const apt = appointment as any
-    return apt?.dailyco_meeting_url || apt?.meeting_url || apt?.video_link || null
-  }, [appointment])
-
-  const handleCopyMeetingLink = useCallback(() => {
-    const link = getMeetingLink()
-    if (link) {
-      navigator.clipboard.writeText(link)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    }
-  }, [getMeetingLink])
-
-  const handleResendLinkSMS = useCallback(async () => {
-    const link = getMeetingLink()
-    const phone = appointment?.patients?.phone
-    if (!link || !phone) {
-      setError('Missing meeting link or patient phone number')
-      return
-    }
-    setResendingLink(true)
-    try {
-      const patientName = `${appointment?.patients?.first_name || ''}`.trim() || 'Patient'
-      const message = `Hi ${patientName}, here is your appointment video link: ${link}`
-      communication.handleSmsToChange(phone)
-      communication.handleSmsMessageChange(message)
-      await new Promise(resolve => setTimeout(resolve, 0))
-      await communication.handleSendSMS()
-      await handleLogSMSCommunication({
-        type: 'sms', direction: 'outbound',
-        to_number: phone,
-        content: message,
-        status: 'sent',
-        patient_id: appointment?.patient_id,
-        created_at: new Date().toISOString()
-      })
-      setShowResendLink(false)
-    } catch (err: any) {
-      console.error('Resend link error:', err)
-      setError(err.message || 'Failed to resend link')
-    } finally {
-      setResendingLink(false)
-    }
-  }, [appointment, communication, getMeetingLink, handleLogSMSCommunication, setError])
-
-  // ═══════════════════════════════════════════════════════════════
-  // PANEL RESIZE/MOVE/LOCK — drag to resize edges, drag to move
-  // ═══════════════════════════════════════════════════════════════
-  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (panelLocked || panelMode !== 'floating') return
-    e.preventDefault()
-    e.stopPropagation()
-    setIsResizing(true)
-    const rect = panelRef.current?.getBoundingClientRect()
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startW: rect?.width || window.innerWidth * 0.85,
-      startH: rect?.height || window.innerHeight,
-      edge
-    }
-  }, [panelLocked, panelMode])
-
-  const handleDragPanelStart = useCallback((e: React.MouseEvent) => {
-    if (panelLocked || panelMode !== 'floating') return
-    e.preventDefault()
-    setIsDraggingPanel(true)
-    const rect = panelRef.current?.getBoundingClientRect()
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startPanelX: rect?.left || 0,
-      startPanelY: rect?.top || 0
-    }
-  }, [panelLocked, panelMode])
-
-  // Mouse move/up handlers for resize and drag
-  useEffect(() => {
-    if (!isResizing && !isDraggingPanel) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizing && resizeRef.current) {
-        const dx = e.clientX - resizeRef.current.startX
-        const dy = e.clientY - resizeRef.current.startY
-        const { edge, startW, startH } = resizeRef.current
-        
-        const minW = 500
-        const minH = 400
-        
-        if (edge.includes('right')) {
-          setPanelWidth(Math.max(minW, startW + dx))
-        }
-        if (edge.includes('left')) {
-          const newW = Math.max(minW, startW - dx)
-          setPanelWidth(newW)
-          if (panelX !== null) setPanelX(prev => (prev || 0) + (startW - newW))
-        }
-        if (edge.includes('bottom')) {
-          setPanelHeight(Math.max(minH, startH + dy))
-        }
-        if (edge.includes('top')) {
-          const newH = Math.max(minH, startH - dy)
-          setPanelHeight(newH)
-          if (panelY !== null) setPanelY(prev => (prev || 0) + (startH - newH))
-        }
-      }
-      
-      if (isDraggingPanel && dragRef.current) {
-        const dx = e.clientX - dragRef.current.startX
-        const dy = e.clientY - dragRef.current.startY
-        setPanelX(Math.max(0, dragRef.current.startPanelX + dx))
-        setPanelY(Math.max(0, dragRef.current.startPanelY + dy))
-      }
-    }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      setIsDraggingPanel(false)
-      resizeRef.current = null
-      dragRef.current = null
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing, isDraggingPanel, panelX, panelY])
-
-  // Save panel size/position to localStorage
-  const handleLockPanel = useCallback(() => {
-    setPanelLocked(true)
-    if (panelMode === 'floating') {
-      try {
-        const panelState = { panelWidth, panelHeight, panelX, panelY, panelMode }
-        localStorage.setItem('medazon_panel_layout', JSON.stringify(panelState))
-      } catch (e) { /* localStorage may not be available */ }
-    }
-  }, [panelWidth, panelHeight, panelX, panelY, panelMode])
-
-  const handleUnlockPanel = useCallback(() => {
-    setPanelLocked(false)
-  }, [])
-
-  // Restore saved panel layout on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('medazon_panel_layout')
-      if (saved) {
-        const state = JSON.parse(saved)
-        if (state.panelMode === 'floating') {
-          setPanelMode('floating')
-          if (state.panelWidth) setPanelWidth(state.panelWidth)
-          if (state.panelHeight) setPanelHeight(state.panelHeight)
-          if (state.panelX !== null) setPanelX(state.panelX)
-          if (state.panelY !== null) setPanelY(state.panelY)
-          setPanelLocked(true) // Restore as locked
-        }
-      }
-    } catch (e) { /* localStorage may not be available */ }
-  }, [])
-
-  const handleTogglePanelMode = useCallback(() => {
-    if (panelMode === 'full') {
-      setPanelMode('floating')
-      setPanelWidth(Math.round(window.innerWidth * 0.75))
-      setPanelHeight(Math.round(window.innerHeight * 0.8))
-      setPanelX(Math.round(window.innerWidth * 0.12))
-      setPanelY(Math.round(window.innerHeight * 0.05))
-      setPanelLocked(false)
-    } else {
-      setPanelMode('full')
-      setPanelWidth(null)
-      setPanelHeight(null)
-      setPanelX(null)
-      setPanelY(null)
-      setPanelLocked(false)
-      try { localStorage.removeItem('medazon_panel_layout') } catch (e) {}
-    }
-  }, [panelMode])
-
-  // ═══════════════════════════════════════════════════════════════
-  // TOOLBAR PANEL TOGGLE — opens EHR panel in right column OR overlay
-  // ═══════════════════════════════════════════════════════════════
-  const handleToolbarPanelClick = useCallback((panelId: string) => {
-    switch (panelId) {
-      case 'medication-history':
-        setShowMedicationHistoryPanel(true)
-        break
-      case 'orders':
-        setShowOrdersPanel(true)
-        break
-      case 'prescription-history':
-        setShowPrescriptionHistoryPanel(true)
-        break
-      case 'appointments':
-        setShowAppointmentsOverlay(true)
-        break
-      case 'allergies':
-        setShowAllergiesPanel(true)
-        break
-      case 'vitals':
-        setShowVitalsPanel(true)
-        break
-      case 'medications':
-        setShowMedicationsPanel(true)
-        break
-    }
-  }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING useEffect HOOKS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
 
   // Fetch patient appointments when overlay is opened
   useEffect(() => {
@@ -1253,16 +836,8 @@ export default function AppointmentDetailModal({
                   communication.handleSmsToChange(to)
                   communication.handleSmsMessageChange(message)
                   await new Promise(resolve => setTimeout(resolve, 0))
-                  try {
-                    await communication.handleSendSMS()
-                    await handleLogSMSCommunication({ type: 'sms', direction: 'outbound', to_number: to, content: message, status: 'sent', patient_id: appointment?.patient_id, created_at: new Date().toISOString() })
-                  } catch (err: any) {
-                    console.error('Error sending SMS:', err)
-                    await handleLogSMSCommunication({ type: 'sms', direction: 'outbound', to_number: to, content: message, status: 'failed', patient_id: appointment?.patient_id, created_at: new Date().toISOString() })
-                    throw err
-                  }
+                  await communication.handleSendSMS()
                 }}
-                onLogCommunication={handleLogSMSCommunication}
                 isSending={communication.isSendingSMS}
                 error={error && error.includes('SMS') ? error : undefined}
               />
@@ -1285,15 +860,12 @@ export default function AppointmentDetailModal({
                 patientId={appointment?.patient_id}
                 appointmentId={appointmentId}
                 onPhoneNumberChange={communication.handleCallPhoneNumberChange}
-                onLogCommunication={handleLogCallCommunication}
                 onMakeCall={async (phoneNumber) => {
                   communication.handleCallPhoneNumberChange(phoneNumber)
                   await communication.handleMakeCall()
-                  await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: phoneNumber, status: 'initiated', patient_id: appointment?.patient_id, initiated_at: new Date().toISOString() })
                 }}
                 onEndCall={async () => {
                   await communication.handleEndCall()
-                  await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: communication.callPhoneNumber, status: 'completed', duration: communication.callDuration, patient_id: appointment?.patient_id, completed_at: new Date().toISOString() })
                 }}
                 onToggleMute={communication.handleToggleMute}
                 isCallInProgress={communication.isCalling}
@@ -1323,7 +895,6 @@ export default function AppointmentDetailModal({
                 providerId={currentUser?.id}
                 patientId={appointment?.patient_id}
                 onSendEmail={handleSendEmail}
-                onLogCommunication={handleLogEmailCommunication}
               />
             </div>
           )
@@ -1373,7 +944,7 @@ export default function AppointmentDetailModal({
           return null
       }
     },
-    [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, handleLogEmailCommunication, handleLogSMSCommunication, handleLogCallCommunication, onStatusChange]
+    [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, onStatusChange]
   )
 
   // Fetch communication history when appointment loads
@@ -1544,612 +1115,224 @@ export default function AppointmentDetailModal({
 
   if (!isOpen) return null
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // ╔══════════════════════════════════════════════════════════════════════╗
-  // ║  UPGRADED RENDER — NEW "CALL MODE" LAYOUT                          ║
-  // ║  Video pinned left, Patient card below, SOAP/Panels right          ║
-  // ║  Grouped toolbar, action dropdown, always-visible video            ║
-  // ╚══════════════════════════════════════════════════════════════════════╝
-  // ═══════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+  // ORIGINAL RENDER — Standard slide-out panel layout
+  // ═══════════════════════════════════════════════════════════════
 
   return (
     <>
-      {/* Backdrop */}
-      {!isMinimized && (
-        <div className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300" onClick={onClose} />
-      )}
+      <div 
+        className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
+        onClick={onClose}
+      />
       
-      {isMinimized ? (
-        /* ═══ MINIMIZED STATE — Fixed bottom bar (UNCHANGED) ═══ */
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-t border-cyan-500/30 shadow-2xl">
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <h2 className="text-white font-bold text-sm">
-                  <span className="text-cyan-400">APPOINTMENT</span>
-                  {appointment?.requested_date_time && (
-                    <> • {(() => {
-                      const doctorTimezone = 'America/Phoenix'
-                      const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-                      return appointmentDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-                    })()}</>
-                  )}
-                  {appointment?.status && (
-                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${appointment.status === 'pending' ? 'bg-yellow-600' : appointment.status === 'accepted' ? 'bg-green-600' : appointment.status === 'completed' ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                      {appointment.status.toUpperCase()}
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {EHR_PANELS.map(panel => (
-                  <button key={panel.id} onClick={() => { setIsMinimized(false); handleToolbarPanelClick(panel.id) }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg transition-colors text-xs font-medium ${panel.hoverBg}`}
-                    style={{ backgroundColor: panel.color + '99' }}>
-                    <panel.icon className="h-3.5 w-3.5" />{panel.label}
-                  </button>
-                ))}
-                {appointment && appointment.status === 'pending' && (
-                  <>
-                    <button onClick={() => handleAppointmentAction('accept')} disabled={actionLoading === 'accept'} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50"><CheckCircle className="h-3.5 w-3.5" />Accept</button>
-                    <button onClick={() => handleAppointmentAction('reject')} disabled={actionLoading === 'reject'} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50"><XCircle className="h-3.5 w-3.5" />Reject</button>
-                  </>
-                )}
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs"><ArrowRight className="h-3.5 w-3.5" />Move</button>
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs"><RotateCcw className="h-3.5 w-3.5" />Reschedule</button>
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"><XCircle className="h-3.5 w-3.5" />Cancel Appt</button>
-                <button onClick={() => { setIsMinimized(false); layout.setIsCustomizeMode(true) }} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"><Edit className="h-3.5 w-3.5" />Customize</button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs font-medium" title="Restore panel"><Maximize2 className="h-4 w-4" /></button>
-                <button onClick={onClose} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs"><X className="h-4 w-4" /></button>
-              </div>
-            </div>
-          </div>
+      {/* Main container with calendar sidebar + panel */}
+      <div className="fixed top-0 right-0 h-full w-full z-50 flex">
+        {/* Left Calendar Sidebar */}
+        <div style={{
+          width: '12%',
+          minWidth: '140px',
+          maxWidth: '200px',
+          height: '100%',
+          borderRight: '1px solid #1b2b4d',
+          background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+          boxShadow: '0 0 40px rgba(0,0,0,0.5)'
+        }}>
+          {renderCurrentDaySlots()}
         </div>
-      ) : (
-        /* ═══════════════════════════════════════════════════════════════
-           EXPANDED STATE — UPGRADED "CALL MODE" LAYOUT
-           ═══════════════════════════════════════════════════════════════ */
-        <div className="fixed top-0 right-0 h-full w-full z-50 flex"
-          ref={panelRef}
-          style={panelMode === 'floating' ? {
-            top: panelY !== null ? `${panelY}px` : '2%',
-            left: panelX !== null ? `${panelX}px` : '8%',
-            right: 'auto',
-            width: panelWidth ? `${panelWidth}px` : '84%',
-            height: panelHeight ? `${panelHeight}px` : '96%',
-            borderRadius: '12px',
-            boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)',
-            transition: (isResizing || isDraggingPanel) ? 'none' : 'border-radius 0.3s ease',
-            overflow: 'hidden'
-          } : {}}>
-          
-          {/* Resize handles (floating mode only) */}
-          {panelMode === 'floating' && !panelLocked && (
-            <>
-              <div className="absolute top-0 left-0 w-full h-1.5 cursor-n-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'top')} />
-              <div className="absolute bottom-0 left-0 w-full h-1.5 cursor-s-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'bottom')} />
-              <div className="absolute top-0 left-0 h-full w-1.5 cursor-w-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'left')} />
-              <div className="absolute top-0 right-0 h-full w-1.5 cursor-e-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'right')} />
-              {/* Corner handles */}
-              <div className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'top-left')} />
-              <div className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'top-right')} />
-              <div className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'bottom-left')} />
-              <div className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'bottom-right')} />
-            </>
-          )}
-          {/* Left Calendar Sidebar — UNCHANGED */}
-          <div style={{ width: '12%', minWidth: '140px', maxWidth: '200px', height: '100%', borderRight: '1px solid #1b2b4d', background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
-            {renderCurrentDaySlots()}
-          </div>
-          
-          {/* ═══ MAIN PANEL (replaces old right panel) ═══ */}
-          <div className="flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl flex flex-col overflow-hidden">
-            
-            {/* ═══ HEADER — Compact with grouped toolbar ═══ */}
-            <div className="sticky top-0 z-10 flex-shrink-0" style={{ background: 'linear-gradient(90deg, #0a1628 0%, #0f172a 50%, #0a1628 100%)', borderBottom: '1px solid #1e293b' }}>
-              {/* Row 1: Branding + Appointment info + Window controls */}
-              <div className="flex items-center justify-between px-4 py-1.5"
-                style={{ cursor: panelMode === 'floating' && !panelLocked ? 'grab' : 'default' }}
-                onMouseDown={(e) => {
-                  // Only drag if clicking on the header itself (not buttons)
-                  if ((e.target as HTMLElement).closest('button')) return
-                  handleDragPanelStart(e)
-                }}>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-extrabold tracking-tight">
-                    <span className="text-cyan-400">MEDAZON</span>
-                    <span className="text-white/30 mx-1">+</span>
-                    <span className="text-white">HEALTH</span>
+        
+        {/* Right Panel */}
+        <div className={`flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl transform transition-transform duration-300 ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        } flex flex-col overflow-hidden`}>
+          {/* Header */}
+          <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 flex-shrink-0 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-bold text-sm sm:text-base">
+                <span className="text-cyan-400">APPOINTMENT</span>
+                {appointment?.requested_date_time && (
+                  <> • {(() => {
+                    const doctorTimezone = 'America/Phoenix'
+                    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+                    return appointmentDate.toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+                    })
+                  })()}</>
+                )}
+                {appointment?.status && (
+                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                    appointment.status === 'pending' ? 'bg-yellow-600' :
+                    appointment.status === 'accepted' ? 'bg-green-600' :
+                    appointment.status === 'completed' ? 'bg-blue-600' :
+                    appointment.status === 'cancelled' ? 'bg-gray-600' : 'bg-gray-600'
+                  }`}>
+                    {appointment.status.toUpperCase()}
                   </span>
-                  {panelMode === 'floating' && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider"
-                      style={{ background: panelLocked ? '#16653430' : '#1e293b', border: `1px solid ${panelLocked ? '#16653460' : '#334155'}`, color: panelLocked ? '#00cba9' : '#64748b' }}>
-                      {panelLocked ? '🔒 Locked' : '↕ Floating'}
-                    </span>
-                  )}
-                  <span className="w-px h-4 bg-white/10" />
-                  <span className="text-xs text-cyan-400 font-bold">APPOINTMENT</span>
-                  {appointment?.requested_date_time && (
-                    <span className="text-xs text-slate-400">
-                      • {(() => {
-                        const doctorTimezone = 'America/Phoenix'
-                        const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-                        return appointmentDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-                      })()}
-                    </span>
-                  )}
-                  {appointment?.status && (
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      appointment.status === 'pending' ? 'bg-yellow-600/80' :
-                      appointment.status === 'accepted' ? 'bg-green-600/80' :
-                      appointment.status === 'completed' ? 'bg-blue-600/80' : 'bg-gray-600/80'
-                    } text-white`}>
-                      {appointment.status}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {/* Panel mode: floating / full */}
-                  <button onClick={handleTogglePanelMode}
-                    className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs"
-                    title={panelMode === 'full' ? 'Float panel (resize/move)' : 'Full screen'}>
-                    {panelMode === 'full' ? <GripVertical className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                  </button>
-                  {/* Lock / Unlock */}
-                  {panelMode === 'floating' && (
-                    <button onClick={panelLocked ? handleUnlockPanel : handleLockPanel}
-                      className="w-6 h-6 flex items-center justify-center rounded text-xs transition-all"
-                      style={{
-                        background: panelLocked ? '#16653440' : '#1e293b80',
-                        border: `1px solid ${panelLocked ? '#16653480' : '#334155'}`,
-                        color: panelLocked ? '#00cba9' : '#94a3b8'
-                      }}
-                      title={panelLocked ? 'Unlock panel (saved)' : 'Lock panel size & position'}>
-                      {panelLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                    </button>
-                  )}
-                  <span className="w-px h-4 bg-white/10" />
-                  <button onClick={() => setIsMinimized(true)} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs" title="Minimize">—</button>
-                  <button onClick={() => setIsMinimized(false)} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs" title="Restore">□</button>
-                  <button onClick={onClose} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-red-600 text-white rounded" title="Close"><X className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-              
-              {/* Row 2: EHR Panel Toolbar + Action Buttons */}
-              <div className="flex items-center gap-1 px-4 py-1.5 overflow-x-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                {/* EHR Panel buttons — compact icon + short label */}
+                )}
+              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* EHR Panel Buttons */}
                 {!layout.isCustomizeMode && appointment && EHR_PANELS.map(panel => {
                   const Icon = panel.icon
                   return (
                     <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition-all duration-150 border"
-                      style={{ borderColor: '#1e293b', color: '#94a3b8', background: 'transparent' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = panel.color + '80'; e.currentTarget.style.color = panel.color }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-                    >
-                      <Icon className="h-3.5 w-3.5" />{panel.label}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all border border-white/10 hover:border-white/30 text-slate-300 hover:text-white"
+                      style={{ background: 'rgba(255,255,255,0.05)' }}>
+                      <Icon className="h-3.5 w-3.5" style={{ color: panel.color }} />{panel.label}
                     </button>
                   )
                 })}
-                
-                <span className="flex-1" />
-                
-                {/* Action buttons — separated by divider */}
+
+                {/* Action Buttons */}
                 {!layout.isCustomizeMode && appointment && (
-                  <div className="flex items-center gap-1 pl-2 ml-1" style={{ borderLeft: '1px solid #1e293b' }}>
+                  <>
                     {appointment.status === 'pending' && (
                       <>
                         <button onClick={() => handleAppointmentAction('accept')} disabled={actionLoading === 'accept'}
-                          className="px-2 py-1 rounded text-[10px] font-bold text-green-400 disabled:opacity-50 transition-all"
-                          style={{ background: '#16653450' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#16653490'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#16653450'}>
-                          {actionLoading === 'accept' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Accept'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50">
+                          {actionLoading === 'accept' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                          Accept
                         </button>
                         <button onClick={() => handleAppointmentAction('reject')} disabled={actionLoading === 'reject'}
-                          className="px-2 py-1 rounded text-[10px] font-bold text-red-400 disabled:opacity-50 transition-all"
-                          style={{ background: '#991b1b50' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#991b1b90'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#991b1b50'}>
-                          {actionLoading === 'reject' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Reject'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50">
+                          {actionLoading === 'reject' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <XCircle className="h-3.5 w-3.5" />}
+                          Reject
                         </button>
                       </>
                     )}
+                    
+                    <button onClick={() => { setShowMoveForm(!showMoveForm); setShowRescheduleForm(false); setShowCancelConfirm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showMoveForm ? 'bg-cyan-700' : 'bg-cyan-600'} text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs`}>
+                      <ArrowRight className="h-3.5 w-3.5" />{showMoveForm ? 'Cancel Move' : 'Move'}
+                    </button>
+                    
+                    <button onClick={() => { setShowRescheduleForm(!showRescheduleForm); setShowMoveForm(false); setShowCancelConfirm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showRescheduleForm ? 'bg-orange-700' : 'bg-orange-600'} text-white rounded-lg hover:bg-orange-700 transition-colors text-xs`}>
+                      <RotateCcw className="h-3.5 w-3.5" />{showRescheduleForm ? 'Cancel' : 'Reschedule'}
+                    </button>
+                    
+                    <button onClick={() => { setShowCancelConfirm(!showCancelConfirm); setShowMoveForm(false); setShowRescheduleForm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showCancelConfirm ? 'bg-red-700' : 'bg-red-600'} text-white rounded-lg hover:bg-red-700 transition-colors text-xs`}>
+                      <XCircle className="h-3.5 w-3.5" />Cancel Appt
+                    </button>
+                    
                     {appointment.status === 'accepted' && (
                       <button onClick={() => handleAppointmentAction('complete')} disabled={actionLoading === 'complete'}
-                        className="px-2 py-1 rounded text-[10px] font-bold text-blue-400 disabled:opacity-50 transition-all"
-                        style={{ background: '#1e3a5f50' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#1e3a5f90'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#1e3a5f50'}>
-                        {actionLoading === 'complete' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Complete'}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50">
+                        {actionLoading === 'complete' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                        Complete
                       </button>
                     )}
-                    
-                    {/* More actions dropdown */}
-                    <div className="relative">
-                      <button onClick={() => setShowActionsDropdown(!showActionsDropdown)}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-slate-400 transition-all"
-                        style={{ background: showActionsDropdown ? '#1e293b' : 'transparent', border: '1px solid #1e293b' }}>
-                        <MoreHorizontal className="h-3.5 w-3.5" />More
-                      </button>
-                      {showActionsDropdown && (
-                        <div className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-2xl py-1 min-w-[160px]" style={{ background: '#0f172a', border: '1px solid #1e293b' }}>
-                          <button onClick={() => { setShowMoveForm(!showMoveForm); setShowRescheduleForm(false); setShowCancelConfirm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-cyan-400 hover:bg-slate-800 transition-colors">
-                            <ArrowRight className="h-3.5 w-3.5" />{showMoveForm ? 'Cancel Move' : 'Move'}
-                          </button>
-                          <button onClick={() => { setShowRescheduleForm(!showRescheduleForm); setShowMoveForm(false); setShowCancelConfirm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-slate-800 transition-colors">
-                            <RotateCcw className="h-3.5 w-3.5" />{showRescheduleForm ? 'Cancel' : 'Reschedule'}
-                          </button>
-                          <button onClick={() => { setShowCancelConfirm(!showCancelConfirm); setShowMoveForm(false); setShowRescheduleForm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-slate-800 transition-colors">
-                            <XCircle className="h-3.5 w-3.5" />Cancel Appt
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  </>
                 )}
                 
-                {/* Customize mode buttons */}
                 {layout.isCustomizeMode ? (
                   <>
-                    <button onClick={layout.saveLayout} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs"><Save className="h-3.5 w-3.5" />Save Layout</button>
-                    <button onClick={() => layout.setIsCustomizeMode(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs"><X className="h-3.5 w-3.5" />Cancel</button>
+                    <button onClick={layout.saveLayout} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm">
+                      <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Save Layout</span><span className="sm:hidden">Save</span>
+                    </button>
+                    <button onClick={() => layout.setIsCustomizeMode(false)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm">
+                      <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Cancel</span>
+                    </button>
                   </>
                 ) : (
-                  <button onClick={() => layout.setIsCustomizeMode(true)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-purple-400 transition-all border border-purple-500/30 hover:border-purple-400 hover:bg-purple-500/10">
-                    <Edit className="h-3.5 w-3.5" />Customize
-                  </button>
+                  <>
+                    <button onClick={() => layout.setIsCustomizeMode(true)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs sm:text-sm">
+                      <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Customize</span><span className="sm:hidden">Edit</span>
+                    </button>
+                    <button onClick={onClose} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm">
+                      <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </button>
+                  </>
                 )}
               </div>
-              
-              {/* Action Forms (Move/Reschedule/Cancel) — slide down */}
-              {showMoveForm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(6, 182, 212, 0.08)', borderTop: '1px solid rgba(6, 182, 212, 0.2)' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="text-cyan-300 text-xs"><Clock className="h-3.5 w-3.5 inline mr-2" />Select a new time slot from the calendar on the left{selectedMoveTime && <span className="ml-2 font-bold">Selected: {selectedMoveTime}</span>}</div>
-                    <button onClick={handleMoveAppointment} disabled={!selectedMoveTime || moveLoading} className="px-3 py-1 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-2">
-                      {moveLoading ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Confirm Move'}
+            </div>
+            
+            {/* Action Forms */}
+            {showMoveForm && (
+              <div className="mt-3 p-3 bg-cyan-900/50 rounded-lg border border-cyan-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="text-cyan-300 text-sm">
+                    <Clock className="h-4 w-4 inline mr-2" />
+                    Select a new time slot from the calendar on the left
+                    {selectedMoveTime && <span className="ml-2 font-bold">Selected: {selectedMoveTime}</span>}
+                  </div>
+                  <button onClick={handleMoveAppointment} disabled={!selectedMoveTime || moveLoading}
+                    className="px-4 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+                    {moveLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Confirm Move'}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {showRescheduleForm && (
+              <div className="mt-3 p-3 bg-orange-900/50 rounded-lg border border-orange-500/30">
+                <div className="flex items-center gap-3">
+                  <Calendar className="h-4 w-4 text-orange-300" />
+                  <input type="datetime-local" value={newDateTime} onChange={(e) => setNewDateTime(e.target.value)}
+                    className="flex-1 px-3 py-1.5 bg-slate-800 border border-white/20 rounded-lg text-white text-sm" />
+                  <button onClick={handleReschedule} disabled={!newDateTime || rescheduleLoading}
+                    className="px-4 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+                    {rescheduleLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Confirm Reschedule'}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {showCancelConfirm && (
+              <div className="mt-3 p-3 bg-red-900/50 rounded-lg border border-red-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="text-red-300 text-sm">Are you sure you want to cancel this appointment? This action cannot be undone.</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowCancelConfirm(false)} className="px-4 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">No, Keep It</button>
+                    <button onClick={handleCancelAppointment} disabled={cancelling}
+                      className="px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm flex items-center gap-2">
+                      {cancelling ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Yes, Cancel Appointment'}
                     </button>
                   </div>
                 </div>
-              )}
-              {showRescheduleForm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(249, 115, 22, 0.08)', borderTop: '1px solid rgba(249, 115, 22, 0.2)' }}>
-                  <div className="flex items-center gap-3">
-                    <Calendar className="h-3.5 w-3.5 text-orange-300" />
-                    <input type="datetime-local" value={newDateTime} onChange={(e) => setNewDateTime(e.target.value)} className="flex-1 px-3 py-1 bg-slate-800 border border-white/20 rounded-lg text-white text-xs" />
-                    <button onClick={handleReschedule} disabled={!newDateTime || rescheduleLoading} className="px-3 py-1 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-2">
-                      {rescheduleLoading ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Confirm Reschedule'}
-                    </button>
-                  </div>
+              </div>
+            )}
+          </div>
+
+          {/* Content — Original 2-column grid layout */}
+          <div 
+            ref={layout.scrollContainerRef}
+            className="flex-1 overflow-y-auto p-4 sm:p-6"
+            style={{ scrollBehavior: 'auto', scrollPaddingTop: '0' }}
+            onFocus={(e) => {
+              if (preventAutoScrollRef.current && layout.scrollContainerRef.current) {
+                e.stopPropagation()
+                setTimeout(() => { if (layout.scrollContainerRef.current) layout.scrollContainerRef.current.scrollTop = 0 }, 0)
+              }
+            }}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
+              </div>
+            ) : error ? (
+              <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">{error}</div>
+            ) : appointment ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                {/* Left Panel */}
+                <div className="space-y-4 sm:space-y-6">
+                  {layout.leftPanelSections.map((sectionId) => renderSection(sectionId, 'left'))}
                 </div>
-              )}
-              {showCancelConfirm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(239, 68, 68, 0.08)', borderTop: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="text-red-300 text-xs">Are you sure you want to cancel this appointment? This action cannot be undone.</div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setShowCancelConfirm(false)} className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-xs">No, Keep It</button>
-                      <button onClick={handleCancelAppointment} disabled={cancelling} className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-xs flex items-center gap-2">
-                        {cancelling ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Yes, Cancel'}
-                      </button>
-                    </div>
-                  </div>
+
+                {/* Right Panel */}
+                <div className="space-y-4 sm:space-y-6">
+                  {layout.rightPanelSections.map((sectionId) => renderSection(sectionId, 'right'))}
                 </div>
-              )}
-            </div>
-
-            {/* ═══ CONTENT: Two-column "Call Mode" layout ═══ */}
-            <div className="flex-1 flex overflow-hidden">
-              {loading ? (
-                <div className="flex items-center justify-center w-full py-20">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
-                </div>
-              ) : error && !appointment ? (
-                <div className="w-full p-4">
-                  <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">{error}</div>
-                </div>
-              ) : appointment ? (
-                <>
-                  {/* ═══ LEFT COLUMN: Video (sticky) + Patient Card ═══ */}
-                  <div className="flex flex-col overflow-hidden" style={{ width: '45%', minWidth: '380px', borderRight: '1px solid #1e293b', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                    {/* Video Area — fills available space, never scrolls away */}
-                    <div className="flex-1 min-h-0 relative" style={{ background: '#000' }}>
-                      {renderSection('meeting-info', 'left')}
-                      
-                      {/* ═══ VIDEO OVERLAY ACTION BAR ═══ */}
-                      {/* Floating buttons: Call Patient, Quick SMS, Resend Link */}
-                      <div className="absolute bottom-3 left-3 right-3 z-20 flex items-end justify-between pointer-events-none">
-                        {/* Left: Quick actions */}
-                        <div className="flex items-center gap-1.5 pointer-events-auto">
-                          {/* Call Patient (dialpad / direct call) */}
-                          <div className="relative">
-                            <button onClick={() => { setShowDialpad(!showDialpad); setShowQuickSMS(false); setShowResendLink(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: communication.isCalling ? '#dc2626' : showDialpad ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${communication.isCalling ? '#ef4444' : showDialpad ? '#00e6ff' : 'rgba(255,255,255,0.15)'}`,
-                                color: communication.isCalling ? '#fca5a5' : '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title={communication.isCalling ? 'Call in progress' : 'Call patient directly'}>
-                              {communication.isCalling ? <><PhoneOff className="h-3.5 w-3.5" />In Call</> : <><Phone className="h-3.5 w-3.5" />Call</>}
-                            </button>
-                            {/* Dialpad dropdown */}
-                            {showDialpad && !communication.isCalling && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[220px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">Call Patient</div>
-                                {/* Quick call button — one tap to patient's number */}
-                                {appointment?.patients?.phone && (
-                                  <button onClick={() => handleDialpadCall(appointment.patients?.phone || '')}
-                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-green-400 mb-2 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#16653470'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = '#16653440'}>
-                                    <PhoneCall className="h-3.5 w-3.5" />
-                                    Call {appointment.patients.phone}
-                                  </button>
-                                )}
-                                {/* Dial custom number */}
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="tel"
-                                    value={dialpadNumber}
-                                    onChange={(e) => setDialpadNumber(e.target.value)}
-                                    placeholder="Enter number..."
-                                    className="flex-1 px-2 py-1.5 rounded-lg text-xs text-white"
-                                    style={{ background: '#1e293b', border: '1px solid #334155', outline: 'none' }}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') handleDialpadCall() }}
-                                  />
-                                  <button onClick={() => handleDialpadCall()}
-                                    disabled={!dialpadNumber.trim()}
-                                    className="p-1.5 rounded-lg text-green-400 disabled:opacity-30 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}>
-                                    <Phone className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                                {/* Dialpad grid */}
-                                <div className="grid grid-cols-3 gap-1 mt-2">
-                                  {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
-                                    <button key={d} onClick={() => handleDialpadDigit(d)}
-                                      className="py-1.5 rounded-lg text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-700 transition-all"
-                                      style={{ background: '#1e293b' }}>
-                                      {d}
-                                    </button>
-                                  ))}
-                                </div>
-                                {dialpadNumber && (
-                                  <button onClick={() => setDialpadNumber('')}
-                                    className="w-full mt-1.5 py-1 rounded-lg text-[10px] text-slate-500 hover:text-slate-300 transition-all"
-                                    style={{ background: '#1e293b40' }}>
-                                    Clear
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {/* Active call controls */}
-                            {communication.isCalling && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[200px]"
-                                style={{ background: '#0f172a', border: '1px solid #dc2626', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-red-400 mb-2 flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                  Call in progress — {communication.formatDuration(communication.callDuration)}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button onClick={communication.handleToggleMute}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
-                                    style={{ background: communication.isMuted ? '#f59e0b30' : '#1e293b', color: communication.isMuted ? '#f59e0b' : '#94a3b8', border: `1px solid ${communication.isMuted ? '#f59e0b50' : '#334155'}` }}>
-                                    {communication.isMuted ? 'Unmute' : 'Mute'}
-                                  </button>
-                                  <button onClick={async () => {
-                                    await communication.handleEndCall()
-                                    await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: communication.callPhoneNumber, status: 'completed', duration: communication.callDuration, patient_id: appointment?.patient_id, completed_at: new Date().toISOString() })
-                                  }}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-bold text-red-400 transition-all"
-                                    style={{ background: '#dc262640', border: '1px solid #dc262680' }}>
-                                    End Call
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Quick SMS */}
-                          <div className="relative">
-                            <button onClick={() => { setShowQuickSMS(!showQuickSMS); setShowDialpad(false); setShowResendLink(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: showQuickSMS ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${showQuickSMS ? '#00cba9' : 'rgba(255,255,255,0.15)'}`,
-                                color: '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title="Send SMS to patient">
-                              <MessageSquare className="h-3.5 w-3.5" />SMS
-                            </button>
-                            {/* Quick SMS panel */}
-                            {showQuickSMS && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[280px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center justify-between">
-                                  <span>Quick SMS to {appointment?.patients?.first_name || 'Patient'}</span>
-                                  <span className="text-slate-600 font-normal">{appointment?.patients?.phone}</span>
-                                </div>
-                                <textarea
-                                  value={quickSMSMessage}
-                                  onChange={(e) => setQuickSMSMessage(e.target.value)}
-                                  placeholder="Type message..."
-                                  rows={3}
-                                  className="w-full px-3 py-2 rounded-lg text-xs text-white resize-none"
-                                  style={{ background: '#1e293b', border: '1px solid #334155', outline: 'none' }}
-                                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSMS() } }}
-                                />
-                                <div className="flex items-center justify-between mt-2">
-                                  {/* Quick templates */}
-                                  <div className="flex gap-1">
-                                    {['Running late', 'Please join video', 'Connection issue'].map(tpl => (
-                                      <button key={tpl} onClick={() => setQuickSMSMessage(tpl)}
-                                        className="px-1.5 py-0.5 rounded text-[9px] text-slate-500 hover:text-slate-300 transition-all"
-                                        style={{ background: '#1e293b40', border: '1px solid #334155' }}>
-                                        {tpl}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <button onClick={handleQuickSMS}
-                                    disabled={!quickSMSMessage.trim() || sendingQuickSMS}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold text-green-400 disabled:opacity-30 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}>
-                                    {sendingQuickSMS ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-green-400" /> : <><Send className="h-3 w-3" />Send</>}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Resend Link */}
-                          <div className="relative">
-                            <button onClick={() => { setShowResendLink(!showResendLink); setShowDialpad(false); setShowQuickSMS(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: showResendLink ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${showResendLink ? '#818cf8' : 'rgba(255,255,255,0.15)'}`,
-                                color: '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title="View/resend appointment link">
-                              <Link2 className="h-3.5 w-3.5" />Link
-                            </button>
-                            {/* Resend link panel */}
-                            {showResendLink && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[300px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">Appointment Link</div>
-                                {getMeetingLink() ? (
-                                  <>
-                                    <div className="flex items-center gap-1.5 p-2 rounded-lg mb-2" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-                                      <span className="flex-1 text-[10px] text-cyan-300 truncate font-mono">{getMeetingLink()}</span>
-                                      <button onClick={handleCopyMeetingLink}
-                                        className="p-1 rounded transition-all"
-                                        style={{ color: linkCopied ? '#00cba9' : '#94a3b8' }}>
-                                        {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                      </button>
-                                      <a href={getMeetingLink()!} target="_blank" rel="noopener noreferrer"
-                                        className="p-1 rounded text-slate-400 hover:text-white transition-all">
-                                        <ExternalLink className="h-3.5 w-3.5" />
-                                      </a>
-                                    </div>
-                                    <button onClick={handleResendLinkSMS}
-                                      disabled={resendingLink || !appointment?.patients?.phone}
-                                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold text-indigo-300 disabled:opacity-30 transition-all"
-                                      style={{ background: '#4338ca30', border: '1px solid #4338ca60' }}>
-                                      {resendingLink ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-300" />
-                                        : <><Send className="h-3 w-3" />SMS Link to {appointment?.patients?.phone || 'Patient'}</>}
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="text-[11px] text-slate-500 text-center py-3">No meeting link available for this appointment</div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Right: Call timer (when active) */}
-                        {callActive && (
-                          <div className="pointer-events-auto flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
-                            style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(0, 230, 255, 0.3)', backdropFilter: 'blur(8px)', color: '#00e6ff' }}>
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            {formatCallTime(callTime)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Patient Card — below video, collapsible */}
-                    <div style={{ borderTop: '1px solid #1e293b', background: 'linear-gradient(180deg, #0d1424, #0a1018)', flexShrink: 0, maxHeight: patientCardCollapsed ? '40px' : '45%', transition: 'max-height 0.3s ease', overflow: 'hidden' }}>
-                      {/* Collapse toggle */}
-                      <button onClick={() => setPatientCardCollapsed(!patientCardCollapsed)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
-                        style={{ background: 'rgba(10, 16, 24, 0.5)' }}>
-                        <span className="flex items-center gap-2">
-                          <span className="text-cyan-400">{appointment?.patients?.first_name} {appointment?.patients?.last_name}</span>
-                          <span className="text-slate-500">• {(appointment as any)?.patients?.date_of_birth ? `DOB: ${(appointment as any).patients.date_of_birth}` : `${appointment?.patients?.phone || ''}`}</span>
-                          {/* Allergy alert badge */}
-                          {appointment?.patients?.allergies && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 border border-red-500/50 text-red-300 animate-pulse">
-                              ⚠ ALLERGIES
-                            </span>
-                          )}
-                        </span>
-                        {patientCardCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                      </button>
-                      {/* Patient details — uses existing PatientHeader section */}
-                      {!patientCardCollapsed && (
-                        <div className="overflow-auto px-2 pb-2" style={{ maxHeight: 'calc(100% - 36px)' }}>
-                          {renderSection('patient-header', 'left')}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* ═══ RIGHT COLUMN: SOAP Notes + all other sections (scrollable) ═══ */}
-                  <div className="flex-1 flex flex-col overflow-hidden" style={{ transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                    {/* SOAP Tab bar */}
-                    <div className="flex gap-0 flex-shrink-0" style={{ borderBottom: '1px solid #1e293b', background: 'rgba(10, 18, 32, 0.5)' }}>
-                      {['Subjective', 'Objective', 'Assessment', 'Plan'].map((tab, i) => (
-                        <button key={tab}
-                          className="flex-1 py-2 text-xs font-bold transition-all"
-                          style={{
-                            color: i === 0 ? '#00cba9' : '#64748b',
-                            borderBottom: i === 0 ? '2px solid #00cba9' : '2px solid transparent',
-                            background: i === 0 ? 'rgba(30, 41, 59, 0.3)' : 'transparent'
-                          }}>
-                          {tab.charAt(0)}<span className="text-[10px] font-normal ml-0.5">{tab.slice(1)}</span>
-                        </button>
-                      ))}
-                    </div>
-                    
-                    {/* Scrollable content area — all sections */}
-                    <div ref={layout.scrollContainerRef} className="flex-1 overflow-y-auto p-4"
-                      style={{ scrollBehavior: 'auto', scrollPaddingTop: '0' }}
-                      onFocus={(e) => {
-                        if (preventAutoScrollRef.current && layout.scrollContainerRef.current) {
-                          e.stopPropagation()
-                          setTimeout(() => { if (layout.scrollContainerRef.current) layout.scrollContainerRef.current.scrollTop = 0 }, 0)
-                        }
-                      }}>
-                      {/* Doctor Notes (SOAP) — primary content */}
-                      <div className="space-y-4">
-                        {/* Filter out patient-header and meeting-info since they're in left column now */}
-                        {layout.leftPanelSections.filter(id => id !== 'patient-header' && id !== 'meeting-info').map((sectionId) => renderSection(sectionId, 'left'))}
-                        {layout.rightPanelSections.map((sectionId) => renderSection(sectionId, 'right'))}
-                      </div>
-                    </div>
-                    
-                    {/* Bottom bar — auto-save status */}
-                    <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5" style={{ borderTop: '1px solid #1e293b', background: 'rgba(10, 16, 24, 0.5)' }}>
-                      <span className="text-[11px] text-green-400 flex items-center gap-1.5">
-                        <CheckCircle className="h-3 w-3" />{soapSaveStatus === 'saving' ? 'Saving...' : soapSaveStatus === 'saved' ? 'Auto-saved' : 'Ready'}
-                      </span>
-                      {error && <span className="text-[11px] text-red-400 truncate max-w-xs">{error}</span>}
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
-      )}
+      </div>
 
-      {/* ═══════════════════════════════════════════════════════════════
-         ALL EXISTING OVERLAY PANELS — UNCHANGED
-         ═══════════════════════════════════════════════════════════════ */}
+      {/* ═══ OVERLAY PANELS ═══ */}
 
       {documentUpload.selectedDocument && (
         <DocumentViewer document={documentUpload.selectedDocument} onClose={() => documentUpload.setSelectedDocument(null)} />
@@ -2189,11 +1372,7 @@ export default function AppointmentDetailModal({
       {appointment?.patient_id && (
         <MedicationsPanel isOpen={showMedicationsPanel} onClose={() => setShowMedicationsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
       )}
-
-      {/* Close actions dropdown on outside click */}
-      {showActionsDropdown && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowActionsDropdown(false)} />
-      )}
     </>
   )
 }
+
