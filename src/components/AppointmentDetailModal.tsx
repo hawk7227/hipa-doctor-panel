@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity, Minimize2, Maximize2, ChevronDown, ChevronUp, MoreHorizontal, Copy, Check, Phone, PhoneCall, PhoneOff, Send, Link2, Lock, Unlock, GripVertical, MessageSquare, ExternalLink } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
@@ -81,35 +81,6 @@ interface AppointmentDetailModalProps {
   }, date: Date, time: Date) => void
 }
 
-// ═══════════════════════════════════════════════════════════════
-// COPY BUTTON HELPER
-// ═══════════════════════════════════════════════════════════════
-function CopyBtn({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-      className="p-0.5 transition-colors"
-      style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? '#00cba9' : '#6b7280' }}
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-    </button>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TOOLBAR PANEL DEFINITIONS (for the grouped header bar)
-// ═══════════════════════════════════════════════════════════════
-const EHR_PANELS = [
-  { id: 'medication-history', label: 'Med Hx', icon: Pill, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
-  { id: 'orders', label: 'Orders', icon: ClipboardList, color: '#3b82f6', hoverBg: 'hover:bg-blue-700' },
-  { id: 'prescription-history', label: 'Rx Hx', icon: FileText, color: '#14b8a6', hoverBg: 'hover:bg-teal-700' },
-  { id: 'appointments', label: 'Appts', icon: CalendarDays, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
-  { id: 'allergies', label: 'Allergy', icon: AlertTriangle, color: '#ef4444', hoverBg: 'hover:bg-red-700' },
-  { id: 'vitals', label: 'Vitals', icon: Activity, color: '#06b6d4', hoverBg: 'hover:bg-cyan-700' },
-  { id: 'medications', label: 'Meds', icon: Pill, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
-] as const
-
 export default function AppointmentDetailModal({ 
   appointmentId, 
   isOpen, 
@@ -121,16 +92,19 @@ export default function AppointmentDetailModal({
   onAppointmentSwitch,
   onFollowUp
 }: AppointmentDetailModalProps) {
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING HOOKS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
+  // 🔥 CRITICAL: Memoize currentDate to prevent re-renders from new Date() on every parent render
+  // Note: stableCurrentDate is kept for potential future use but currently unused
+  // const stableCurrentDate = useMemo(() => currentDate || new Date(), [currentDate?.getTime()])
   
+  // 🔥 CRITICAL FIX: Memoize appointments array to prevent unnecessary re-renders
+  // Only recreate if appointment IDs actually change
   const appointmentsIdsString = useMemo(() => 
     appointments.map(a => a.id).sort().join(','), 
     [appointments]
   )
   const stableAppointments = useMemo(() => appointments, [appointmentsIdsString])
   
+  // Appointment Data Hook
   const {
     appointment,
     loading,
@@ -143,16 +117,20 @@ export default function AppointmentDetailModal({
     fetchAppointmentDetails
   } = useAppointmentData(appointmentId, isOpen, stableAppointments)
 
+  // Problems & Medications Hook (load first to get medication history)
   const problemsMedications = useProblemsMedications(
     appointmentId,
     appointment?.patient_id || null
   )
 
+  // Prescriptions Hook (with medication history)
   const prescriptions = usePrescriptions(appointmentId, problemsMedications.medicationHistory)
 
+  // Callback to auto-add medications to rxList when CDSS response is loaded
   const handleMedicationsAutoAdded = useCallback((medications: any[]) => {
     if (medications && medications.length > 0) {
       prescriptions.setRxList(prev => {
+        // Check for duplicates before adding
         const existingMedications = prev.map(rx => rx.medication.toLowerCase())
         const newMedications = medications.filter(med => 
           !existingMedications.includes(med.medication.toLowerCase())
@@ -162,6 +140,7 @@ export default function AppointmentDetailModal({
     }
   }, [prescriptions.setRxList])
 
+  // Doctor Notes Hook (with all required data)
   const doctorNotesHook = useDoctorNotes(
     appointmentId,
     appointment,
@@ -171,44 +150,65 @@ export default function AppointmentDetailModal({
     problemsMedications.activeMedOrders,
     problemsMedications.pastMedOrders,
     problemsMedications.prescriptionLogs,
-    undefined,
-    handleMedicationsAutoAdded
+    undefined, // rxList will be passed when generating CDSS
+    handleMedicationsAutoAdded // Callback to auto-add medications to rxList
   )
 
   const {
+    // Doctor Notes
     doctorNotes,
     soapNotes,
     isSigning,
     soapSaveStatus,
     surgeriesDetails,
+    
+    // CDSS States - INCLUDE ALL
     cdssResponse,
     isGeneratingCDSS,
     showCDSSResults,
     isApplyingCDSS,
     cdssError,
+    
+    // CDSS Functions - INCLUDE ALL
     handleGenerateCDSS,
     handleApplyCDSS,
     setShowCDSSResults,
     setCdssError,
     checkAndLoadCDSS,
-    generateCDSSResponse,
+    generateCDSSResponse, // 🔥 YEH ADD KARO!
+    
+    // Other functions
     setDoctorNotes,
     handleSoapNotesChange,
     initializeSoapNotes,
     handleSaveDoctorNotes
+    
   } = doctorNotesHook
 
+  // Document Upload Hook
   const documentUpload = useDocumentUpload(appointmentId)
+
+  // Communication Hook
   const communication = useCommunication(appointmentId, appointment)
+
+  // Lab Results Hook
   const labResults = useLabResults(appointmentId, appointment?.patient_id || null)
-  const referralsFollowUp = useReferralsFollowUp(appointmentId, appointment, onFollowUp)
+
+  // Referrals & Follow-up Hook
+  const referralsFollowUp = useReferralsFollowUp(
+    appointmentId,
+    appointment,
+    onFollowUp
+  )
+
+  // Prior Authorization Hook
   const priorAuth = usePriorAuth(appointmentId, appointment?.patient_id || null)
+
+  // Layout Customization Hook
   const layout = useLayoutCustomization(isOpen)
 
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING MEMOIZED HANDLERS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
-
+  // Memoize stable handler references to prevent renderSection recreation
+  // Map to component's expected prop names (onXxx instead of handleXxx)
   const problemsMedicationsHandlers = useMemo(() => ({
     onAddActiveProblem: problemsMedications.handleAddActiveProblem,
     onRemoveActiveProblem: problemsMedications.handleRemoveActiveProblem,
@@ -269,26 +269,36 @@ export default function AppointmentDetailModal({
     communication.formatHistoryDate,
   ])
 
+  // 🔥 CRITICAL: Memoize onDoctorNotesChange to prevent DoctorNotesSection re-renders
   const handleDoctorNotesChangeMemoized = useCallback((value: string) => {
     setDoctorNotes(value)
     handleSaveDoctorNotes(value)
   }, [setDoctorNotes, handleSaveDoctorNotes])
 
+  // 🔥 CRITICAL: Memoize onGenerateCDSS to prevent DoctorNotesSection re-renders
   const handleGenerateCDSSMemoized = useCallback(() => {
     if (setCdssError) setCdssError(null)
     handleGenerateCDSS(prescriptions.rxList)
   }, [setCdssError, handleGenerateCDSS, prescriptions.rxList])
 
+  // 🔥 CRITICAL: Memoize soapNotes object to prevent unnecessary re-renders
   const memoizedSoapNotes = useMemo(() => soapNotes, [
     soapNotes.chiefComplaint,
     soapNotes.rosGeneral,
     soapNotes.assessmentPlan
   ])
 
+  // 🔥 CRITICAL: Memoize cdssResponse to prevent unnecessary re-renders
+  // Only recreate if the response ID changes or if it becomes null/defined
   const cdssResponseId = cdssResponse?.id || null
   const hasCdssResponse = !!cdssResponse
-  const memoizedCdssResponse = useMemo(() => cdssResponse, [cdssResponseId, hasCdssResponse])
+  const memoizedCdssResponse = useMemo(() => cdssResponse, [
+    cdssResponseId,
+    hasCdssResponse
+  ])
 
+  // 🔥 CRITICAL: Memoize appointmentDocuments array to prevent unnecessary re-renders
+  // Only recreate if the array length or document IDs change
   const appointmentDocumentsIds = useMemo(() => 
     documentUpload.appointmentDocuments?.map(doc => doc.id).join(',') || '',
     [documentUpload.appointmentDocuments]
@@ -298,10 +308,7 @@ export default function AppointmentDetailModal({
     [appointmentDocumentsIds]
   )
 
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING LOCAL UI STATE — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
-
+  // Local UI State
   const [activeTab, setActiveTab] = useState<'SOAP' | 'Orders' | 'Files' | 'Notes' | 'Billing' | 'Audit'>('SOAP')
   const [showRescheduleForm, setShowRescheduleForm] = useState(false)
   const [rescheduleLoading, setRescheduleLoading] = useState(false)
@@ -310,6 +317,7 @@ export default function AppointmentDetailModal({
   const [cancelling, setCancelling] = useState(false)
   const [smartAlerts, setSmartAlerts] = useState<string[]>(['ID Verified'])
   
+  // Move appointment state
   const [showMoveForm, setShowMoveForm] = useState(false)
   const [selectedMoveTime, setSelectedMoveTime] = useState<string>('')
   const [moveLoading, setMoveLoading] = useState(false)
@@ -321,52 +329,7 @@ export default function AppointmentDetailModal({
   const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
-  
-  // NEW: Track which right-panel view is active (null = SOAP notes default)
-  const [activeRightPanel, setActiveRightPanel] = useState<string | null>(null)
-  // NEW: Patient card collapsed state
-  const [patientCardCollapsed, setPatientCardCollapsed] = useState(false)
-  // NEW: Actions dropdown
-  const [showActionsDropdown, setShowActionsDropdown] = useState(false)
-  // NEW: Call timer
-  const [callTime, setCallTime] = useState(0)
-  const [callActive, setCallActive] = useState(false)
-  
-  // NEW: Quick actions from video panel
-  const [showQuickSMS, setShowQuickSMS] = useState(false)
-  const [quickSMSMessage, setQuickSMSMessage] = useState('')
-  const [sendingQuickSMS, setQuickSMSSending] = useState(false)
-  const [quickSMSSent, setQuickSMSSent] = useState(false)
-  const [showDialpad, setShowDialpad] = useState(false)
-  const [dialpadNumber, setDialpadNumber] = useState('')
-  const [showResendLink, setShowResendLink] = useState(false)
-  const [resendingLink, setResendingLink] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
-  const [linkResent, setLinkResent] = useState(false)
-  
-  // NEW: Daily.co Dialout
-  const [isDialingOut, setIsDialingOut] = useState(false)
-  const [dialoutActive, setDialoutActive] = useState(false)
-  const [dialoutError, setDialoutError] = useState<string | null>(null)
-  
-  // NEW: Video signal / call fallback
-  const [videoSignalWeak, setVideoSignalWeak] = useState(false)
-  const [showCallFallback, setShowCallFallback] = useState(false)
-  
-  // NEW: Resizable/movable/lockable panel
-  const [panelWidth, setPanelWidth] = useState<number | null>(null) // null = full width
-  const [panelHeight, setPanelHeight] = useState<number | null>(null) // null = full height
-  const [panelX, setPanelX] = useState<number | null>(null) // null = right-aligned
-  const [panelY, setPanelY] = useState<number | null>(null) // null = top-aligned
-  const [panelLocked, setPanelLocked] = useState(false)
-  const [isResizing, setIsResizing] = useState(false)
-  const [isDraggingPanel, setIsDraggingPanel] = useState(false)
-  const [panelMode, setPanelMode] = useState<'full' | 'floating'>('full') // full = old behavior, floating = resizable
-  const panelRef = useRef<HTMLDivElement>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number; edge: string } | null>(null)
-  const dragRef = useRef<{ startX: number; startY: number; startPanelX: number; startPanelY: number } | null>(null)
-  
+
   const [patientAppointments, setPatientAppointments] = useState<Array<{
     id: string
     status: string
@@ -376,361 +339,28 @@ export default function AppointmentDetailModal({
     requested_date_time: string | null
   }>>([])
 
-  // ═══════════════════════════════════════════════════════════════
-  // CALL TIMER — Track active video calls
-  // ═══════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!callActive) return
-    const interval = setInterval(() => setCallTime(t => t + 1), 1000)
-    return () => clearInterval(interval)
-  }, [callActive])
+  // EHR Panel Toolbar Definitions
+  const EHR_PANELS = [
+    { id: 'medication-history', label: 'Med Hx', icon: Pill, color: '#a855f7' },
+    { id: 'orders', label: 'Orders', icon: ClipboardList, color: '#3b82f6' },
+    { id: 'prescription-history', label: 'Rx Hx', icon: FileText, color: '#14b8a6' },
+    { id: 'appointments', label: 'Appts', icon: CalendarDays, color: '#f97316' },
+    { id: 'allergies', label: 'Allergy', icon: AlertTriangle, color: '#ef4444' },
+    { id: 'vitals', label: 'Vitals', icon: Activity, color: '#06b6d4' },
+    { id: 'medications', label: 'Meds', icon: Pill, color: '#10b981' },
+  ] as const
 
-  const formatCallTime = (s: number) => {
-    const m = Math.floor(s / 60)
-    const sec = s % 60
-    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // COMMUNICATION LOGGING (moved up — used by Quick SMS, Dialpad, Resend)
-  // ═══════════════════════════════════════════════════════════════
-  const handleLogSMSCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'sms', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_number || entry.to, from_number: entry.from_number || null,
-        message: entry.content || entry.message, status: entry.status || 'sent',
-        doctor_id: doctor.id, patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging SMS:', error)
-      }
-    } catch (error) { console.error('Error logging SMS:', error) }
-  }, [appointment?.patient_id])
-
-  const handleLogCallCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'call', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_number || entry.to, from_number: entry.from_number || null,
-        message: entry.message || null, status: entry.status || 'initiated',
-        duration: entry.duration || null, twilio_sid: entry.twilio_sid || null,
-        recording_url: entry.recording_url || null, doctor_id: doctor.id,
-        patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.initiated_at || entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging call:', error)
-      }
-    } catch (error) { console.error('Error logging call:', error) }
-  }, [appointment?.patient_id])
-
-  const handleLogEmailCommunication = useCallback(async (entry: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
-      if (!doctor) return
-      const emailContent = entry.subject ? `Subject: ${entry.subject}\n\n${entry.body || ''}` : entry.body || ''
-      const { error } = await supabase.from('communication_history').insert([{
-        type: 'email', direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
-        to_number: entry.to_email || null, from_number: entry.from_email || null,
-        message: emailContent, status: entry.status || 'sent', doctor_id: doctor.id,
-        patient_id: entry.patient_id || appointment?.patient_id,
-        created_at: entry.created_at || new Date().toISOString()
-      }])
-      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-        console.error('Error logging email:', error)
-      }
-    } catch (error) { console.error('Error logging email:', error) }
-  }, [appointment?.patient_id])
-
-  // ═══════════════════════════════════════════════════════════════
-  // QUICK SMS — send SMS directly from video panel
-  // ═══════════════════════════════════════════════════════════════
-  const handleQuickSMS = useCallback(async () => {
-    if (!quickSMSMessage.trim() || !appointment?.patients?.phone) return
-    setQuickSMSSending(true)
-    try {
-      communication.handleSmsToChange(appointment.patients.phone)
-      communication.handleSmsMessageChange(quickSMSMessage)
-      await new Promise(resolve => setTimeout(resolve, 0))
-      await communication.handleSendSMS()
-      await handleLogSMSCommunication({
-        type: 'sms', direction: 'outbound',
-        to_number: appointment.patients.phone,
-        content: quickSMSMessage,
-        status: 'sent',
-        patient_id: appointment?.patient_id,
-        created_at: new Date().toISOString()
-      })
-      setQuickSMSMessage('')
-      setShowQuickSMS(false)
-    } catch (err: any) {
-      console.error('Quick SMS error:', err)
-      setError(err.message || 'Failed to send SMS')
-    } finally {
-      setQuickSMSSending(false)
-    }
-  }, [quickSMSMessage, appointment, communication, handleLogSMSCommunication, setError])
-
-  // ═══════════════════════════════════════════════════════════════
-  // DIALPAD — call patient directly (Twilio fallback from video)
-  // ═══════════════════════════════════════════════════════════════
-  const handleDialpadCall = useCallback(async (phoneNumber?: string) => {
-    const numberToCall = phoneNumber || dialpadNumber || appointment?.patients?.phone
-    if (!numberToCall) {
-      setError('No phone number available')
-      return
-    }
-    try {
-      communication.handleCallPhoneNumberChange(numberToCall)
-      await communication.handleMakeCall()
-      await handleLogCallCommunication({
-        type: 'call', direction: 'outbound',
-        to_number: numberToCall,
-        status: 'initiated',
-        patient_id: appointment?.patient_id,
-        initiated_at: new Date().toISOString()
-      })
-      setShowDialpad(false)
-    } catch (err: any) {
-      console.error('Dialpad call error:', err)
-      setError(err.message || 'Failed to initiate call')
-    }
-  }, [dialpadNumber, appointment, communication, handleLogCallCommunication, setError])
-
-  const handleDialpadDigit = useCallback((digit: string) => {
-    setDialpadNumber(prev => prev + digit)
-  }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // RESEND APPOINTMENT LINK — copy or SMS the Daily.co link
-  // ═══════════════════════════════════════════════════════════════
-  const getMeetingLink = useCallback(() => {
-    const apt = appointment as any
-    return apt?.dailyco_meeting_url || apt?.meeting_url || apt?.video_link || null
-  }, [appointment])
-
-  const handleCopyMeetingLink = useCallback(() => {
-    const link = getMeetingLink()
-    if (link) {
-      navigator.clipboard.writeText(link)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    }
-  }, [getMeetingLink])
-
-  const handleResendLinkSMS = useCallback(async () => {
-    const link = getMeetingLink()
-    const phone = appointment?.patients?.phone
-    if (!link || !phone) {
-      setError('Missing meeting link or patient phone number')
-      return
-    }
-    setResendingLink(true)
-    try {
-      const patientName = `${appointment?.patients?.first_name || ''}`.trim() || 'Patient'
-      const message = `Hi ${patientName}, here is your appointment video link: ${link}`
-      communication.handleSmsToChange(phone)
-      communication.handleSmsMessageChange(message)
-      await new Promise(resolve => setTimeout(resolve, 0))
-      await communication.handleSendSMS()
-      await handleLogSMSCommunication({
-        type: 'sms', direction: 'outbound',
-        to_number: phone,
-        content: message,
-        status: 'sent',
-        patient_id: appointment?.patient_id,
-        created_at: new Date().toISOString()
-      })
-      setShowResendLink(false)
-    } catch (err: any) {
-      console.error('Resend link error:', err)
-      setError(err.message || 'Failed to resend link')
-    } finally {
-      setResendingLink(false)
-    }
-  }, [appointment, communication, getMeetingLink, handleLogSMSCommunication, setError])
-
-  // ═══════════════════════════════════════════════════════════════
-  // PANEL RESIZE/MOVE/LOCK — drag to resize edges, drag to move
-  // ═══════════════════════════════════════════════════════════════
-  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (panelLocked || panelMode !== 'floating') return
-    e.preventDefault()
-    e.stopPropagation()
-    setIsResizing(true)
-    const rect = panelRef.current?.getBoundingClientRect()
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startW: rect?.width || window.innerWidth * 0.85,
-      startH: rect?.height || window.innerHeight,
-      edge
-    }
-  }, [panelLocked, panelMode])
-
-  const handleDragPanelStart = useCallback((e: React.MouseEvent) => {
-    if (panelLocked || panelMode !== 'floating') return
-    e.preventDefault()
-    setIsDraggingPanel(true)
-    const rect = panelRef.current?.getBoundingClientRect()
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startPanelX: rect?.left || 0,
-      startPanelY: rect?.top || 0
-    }
-  }, [panelLocked, panelMode])
-
-  // Mouse move/up handlers for resize and drag
-  useEffect(() => {
-    if (!isResizing && !isDraggingPanel) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizing && resizeRef.current) {
-        const dx = e.clientX - resizeRef.current.startX
-        const dy = e.clientY - resizeRef.current.startY
-        const { edge, startW, startH } = resizeRef.current
-        
-        const minW = 500
-        const minH = 400
-        
-        if (edge.includes('right')) {
-          setPanelWidth(Math.max(minW, startW + dx))
-        }
-        if (edge.includes('left')) {
-          const newW = Math.max(minW, startW - dx)
-          setPanelWidth(newW)
-          if (panelX !== null) setPanelX(prev => (prev || 0) + (startW - newW))
-        }
-        if (edge.includes('bottom')) {
-          setPanelHeight(Math.max(minH, startH + dy))
-        }
-        if (edge.includes('top')) {
-          const newH = Math.max(minH, startH - dy)
-          setPanelHeight(newH)
-          if (panelY !== null) setPanelY(prev => (prev || 0) + (startH - newH))
-        }
-      }
-      
-      if (isDraggingPanel && dragRef.current) {
-        const dx = e.clientX - dragRef.current.startX
-        const dy = e.clientY - dragRef.current.startY
-        setPanelX(Math.max(0, dragRef.current.startPanelX + dx))
-        setPanelY(Math.max(0, dragRef.current.startPanelY + dy))
-      }
-    }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      setIsDraggingPanel(false)
-      resizeRef.current = null
-      dragRef.current = null
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing, isDraggingPanel, panelX, panelY])
-
-  // Save panel size/position to localStorage
-  const handleLockPanel = useCallback(() => {
-    setPanelLocked(true)
-    if (panelMode === 'floating') {
-      try {
-        const panelState = { panelWidth, panelHeight, panelX, panelY, panelMode }
-        localStorage.setItem('medazon_panel_layout', JSON.stringify(panelState))
-      } catch (e) { /* localStorage may not be available */ }
-    }
-  }, [panelWidth, panelHeight, panelX, panelY, panelMode])
-
-  const handleUnlockPanel = useCallback(() => {
-    setPanelLocked(false)
-  }, [])
-
-  // Restore saved panel layout on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('medazon_panel_layout')
-      if (saved) {
-        const state = JSON.parse(saved)
-        if (state.panelMode === 'floating') {
-          setPanelMode('floating')
-          if (state.panelWidth) setPanelWidth(state.panelWidth)
-          if (state.panelHeight) setPanelHeight(state.panelHeight)
-          if (state.panelX !== null) setPanelX(state.panelX)
-          if (state.panelY !== null) setPanelY(state.panelY)
-          setPanelLocked(true) // Restore as locked
-        }
-      }
-    } catch (e) { /* localStorage may not be available */ }
-  }, [])
-
-  const handleTogglePanelMode = useCallback(() => {
-    if (panelMode === 'full') {
-      setPanelMode('floating')
-      setPanelWidth(Math.round(window.innerWidth * 0.75))
-      setPanelHeight(Math.round(window.innerHeight * 0.8))
-      setPanelX(Math.round(window.innerWidth * 0.12))
-      setPanelY(Math.round(window.innerHeight * 0.05))
-      setPanelLocked(false)
-    } else {
-      setPanelMode('full')
-      setPanelWidth(null)
-      setPanelHeight(null)
-      setPanelX(null)
-      setPanelY(null)
-      setPanelLocked(false)
-      try { localStorage.removeItem('medazon_panel_layout') } catch (e) {}
-    }
-  }, [panelMode])
-
-  // ═══════════════════════════════════════════════════════════════
-  // TOOLBAR PANEL TOGGLE — opens EHR panel in right column OR overlay
-  // ═══════════════════════════════════════════════════════════════
   const handleToolbarPanelClick = useCallback((panelId: string) => {
     switch (panelId) {
-      case 'medication-history':
-        setShowMedicationHistoryPanel(true)
-        break
-      case 'orders':
-        setShowOrdersPanel(true)
-        break
-      case 'prescription-history':
-        setShowPrescriptionHistoryPanel(true)
-        break
-      case 'appointments':
-        setShowAppointmentsOverlay(true)
-        break
-      case 'allergies':
-        setShowAllergiesPanel(true)
-        break
-      case 'vitals':
-        setShowVitalsPanel(true)
-        break
-      case 'medications':
-        setShowMedicationsPanel(true)
-        break
+      case 'medication-history': setShowMedicationHistoryPanel(true); break
+      case 'orders': setShowOrdersPanel(true); break
+      case 'prescription-history': setShowPrescriptionHistoryPanel(true); break
+      case 'appointments': setShowAppointmentsOverlay(true); break
+      case 'allergies': setShowAllergiesPanel(true); break
+      case 'vitals': setShowVitalsPanel(true); break
+      case 'medications': setShowMedicationsPanel(true); break
     }
   }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING useEffect HOOKS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
 
   // Fetch patient appointments when overlay is opened
   useEffect(() => {
@@ -744,64 +374,38 @@ export default function AppointmentDetailModal({
             .single()
 
           if (patientError || !currentPatient?.email) {
-            console.error('Error fetching patient email:', patientError)
             const { data: fallbackData } = await supabase
               .from('patients')
-              .select(`
-                id,
-                appointments:appointments!appointments_patient_id_fkey (
-                  id, status, service_type, visit_type, created_at, requested_date_time
-                )
-              `)
+              .select(`id, appointments:appointments!appointments_patient_id_fkey (id, status, service_type, visit_type, created_at, requested_date_time)`)
               .eq('id', appointment.patient_id)
               .single()
-            
             if (fallbackData?.appointments) {
-              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => 
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              )
+              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
               setPatientAppointments(sorted)
             }
             return
           }
 
-          const { data: allPatientsData, error: allPatientsError } = await supabase
+          const { data: allPatientsData } = await supabase
             .from('patients')
-            .select(`
-              id,
-              appointments:appointments!appointments_patient_id_fkey (
-                id, status, service_type, visit_type, created_at, requested_date_time
-              )
-            `)
+            .select(`id, appointments:appointments!appointments_patient_id_fkey (id, status, service_type, visit_type, created_at, requested_date_time)`)
             .eq('email', currentPatient.email)
-
-          if (allPatientsError) {
-            console.error('Error fetching all patients by email:', allPatientsError)
-            return
-          }
 
           const allAppointments: any[] = []
           if (allPatientsData) {
             allPatientsData.forEach(patient => {
-              if (patient.appointments && Array.isArray(patient.appointments)) {
-                allAppointments.push(...patient.appointments)
-              }
+              if (patient.appointments && Array.isArray(patient.appointments)) allAppointments.push(...patient.appointments)
             })
           }
-
-          const sorted = allAppointments.sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-          setPatientAppointments(sorted)
-        } catch (err) {
-          console.error('Error fetching patient appointments:', err)
-        }
+          setPatientAppointments(allAppointments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
+        } catch (err) { console.error('Error fetching patient appointments:', err) }
       }
       fetchPatientAppointments()
     }
   }, [showAppointmentsOverlay, appointment?.patient_id])
 
-  // Initialize SOAP notes when appointment data loads
+  // Initialize SOAP notes when appointment data loads (from normalized clinical_notes table)
+  // Also check and auto-generate CDSS if needed
   const initializedRef = useRef<string | null>(null)
   const cdssCheckedRef = useRef<string | null>(null)
   
@@ -810,61 +414,93 @@ export default function AppointmentDetailModal({
     let timeoutId: NodeJS.Timeout | null = null
     let idleCallbackId: number | null = null
     
+    // Only initialize once per appointment ID
     if (appointment && appointmentId && initializedRef.current !== appointmentId) {
       initializedRef.current = appointmentId
-      cdssCheckedRef.current = null
+      cdssCheckedRef.current = null // Reset CDSS check for new appointment
       
+      // Load data in background - don't block UI
       fetchAppointmentDetails().then((result) => {
+        // Check if component is still mounted and appointment hasn't changed
         if (!isMounted || initializedRef.current !== appointmentId) return
         
         if (result) {
+          // Initialize from normalized clinical_notes table
           initializeSoapNotes(result.clinicalNotes || [], result.appointmentData)
           
+          // TIER 3: Defer CDSS checking - this is heavy and not immediately visible
+          // Load after Patient Header, SOAP Notes, and Problems/Medications are visible
           if (checkAndLoadCDSS && cdssCheckedRef.current !== appointmentId) {
             cdssCheckedRef.current = appointmentId
+            // Use longer delay (500-800ms) to ensure critical data loads first
             const scheduleCDSS = (callback: () => void) => {
               if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
                 idleCallbackId = (window as any).requestIdleCallback(callback, { timeout: 3000 })
               } else {
-                timeoutId = setTimeout(callback, 600)
+                timeoutId = setTimeout(callback, 600) // 600ms delay - after Problems/Medications load
               }
             }
             
             scheduleCDSS(() => {
+              // Check if component is still mounted and appointment hasn't changed
               if (!isMounted || initializedRef.current !== appointmentId) return
+              
+              // Only log in development
               if (process.env.NODE_ENV === 'development') {
-                console.log('🚀 AppointmentDetailModal: Calling checkAndLoadCDSS (deferred)', { appointmentId })
+                console.log('🚀 AppointmentDetailModal: Calling checkAndLoadCDSS (deferred)', {
+                  appointmentId,
+                  hasCheckAndLoadCDSS: !!checkAndLoadCDSS,
+                  cdssCheckedRef: cdssCheckedRef.current,
+                  hasChiefComplaint: !!appointment.chief_complaint,
+                  hasSubjectiveNotes: !!appointment.subjective_notes,
+                  hasNotes: !!appointment.notes,
+                  appointmentDataKeys: result.appointmentData ? Object.keys(result.appointmentData) : null
+                })
               }
               checkAndLoadCDSS(appointmentId, result.appointmentData)
             })
+          } else {
+            // Only log in development
+            if (process.env.NODE_ENV === 'development') {
+              console.log('⚠️ AppointmentDetailModal: Skipping checkAndLoadCDSS', {
+                hasCheckAndLoadCDSS: !!checkAndLoadCDSS,
+                cdssCheckedRef: cdssCheckedRef.current,
+                appointmentId,
+                reason: !checkAndLoadCDSS ? 'checkAndLoadCDSS is null' : 'Already checked for this appointment'
+              })
+            }
           }
         }
       }).catch((err) => {
+        // Only log errors, don't throw - this is background loading
         if (process.env.NODE_ENV === 'development') {
           console.error('Error fetching appointment details:', err)
         }
       })
     }
     
+    // Reset refs when appointment changes
     if (!appointmentId) {
       initializedRef.current = null
       cdssCheckedRef.current = null
     }
     
+    // Cleanup function
     return () => {
       isMounted = false
-      if (timeoutId) clearTimeout(timeoutId)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
       if (idleCallbackId && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
         (window as any).cancelIdleCallback(idleCallbackId)
+        idleCallbackId = null
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointmentId, appointment?.id])
 
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING ACTION HANDLERS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
-
+  // Handle appointment actions
   const handleAppointmentAction = useCallback(async (action: 'accept' | 'reject' | 'complete') => {
     if (!appointmentId) return
     setActionLoading(action)
@@ -899,13 +535,18 @@ export default function AppointmentDetailModal({
     }
     setRescheduleLoading(true)
     try {
+      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+      // This must match the calendar which always uses Phoenix timezone
       const doctorTimezone = 'America/Phoenix'
       const utcDateTime = convertDateTimeLocalToUTC(newDateTime, doctorTimezone)
       
       const response = await fetch('/api/appointments/reschedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, newDateTime: utcDateTime })
+        body: JSON.stringify({ 
+          appointmentId, 
+          newDateTime: utcDateTime
+        })
       })
 
       if (!response.ok) {
@@ -914,18 +555,28 @@ export default function AppointmentDetailModal({
       }
 
       const result = await response.json()
+      
       setShowRescheduleForm(false)
       setNewDateTime('')
       setSmartAlerts(prev => [...prev, 'Appointment rescheduled'])
       
+      // Show success message with new date
       if (onSmsSent) {
         const newDateObj = new Date(result.data?.newDateTime || utcDateTime)
         onSmsSent(`Appointment rescheduled to ${newDateObj.toLocaleString('en-US', {
-          weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
         })}. Navigate to that date on the calendar to see it.`)
       }
       
+      // Refresh calendar
       onStatusChange()
+      
+      // Close the modal so user can navigate to new date
       onClose()
     } catch (err: any) {
       setError(err.message)
@@ -934,23 +585,38 @@ export default function AppointmentDetailModal({
     }
   }, [appointmentId, newDateTime, setError, setNewDateTime, onStatusChange, onSmsSent, onClose])
 
+  // Cancel appointment
   const handleCancelAppointment = useCallback(async () => {
     if (!appointment?.id) return
+    
     setCancelling(true)
     setError(null)
+    
     try {
       const response = await fetch('/api/appointments/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: appointment.id, reason: 'Cancelled by provider' })
+        body: JSON.stringify({
+          appointmentId: appointment.id,
+          reason: 'Cancelled by provider'
+        })
       })
+
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to cancel appointment')
-      if (onSmsSent) onSmsSent('Appointment cancelled successfully')
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to cancel appointment')
+      }
+
+      if (onSmsSent) {
+        onSmsSent('Appointment cancelled successfully')
+      }
+
       onStatusChange()
       setCancelling(false)
       setShowCancelConfirm(false)
       onClose()
+      
     } catch (err: any) {
       setError(err.message || 'Failed to cancel appointment')
       setCancelling(false)
@@ -958,29 +624,43 @@ export default function AppointmentDetailModal({
     }
   }, [appointment?.id, onStatusChange, onClose, onSmsSent, setError])
 
+  // Move appointment (same day, different time)
   const handleMoveAppointment = useCallback(async () => {
     if (!appointmentId || !selectedMoveTime) {
       setError('Please select a new time')
       return
     }
+
     setMoveLoading(true)
     setError(null)
+
     try {
       const response = await fetch('/api/appointments/move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, newTime: selectedMoveTime })
+        body: JSON.stringify({ 
+          appointmentId, 
+          newTime: selectedMoveTime
+        })
       })
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to move appointment')
       }
+
       setMoveLoading(false)
       setShowMoveForm(false)
       setSelectedMoveTime('')
       setSmartAlerts(prev => [...prev, 'Appointment moved'])
-      setTimeout(() => { onStatusChange() }, 0)
-      fetchAppointmentDetails().catch(err => console.error('Error refreshing details:', err))
+
+      setTimeout(() => {
+        onStatusChange()
+      }, 0)
+      
+      fetchAppointmentDetails().catch(err => {
+        console.error('Error refreshing details:', err)
+      })
     } catch (err: any) {
       setError(err.message || 'Failed to move appointment')
     } finally {
@@ -990,32 +670,53 @@ export default function AppointmentDetailModal({
 
   const handleSignAndLock = useCallback(async () => {
     if (!appointmentId || !currentUser) return
+    // Implementation is in useDoctorNotes hook - this is just a placeholder
+    // The actual sign and lock is handled in the hook
   }, [appointmentId, currentUser])
 
+  // Handle document download
   const handleDocumentDownload = useCallback(async (doc: any) => {
     let downloadUrl: string | null = null
     let blobUrl: string | null = null
     let anchorElement: HTMLAnchorElement | null = null
+    
     try {
       const { supabase } = await import('@/lib/supabase')
       downloadUrl = doc.file_url
-      if (!downloadUrl) throw new Error('Invalid download URL')
+      
+      if (!downloadUrl) {
+        throw new Error('Invalid download URL')
+      }
+      
+      // Check if we need to generate a signed URL
       if (!downloadUrl.startsWith('http') || downloadUrl.includes('/storage/v1/object/public/')) {
         let filePath = downloadUrl
+        
         if (downloadUrl.includes('/storage/v1/object/public/appointment-documents/')) {
           const match = downloadUrl.match(/\/storage\/v1\/object\/public\/appointment-documents\/(.+)$/)
           filePath = match ? decodeURIComponent(match[1]) : downloadUrl
         }
+        
         const { data: urlData, error: urlError } = await supabase.storage
           .from('appointment-documents')
           .createSignedUrl(filePath, 3600)
+        
         if (urlError) throw new Error('Failed to generate download URL')
-        if (urlData?.signedUrl) downloadUrl = urlData.signedUrl
-        else throw new Error('Failed to generate download URL')
+        if (urlData?.signedUrl) {
+          downloadUrl = urlData.signedUrl
+        } else {
+          throw new Error('Failed to generate download URL')
+        }
       }
-      if (!downloadUrl) throw new Error('Invalid download URL')
+      
+      // At this point, downloadUrl is guaranteed to be a string
+      if (!downloadUrl) {
+        throw new Error('Invalid download URL')
+      }
+      
       const response = await fetch(downloadUrl)
       if (!response.ok) throw new Error('Download failed')
+      
       const blob = await response.blob()
       blobUrl = window.URL.createObjectURL(blob)
       anchorElement = document.createElement('a')
@@ -1027,25 +728,42 @@ export default function AppointmentDetailModal({
       console.error('Download error:', err)
       setError(`Failed to download file: ${err.message}`)
     } finally {
-      if (blobUrl) window.URL.revokeObjectURL(blobUrl)
+      // Cleanup: Always remove anchor element and revoke blob URL
+      if (blobUrl) {
+        window.URL.revokeObjectURL(blobUrl)
+      }
       if (anchorElement && document.body.contains(anchorElement)) {
-        try { document.body.removeChild(anchorElement) } catch (e) {}
+        try {
+          document.body.removeChild(anchorElement)
+        } catch (e) {
+          // Element may have already been removed, ignore error
+        }
       }
     }
   }, [setError])
 
+  // Handle email send
   const handleSendEmail = useCallback(async (to: string, subject: string, body: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
+
+      // Send email via API
       const response = await fetch('/api/communication/email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': accessToken ? `Bearer ${accessToken}` : '',
         },
-        body: JSON.stringify({ to, subject, body, patientId: appointment?.patient_id, appointmentId })
+        body: JSON.stringify({
+          to,
+          subject,
+          body,
+          patientId: appointment?.patient_id,
+          appointmentId
+        })
       })
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to send email')
@@ -1056,6 +774,135 @@ export default function AppointmentDetailModal({
     }
   }, [appointmentId, appointment?.patient_id])
 
+  // Handle SMS communication logging
+  const handleLogSMSCommunication = useCallback(async (entry: any) => {
+    try {
+      // Log to communication_history table
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: doctor } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('email', user.email)
+        .single()
+
+      if (!doctor) return
+
+      const { error } = await supabase
+        .from('communication_history')
+        .insert([{
+          type: 'sms',
+          direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
+          to_number: entry.to_number || entry.to,
+          from_number: entry.from_number || null,
+          message: entry.content || entry.message,
+          status: entry.status || 'sent',
+          doctor_id: doctor.id,
+          patient_id: entry.patient_id || appointment?.patient_id,
+          created_at: entry.created_at || new Date().toISOString()
+        }])
+
+      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
+        console.error('Error logging SMS to communication_history:', error)
+      }
+    } catch (error) {
+      console.error('Error logging SMS:', error)
+    }
+  }, [appointment?.patient_id])
+
+  // Handle Call communication logging
+  const handleLogCallCommunication = useCallback(async (entry: any) => {
+    try {
+      // Log to communication_history table
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: doctor } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('email', user.email)
+        .single()
+
+      if (!doctor) return
+
+      const { error } = await supabase
+        .from('communication_history')
+        .insert([{
+          type: 'call',
+          direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
+          to_number: entry.to_number || entry.to,
+          from_number: entry.from_number || null,
+          message: entry.message || null,
+          status: entry.status || 'initiated',
+          duration: entry.duration || null,
+          twilio_sid: entry.twilio_sid || null,
+          recording_url: entry.recording_url || null,
+          doctor_id: doctor.id,
+          patient_id: entry.patient_id || appointment?.patient_id,
+          created_at: entry.initiated_at || entry.created_at || new Date().toISOString()
+        }])
+
+      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
+        console.error('Error logging call to communication_history:', error)
+      }
+    } catch (error) {
+      console.error('Error logging call:', error)
+    }
+  }, [appointment?.patient_id])
+
+  // Handle email communication logging
+  const handleLogEmailCommunication = useCallback(async (entry: any) => {
+    try {
+      // Log to communication_history table (matches actual database structure)
+      // Table structure: type, direction, to_number, from_number, message, status, doctor_id, patient_id
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      // Get current user/doctor
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: doctor } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('email', user.email)
+        .single()
+
+      if (!doctor) return
+
+      // Format email content for message field (subject + body)
+      const emailContent = entry.subject 
+        ? `Subject: ${entry.subject}\n\n${entry.body || ''}`
+        : entry.body || ''
+
+      // Insert into communication_history table
+      // Note: communication_history doesn't have to_email/from_email columns
+      // We store email addresses in message field or use to_number/from_number as text
+      const { error } = await supabase
+        .from('communication_history')
+        .insert([{
+          type: 'email', // Valid: 'call', 'sms', 'video', 'fax', 'email'
+          direction: entry.direction === 'outbound' ? 'outbound' : 'inbound', // 'inbound' or 'outbound'
+          to_number: entry.to_email || null, // Store email address in to_number field (as text)
+          from_number: entry.from_email || null, // Store email address in from_number field (as text)
+          message: emailContent, // Store email subject + body in message field
+          status: entry.status || 'sent',
+          doctor_id: doctor.id,
+          patient_id: entry.patient_id || appointment?.patient_id,
+          created_at: entry.created_at || new Date().toISOString()
+        }])
+
+      if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
+        console.error('Error logging email to communication_history:', error)
+      }
+    } catch (error) {
+      console.error('Error logging email:', error)
+      // Don't throw - logging is not critical
+    }
+  }, [appointment?.patient_id])
+
+  // Handle CDSS apply with medication addition
   const handleApplyCDSSWithMedications = useCallback(async () => {
     if (!handleApplyCDSS) return
     try {
@@ -1069,9 +916,14 @@ export default function AppointmentDetailModal({
     }
   }, [handleApplyCDSS, prescriptions, setError])
 
-  const useSectionProps = (sectionId: string, panel: 'left' | 'right', layout: any) => {
+  const useSectionProps = (
+    sectionId: string,
+    panel: 'left' | 'right',
+    layout: any
+  ) => {
     const isDragging = layout.draggedSection === sectionId
     const isDragOver = layout.dragOverSection === sectionId
+  
     return {
       draggable: layout.isCustomizeMode,
       onDragStart: (e: React.DragEvent) => layout.handleDragStart(e, sectionId),
@@ -1080,19 +932,20 @@ export default function AppointmentDetailModal({
       onDrop: (e: React.DragEvent) => layout.handleDrop(e, sectionId, panel),
       onDragEnd: layout.handleDragEnd,
       'data-section-id': sectionId,
-      className: `relative ${layout.isCustomizeMode ? 'cursor-move' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'ring-2 ring-cyan-500 ring-offset-2' : ''} transition-all`,
+      className: `relative ${
+        layout.isCustomizeMode ? 'cursor-move' : ''
+      } ${isDragging ? 'opacity-50' : ''} ${
+        isDragOver ? 'ring-2 ring-cyan-500 ring-offset-2' : ''
+      } transition-all`,
       style: { contain: 'layout style paint' }
     }
   }
 
+  // 🔥 CRITICAL: Memoize onCloseCDSS to prevent recreation on every render
   const handleCloseCDSS = useCallback(() => {
     setShowCDSSResults(false)
     setCdssError?.(null)
   }, [setCdssError])
-
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING renderSection and renderDoctorNotes — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
 
   const renderDoctorNotes = useCallback(
     (sectionProps: any) => (
@@ -1126,7 +979,34 @@ export default function AppointmentDetailModal({
         onDocumentDownload={handleDocumentDownload}
       />
     ),
-    [appointment, memoizedSoapNotes, doctorNotes, activeTab, soapSaveStatus, isSigning, layout.isCustomizeMode, handleSoapNotesChange, handleDoctorNotesChangeMemoized, setActiveTab, handleSignAndLock, handleGenerateCDSSMemoized, isGeneratingCDSS, showCDSSResults, memoizedCdssResponse, cdssError, isApplyingCDSS, handleApplyCDSSWithMedications, handleCloseCDSS, memoizedAppointmentDocuments, documentUpload.uploadingDocument, documentUpload.selectedDocument, documentUpload.uploadError, documentUpload.handleDocumentUpload, documentUpload.setSelectedDocument, handleDocumentDownload]
+    [
+      appointment,
+      memoizedSoapNotes,
+      doctorNotes,
+      activeTab,
+      soapSaveStatus,
+      isSigning,
+      layout.isCustomizeMode,
+      handleSoapNotesChange,
+      handleDoctorNotesChangeMemoized,
+      setActiveTab,
+      handleSignAndLock,
+      handleGenerateCDSSMemoized,
+      isGeneratingCDSS,
+      showCDSSResults,
+      memoizedCdssResponse,
+      cdssError,
+      isApplyingCDSS,
+      handleApplyCDSSWithMedications,
+      handleCloseCDSS,
+      memoizedAppointmentDocuments,
+      documentUpload.uploadingDocument,
+      documentUpload.selectedDocument,
+      documentUpload.uploadError,
+      documentUpload.handleDocumentUpload,
+      documentUpload.setSelectedDocument,
+      handleDocumentDownload
+    ]
   )
   
   const renderSection = useCallback(
@@ -1205,9 +1085,13 @@ export default function AppointmentDetailModal({
               onStartEditRx={prescriptions.handleStartEditRx}
               onCancelEditRx={prescriptions.handleCancelEditRx}
               onSaveEditRx={prescriptions.handleSaveEditRx}
-              onEditingRxDataChange={(data) => { prescriptions.setEditingRxData(data) }}
+              onEditingRxDataChange={(data) => {
+                prescriptions.setEditingRxData(data)
+              }}
               onSendERx={async () => {
-                if (appointment) await prescriptions.handleSendERx(appointment, setError)
+                if (appointment) {
+                  await prescriptions.handleSendERx(appointment, setError)
+                }
               }}
               onToggleRxHistory={() => prescriptions.setShowRxHistory(!prescriptions.showRxHistory)}
               rxHistory={prescriptions.rxHistory}
@@ -1249,15 +1133,39 @@ export default function AppointmentDetailModal({
                 patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
                 onPhoneNumberChange={communication.handleSmsToChange}
                 onSendSMS={async (to, message) => {
+                  // Update communication state first
                   communication.handleSmsToChange(to)
                   communication.handleSmsMessageChange(message)
+                  
+                  // Wait a tick for state to update, then send
                   await new Promise(resolve => setTimeout(resolve, 0))
+                  
+                  // Send SMS via existing handler (it uses state values)
                   try {
                     await communication.handleSendSMS()
-                    await handleLogSMSCommunication({ type: 'sms', direction: 'outbound', to_number: to, content: message, status: 'sent', patient_id: appointment?.patient_id, created_at: new Date().toISOString() })
+                    
+                    // Log to communication history after successful send
+                    await handleLogSMSCommunication({
+                      type: 'sms',
+                      direction: 'outbound',
+                      to_number: to,
+                      content: message,
+                      status: 'sent',
+                      patient_id: appointment?.patient_id,
+                      created_at: new Date().toISOString()
+                    })
                   } catch (err: any) {
                     console.error('Error sending SMS:', err)
-                    await handleLogSMSCommunication({ type: 'sms', direction: 'outbound', to_number: to, content: message, status: 'failed', patient_id: appointment?.patient_id, created_at: new Date().toISOString() })
+                    // Log failure
+                    await handleLogSMSCommunication({
+                      type: 'sms',
+                      direction: 'outbound',
+                      to_number: to,
+                      content: message,
+                      status: 'failed',
+                      patient_id: appointment?.patient_id,
+                      created_at: new Date().toISOString()
+                    })
                     throw err
                   }
                 }}
@@ -1288,17 +1196,32 @@ export default function AppointmentDetailModal({
                 onMakeCall={async (phoneNumber) => {
                   communication.handleCallPhoneNumberChange(phoneNumber)
                   await communication.handleMakeCall()
-                  await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: phoneNumber, status: 'initiated', patient_id: appointment?.patient_id, initiated_at: new Date().toISOString() })
+                  await handleLogCallCommunication({
+                    type: 'call',
+                    direction: 'outbound',
+                    to_number: phoneNumber,
+                    status: 'initiated',
+                    patient_id: appointment?.patient_id,
+                    initiated_at: new Date().toISOString()
+                  })
                 }}
                 onEndCall={async () => {
                   await communication.handleEndCall()
-                  await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: communication.callPhoneNumber, status: 'completed', duration: communication.callDuration, patient_id: appointment?.patient_id, completed_at: new Date().toISOString() })
+                  await handleLogCallCommunication({
+                    type: 'call',
+                    direction: 'outbound',
+                    to_number: communication.callPhoneNumber,
+                    status: 'completed',
+                    duration: communication.callDuration,
+                    patient_id: appointment?.patient_id,
+                    completed_at: new Date().toISOString()
+                  })
                 }}
                 onToggleMute={communication.handleToggleMute}
                 isCallInProgress={communication.isCalling}
-                isMuted={communication.isMuted}
+              isMuted={communication.isMuted}
                 callDuration={communication.callDuration}
-                isDeviceReady={communication.isDeviceReady}
+              isDeviceReady={communication.isDeviceReady}
                 externalError={error && error.includes('call') ? error : undefined}
               />
             </div>
@@ -1329,29 +1252,88 @@ export default function AppointmentDetailModal({
 
         case 'lab-results':
           return (
-            <LabResultsSection key={sectionId} labResults={labResults.labResults} isLoadingLabs={labResults.isLoadingLabs} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps} onLoadLabResults={labResults.loadLabResults} />
+            <LabResultsSection
+              key={sectionId}
+              labResults={labResults.labResults}
+              isLoadingLabs={labResults.isLoadingLabs}
+              isCustomizeMode={layout.isCustomizeMode}
+              sectionProps={sectionProps}
+              onLoadLabResults={labResults.loadLabResults}
+            />
           )
 
         case 'referrals-followup':
           return (
-            <ReferralsFollowUpSection key={sectionId} referrals={referralsFollowUp.referrals} showReferralForm={referralsFollowUp.showReferralForm} setShowReferralForm={referralsFollowUp.setShowReferralForm} newReferral={referralsFollowUp.newReferral} setNewReferral={referralsFollowUp.setNewReferral} showFollowUpScheduler={referralsFollowUp.showFollowUpScheduler} setShowFollowUpScheduler={referralsFollowUp.setShowFollowUpScheduler} followUpData={referralsFollowUp.followUpData} setFollowUpData={referralsFollowUp.setFollowUpData} isSchedulingFollowUp={referralsFollowUp.isSchedulingFollowUp} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps}
-              onCreateReferral={async () => { try { await referralsFollowUp.handleCreateReferral() } catch (err: any) { setError(err.message) } }}
-              onScheduleFollowUp={async () => { try { await referralsFollowUp.handleScheduleFollowUp(); onStatusChange() } catch (err: any) { setError(err.message) } }}
+            <ReferralsFollowUpSection
+              key={sectionId}
+              referrals={referralsFollowUp.referrals}
+              showReferralForm={referralsFollowUp.showReferralForm}
+              setShowReferralForm={referralsFollowUp.setShowReferralForm}
+              newReferral={referralsFollowUp.newReferral}
+              setNewReferral={referralsFollowUp.setNewReferral}
+              showFollowUpScheduler={referralsFollowUp.showFollowUpScheduler}
+              setShowFollowUpScheduler={referralsFollowUp.setShowFollowUpScheduler}
+              followUpData={referralsFollowUp.followUpData}
+              setFollowUpData={referralsFollowUp.setFollowUpData}
+              isSchedulingFollowUp={referralsFollowUp.isSchedulingFollowUp}
+              isCustomizeMode={layout.isCustomizeMode}
+              sectionProps={sectionProps}
+              onCreateReferral={async () => {
+                try {
+                  await referralsFollowUp.handleCreateReferral()
+                } catch (err: any) {
+                  setError(err.message)
+                }
+              }}
+              onScheduleFollowUp={async () => {
+                try {
+                  await referralsFollowUp.handleScheduleFollowUp()
+                  onStatusChange() // Refresh calendar
+                } catch (err: any) {
+                  setError(err.message)
+                }
+              }}
               error={error}
             />
           )
 
         case 'prior-auth':
           return (
-            <PriorAuthSection key={sectionId} priorAuths={priorAuth.priorAuths} showPriorAuthForm={priorAuth.showPriorAuthForm} setShowPriorAuthForm={priorAuth.setShowPriorAuthForm} newPriorAuth={priorAuth.newPriorAuth} setNewPriorAuth={priorAuth.setNewPriorAuth} isSubmitting={priorAuth.isSubmitting} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps}
-              onSubmitPriorAuth={async () => { try { await priorAuth.handleSubmitPriorAuth() } catch (err: any) { setError(err.message) } }}
+            <PriorAuthSection
+              key={sectionId}
+              priorAuths={priorAuth.priorAuths}
+              showPriorAuthForm={priorAuth.showPriorAuthForm}
+              setShowPriorAuthForm={priorAuth.setShowPriorAuthForm}
+              newPriorAuth={priorAuth.newPriorAuth}
+              setNewPriorAuth={priorAuth.setNewPriorAuth}
+              isSubmitting={priorAuth.isSubmitting}
+              isCustomizeMode={layout.isCustomizeMode}
+              sectionProps={sectionProps}
+              onSubmitPriorAuth={async () => {
+                try {
+                  await priorAuth.handleSubmitPriorAuth()
+                } catch (err: any) {
+                  setError(err.message)
+                }
+              }}
               error={error}
             />
           )
 
         case 'communication-history':
           return (
-            <CommunicationHistorySection key={sectionId} communicationHistory={communication.communicationHistory} loadingHistory={communication.loadingHistory} playingRecordingId={communication.playingRecordingId} isCustomizeMode={layout.isCustomizeMode} sectionProps={sectionProps} formatDuration={communication.formatDuration} formatHistoryDate={communication.formatHistoryDate} onPlayRecording={communication.handlePlayRecording} audioRefs={communication.audioRefs} />
+            <CommunicationHistorySection
+              key={sectionId}
+              communicationHistory={communication.communicationHistory}
+              loadingHistory={communication.loadingHistory}
+              playingRecordingId={communication.playingRecordingId}
+              isCustomizeMode={layout.isCustomizeMode}
+              sectionProps={sectionProps}
+              formatDuration={communication.formatDuration}
+              formatHistoryDate={communication.formatHistoryDate}
+              onPlayRecording={communication.handlePlayRecording}
+              audioRefs={communication.audioRefs}
+            />
           )
 
         case 'medical-records':
@@ -1364,7 +1346,10 @@ export default function AppointmentDetailModal({
                   </svg>
                 </div>
               )}
-              <MedicalRecordsView appointmentId={appointmentId || undefined} patientId={appointment?.patient_id || null} />
+              <MedicalRecordsView
+                appointmentId={appointmentId || undefined}
+                patientId={appointment?.patient_id || null}
+              />
             </div>
           )
 
@@ -1374,6 +1359,9 @@ export default function AppointmentDetailModal({
     },
     [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, handleLogEmailCommunication, handleLogSMSCommunication, handleLogCallCommunication, onStatusChange]
   )
+  
+  
+  // Removed debug useEffect - it was causing unnecessary re-renders
 
   // Fetch communication history when appointment loads
   useEffect(() => {
@@ -1382,41 +1370,96 @@ export default function AppointmentDetailModal({
     }
   }, [appointment?.patients?.phone, communication.fetchCommunicationHistory])
 
-  // Reset scroll position
+  // Reset scroll position when modal opens or appointment changes
+  // Use a ref to track if we should prevent auto-scroll
   const preventAutoScrollRef = useRef(false)
   const scrollResetIntervalRef = useRef<NodeJS.Timeout | null>(null)
   
   useEffect(() => {
     if (isOpen && layout.scrollContainerRef.current) {
+      // Set flag to prevent auto-scroll for 800ms after modal opens
       preventAutoScrollRef.current = true
+      
       const container = layout.scrollContainerRef.current
+      
+      // Immediately set scroll to top
       container.scrollTop = 0
-      const resetScroll = () => { if (container && preventAutoScrollRef.current) container.scrollTop = 0 }
+      
+      // Aggressively reset scroll position multiple times to prevent any auto-scroll
+      const resetScroll = () => {
+        if (container && preventAutoScrollRef.current) {
+          container.scrollTop = 0
+        }
+      }
+      
+      // Use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(resetScroll)
-      const timers = [setTimeout(resetScroll, 0), setTimeout(resetScroll, 50), setTimeout(resetScroll, 100), setTimeout(resetScroll, 200), setTimeout(resetScroll, 300), setTimeout(resetScroll, 500)]
-      scrollResetIntervalRef.current = setInterval(() => { if (preventAutoScrollRef.current && container.scrollTop > 10) container.scrollTop = 0 }, 50)
+      
+      // Multiple timeouts to catch scroll at different render stages
+      const timers = [
+        setTimeout(resetScroll, 0),
+        setTimeout(resetScroll, 50),
+        setTimeout(resetScroll, 100),
+        setTimeout(resetScroll, 200),
+        setTimeout(resetScroll, 300),
+        setTimeout(resetScroll, 500),
+      ]
+      
+      // Set up interval to continuously reset scroll during prevent period
+      scrollResetIntervalRef.current = setInterval(() => {
+        if (preventAutoScrollRef.current && container.scrollTop > 10) {
+          container.scrollTop = 0
+        }
+      }, 50)
+      
+      // Reset prevent flag after 800ms
       const timer4 = setTimeout(() => {
         preventAutoScrollRef.current = false
-        if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }
+        if (scrollResetIntervalRef.current) {
+          clearInterval(scrollResetIntervalRef.current)
+          scrollResetIntervalRef.current = null
+        }
       }, 800)
-      return () => { timers.forEach(t => clearTimeout(t)); clearTimeout(timer4); if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }; preventAutoScrollRef.current = false }
+      
+      return () => {
+        timers.forEach(timer => clearTimeout(timer))
+        clearTimeout(timer4)
+        if (scrollResetIntervalRef.current) {
+          clearInterval(scrollResetIntervalRef.current)
+          scrollResetIntervalRef.current = null
+        }
+        preventAutoScrollRef.current = false
+      }
     } else {
       preventAutoScrollRef.current = false
-      if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }
+      if (scrollResetIntervalRef.current) {
+        clearInterval(scrollResetIntervalRef.current)
+        scrollResetIntervalRef.current = null
+      }
     }
   }, [isOpen, appointmentId])
 
-  // ═══════════════════════════════════════════════════════════════
-  // ALL EXISTING HELPER FUNCTIONS — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
-
+  // Helper function to format time
+  // CRITICAL: Slots are created with setHours() which sets local browser time,
+  // but they represent Phoenix time visually. Format using local time methods
+  // to match the main calendar display
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
   }
 
+  // Helper function to get date string in YYYY-MM-DD format for comparison
   const getDateString = (date: Date, timezone?: string): string => {
     if (timezone) {
-      const options: Intl.DateTimeFormatOptions = { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }
+      const options: Intl.DateTimeFormatOptions = {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }
       const formatter = new Intl.DateTimeFormat('en-US', options)
       const parts = formatter.formatToParts(date)
       const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
@@ -1428,732 +1471,796 @@ export default function AppointmentDetailModal({
     return `${year}-${month}-${day}`
   }
 
+  // Helper function to round a time to the nearest 30-minute slot
+  // Use UTC methods since convertToTimezone returns UTC dates
   const roundToNearestSlot = (appointmentDate: Date): Date => {
     const rounded = new Date(appointmentDate)
     const minutes = appointmentDate.getUTCMinutes()
     const hours = appointmentDate.getUTCHours()
-    if (minutes < 15) { rounded.setUTCMinutes(0, 0, 0); rounded.setUTCHours(hours) }
-    else if (minutes < 45) { rounded.setUTCMinutes(30, 0, 0); rounded.setUTCHours(hours) }
-    else { rounded.setUTCMinutes(0, 0, 0); rounded.setUTCHours(hours + 1) }
+    
+    // Round to nearest 30-minute slot
+    if (minutes < 15) {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours)
+    } else if (minutes < 45) {
+      rounded.setUTCMinutes(30, 0, 0)
+      rounded.setUTCHours(hours)
+    } else {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours + 1)
+    }
+    
     return rounded
   }
 
+  // Helper function to get appointment for a specific slot (matching main calendar logic)
   const getAppointmentForSlot = (date: Date, time: Date): CalendarAppointment | null => {
     if (!stableAppointments || stableAppointments.length === 0) return null
+    
+    // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+    // This must match the main calendar which always uses Phoenix timezone
     const doctorTimezone = 'America/Phoenix'
+    
+    // Convert the date to Phoenix timezone first (matching how appointments are mapped)
     const dateInPhoenix = convertToTimezone(date.toISOString(), doctorTimezone)
+    // Format the date string from the converted date (which has UTC values representing Phoenix local time)
     const slotDateStr = getDateString(dateInPhoenix, doctorTimezone)
+    
+    // CRITICAL: Time slots are created with setHours() which sets local browser time.
+    // However, they are MEANT to represent Phoenix time visually (5 AM - 8 PM Phoenix).
+    // The appointment mapping uses convertToTimezone() which returns UTC values representing Phoenix local time,
+    // and extracts hours/minutes using getUTCHours()/getUTCMinutes().
+    // To match, we need to treat the time slot's hour/minute as Phoenix time directly,
+    // and create a UTC Date representing that Phoenix time, then extract UTC hours/minutes.
+    // We use the date's year/month/day in Phoenix timezone, and the time slot's hour/minute as Phoenix time.
     const phoenixYear = dateInPhoenix.getUTCFullYear()
     const phoenixMonth = dateInPhoenix.getUTCMonth()
     const phoenixDay = dateInPhoenix.getUTCDate()
+    // Time slots are created to represent Phoenix time visually, so use hour/minute directly as Phoenix time
+    // (even though setHours() sets browser local time, we treat it as Phoenix time for matching)
     const phoenixHour = time.getHours()
     const phoenixMinute = time.getMinutes()
+    // Create a UTC Date representing this Phoenix time (matching convertToTimezone format)
+    // This creates a Date where UTC values represent Phoenix local time
     const timeSlotAsPhoenix = new Date(Date.UTC(phoenixYear, phoenixMonth, phoenixDay, phoenixHour, phoenixMinute, 0))
+    // Extract UTC hours/minutes (which represent Phoenix local time, matching appointment mapping)
     const hour = timeSlotAsPhoenix.getUTCHours()
     const minute = timeSlotAsPhoenix.getUTCMinutes()
+    
     const slotKey = `${slotDateStr}_${hour}_${minute}`
+    
+    // Create appointment map using same logic as main calendar
     const appointmentMap = new Map<string, CalendarAppointment>()
+    
     stableAppointments.forEach(apt => {
       if (!apt.requested_date_time) return
+      
       const aptDate = convertToTimezone(apt.requested_date_time, doctorTimezone)
       const roundedSlot = roundToNearestSlot(aptDate)
+      
+      // Use UTC methods to avoid browser timezone issues (matching main calendar)
       const dateStr = getDateString(aptDate, doctorTimezone)
       const aptHour = roundedSlot.getUTCHours()
       const aptMinute = roundedSlot.getUTCMinutes()
       const key = `${dateStr}_${aptHour}_${aptMinute}`
+      
       appointmentMap.set(key, apt)
     })
+    
     return appointmentMap.get(slotKey) || null
   }
 
+  // Helper function to get appointment reason (matching main calendar)
   const getAppointmentReason = (apt: CalendarAppointment): string => {
+    // Check clinical_notes if available
     if ((apt as any).clinical_notes && Array.isArray((apt as any).clinical_notes) && (apt as any).clinical_notes.length > 0) {
-      const reasonNote = (apt as any).clinical_notes.find((note: any) => note.note_type === 'chief_complaint' || note.note_type === 'subjective')
-      if (reasonNote?.content) return reasonNote.content
-    }
-    const aptAny = apt as any
-    return aptAny.chief_complaint || aptAny.reason || ''
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER: Left sidebar time slots — UNCHANGED
-  // ═══════════════════════════════════════════════════════════════
-  const renderCurrentDaySlots = () => {
-    if (!appointment?.requested_date_time) return null
-    const doctorTimezone = 'America/Phoenix'
-    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-    const slots: Date[] = []
-    for (let hour = 5; hour <= 20; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const time = new Date(appointmentDate)
-        time.setHours(hour, minute, 0, 0)
-        slots.push(time)
+      const reasonNote = (apt as any).clinical_notes.find(
+        (note: any) => note.note_type === 'chief_complaint' || note.note_type === 'subjective'
+      )
+      if (reasonNote?.content) {
+        return reasonNote.content
       }
     }
     
-    return (
-      <div style={{ padding: '12px', background: 'linear-gradient(180deg, #0d1424, #0b1222)', height: '100%', overflowY: 'auto', borderRight: '1px solid #1b2b4d', scrollbarWidth: 'thin', scrollbarColor: '#1b2b4d #0a1222' }} className="scrollbar-thin scrollbar-thumb-[#1b2b4d] scrollbar-track-[#0a1222]">
-        <div style={{ color: '#cfe1ff', fontWeight: 'bold', fontSize: '14px', marginBottom: '16px', position: 'sticky', top: 0, background: 'linear-gradient(180deg, #0d1424, #0b1222)', paddingBottom: '12px', borderBottom: '1px solid #1b2b4d', zIndex: 10 }}>
-          {appointmentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-          {slots.map((time) => {
-            const slotAppointment = getAppointmentForSlot(appointmentDate, time)
-            const isSelected = slotAppointment?.id === appointment?.id
-            const isAvailable = !slotAppointment
-            const isMoveSelected = showMoveForm && selectedMoveTime === `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`
-            return (
-              <div key={time.getTime()}
-                onClick={() => {
-                  if (showMoveForm && isAvailable) setSelectedMoveTime(`${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`)
-                  else if (slotAppointment && slotAppointment.id !== appointment?.id && onAppointmentSwitch) onAppointmentSwitch(slotAppointment.id)
-                }}
-                style={{
-                  padding: '10px', borderRadius: '10px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s',
-                  background: isMoveSelected ? 'linear-gradient(135deg, rgba(0, 230, 255, 0.3), rgba(0, 230, 255, 0.2))' : isSelected ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.3), rgba(211, 47, 47, 0.2))' : slotAppointment ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.2), rgba(211, 47, 47, 0.15))' : 'linear-gradient(135deg, rgba(25,214,127,.18), rgba(25,214,127,.12))',
-                  border: isMoveSelected ? '2px solid #00e6ff' : isSelected ? '2px solid #00e6ff' : slotAppointment ? '2px solid rgba(229, 57, 53, 0.6)' : '2px solid rgba(25,214,127,.6)',
-                  boxShadow: isMoveSelected ? '0 0 12px rgba(0, 230, 255, 0.4)' : isSelected ? '0 0 12px rgba(229, 57, 53, 0.4), 0 0 20px rgba(0, 230, 255, 0.3)' : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-                  color: slotAppointment ? '#ffcdd2' : '#cde7da'
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.15)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.filter = 'brightness(1)' }}
-              >
-                <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{formatTime(time)}</div>
-                {slotAppointment && (
-                  <>
-                    <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: '600' }}>{slotAppointment.patients?.first_name} {slotAppointment.patients?.last_name}</div>
-                    <span style={{
-                      display: 'inline-block', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', marginTop: '4px', textTransform: 'uppercase',
-                      background: slotAppointment.visit_type === 'video' ? 'rgba(0, 230, 255, 0.25)' : slotAppointment.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.25)' : slotAppointment.visit_type === 'async' ? 'rgba(176, 122, 255, 0.25)' : 'rgba(255,255,255,0.1)',
-                      border: `1px solid ${slotAppointment.visit_type === 'video' ? '#00e6ff' : slotAppointment.visit_type === 'phone' ? '#00c26e' : slotAppointment.visit_type === 'async' ? '#b07aff' : 'transparent'}`,
-                      color: slotAppointment.visit_type === 'video' ? '#00e6ff' : slotAppointment.visit_type === 'phone' ? '#00c26e' : slotAppointment.visit_type === 'async' ? '#b07aff' : '#fff'
-                    }}>
-                      {slotAppointment.visit_type || 'visit'}
-                    </span>
-                  </>
-                )}
-                {isAvailable && <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8, fontWeight: '600' }}>Available</div>}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
+    // Check appointment-level fields
+    const aptAny = apt as any
+    return aptAny.chief_complaint || 
+           aptAny.reason || 
+           ''
   }
+
+
+
+// Render current day slots (left sidebar) - Updated to match new design
+const renderCurrentDaySlots = () => {
+      if (!appointment?.requested_date_time) return null
+      
+      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+      // This must match the main calendar which always uses Phoenix timezone
+      const doctorTimezone = 'America/Phoenix'
+      const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+      
+      // Generate time slots (5 AM to 8 PM, 30-min intervals)
+      const slots: Date[] = []
+      for (let hour = 5; hour <= 20; hour++) {
+        for (let minute = 0; minute < 60; minute += 30) {
+          const time = new Date(appointmentDate)
+          time.setHours(hour, minute, 0, 0)
+          slots.push(time)
+        }
+      }
+      
+      return (
+        <div style={{ 
+          padding: '12px', 
+          background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+          height: '100%', 
+          overflowY: 'auto',
+          borderRight: '1px solid #1b2b4d',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#1b2b4d #0a1222'
+        }}
+        className="scrollbar-thin scrollbar-thumb-[#1b2b4d] scrollbar-track-[#0a1222]"
+        >
+          {/* Day Header */}
+          <div style={{
+            color: '#cfe1ff',
+            fontWeight: 'bold',
+            fontSize: '14px',
+            marginBottom: '16px',
+            position: 'sticky',
+            top: 0,
+            background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+            paddingBottom: '12px',
+            borderBottom: '1px solid #1b2b4d',
+            zIndex: 10
+          }}>
+            {appointmentDate.toLocaleDateString('en-US', { 
+              weekday: 'long',
+              month: 'short', 
+              day: 'numeric' 
+            })}
+          </div>
+          
+          {/* Time Slots */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+            {slots.map((time) => {
+              const slotAppointment = getAppointmentForSlot(appointmentDate, time)
+              const isSelected = slotAppointment?.id === appointment?.id
+              const isAvailable = !slotAppointment
+              const isMoveSelected = showMoveForm && selectedMoveTime === `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`
+  
+              return (
+                <div 
+                  key={time.getTime()}
+                  onClick={() => {
+                    if (showMoveForm && isAvailable) {
+                      setSelectedMoveTime(`${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`)
+                    } else if (slotAppointment && slotAppointment.id !== appointment?.id) {
+                      if (onAppointmentSwitch) {
+                        onAppointmentSwitch(slotAppointment.id)
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '10px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: isMoveSelected
+                      ? 'linear-gradient(135deg, rgba(0, 230, 255, 0.3), rgba(0, 230, 255, 0.2))'
+                      : isSelected
+                        ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.3), rgba(211, 47, 47, 0.2))'
+                        : slotAppointment
+                          ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.2), rgba(211, 47, 47, 0.15))'
+                          : 'linear-gradient(135deg, rgba(25,214,127,.18), rgba(25,214,127,.12))',
+                    border: isMoveSelected
+                      ? '2px solid #00e6ff'
+                      : isSelected
+                        ? '2px solid #00e6ff'
+                        : slotAppointment
+                          ? '2px solid rgba(229, 57, 53, 0.6)'
+                          : '2px solid rgba(25,214,127,.6)',
+                    boxShadow: isMoveSelected
+                      ? '0 0 12px rgba(0, 230, 255, 0.4)'
+                      : isSelected
+                        ? '0 0 12px rgba(229, 57, 53, 0.4), 0 0 20px rgba(0, 230, 255, 0.3)'
+                        : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                    color: slotAppointment ? '#ffcdd2' : '#cde7da'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.filter = 'brightness(1.15)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.filter = 'brightness(1)'
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{formatTime(time)}</div>
+                  {slotAppointment && (
+                    <>
+                      <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: '600' }}>
+                        {slotAppointment.patients?.first_name} {slotAppointment.patients?.last_name}
+                      </div>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '9px',
+                        fontWeight: 'bold',
+                        marginTop: '4px',
+                        textTransform: 'uppercase',
+                        background: slotAppointment.visit_type === 'video' ? 'rgba(0, 230, 255, 0.25)' :
+                                   slotAppointment.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.25)' :
+                                   slotAppointment.visit_type === 'async' ? 'rgba(176, 122, 255, 0.25)' : 'rgba(255,255,255,0.1)',
+                        border: `1px solid ${slotAppointment.visit_type === 'video' ? '#00e6ff' :
+                                            slotAppointment.visit_type === 'phone' ? '#00c26e' :
+                                            slotAppointment.visit_type === 'async' ? '#b07aff' : 'transparent'}`,
+                        color: slotAppointment.visit_type === 'video' ? '#00e6ff' :
+                               slotAppointment.visit_type === 'phone' ? '#00c26e' :
+                               slotAppointment.visit_type === 'async' ? '#b07aff' : '#fff'
+                      }}>
+                        {slotAppointment.visit_type || 'visit'}
+                      </span>
+                    </>
+                  )}
+                  {isAvailable && (
+                    <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8, fontWeight: '600' }}>Available</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+  // Render current day slots (left sidebar) - Updated to match new design
+  // const renderCurrentDaySlots = () => {
+  //   if (!appointment?.requested_date_time) return null
+    
+  //   // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+  //   // This must match the main calendar which always uses Phoenix timezone
+  //   const doctorTimezone = 'America/Phoenix'
+  //   const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+    
+  //   // Round the appointment time to the nearest 30-minute slot (matching appointment mapping logic)
+  //   // This ensures we match slots which are created on 30-minute boundaries
+  //   const roundedAppointment = roundToNearestSlot(appointmentDate)
+  //   const appointmentHour = roundedAppointment.getUTCHours() // UTC methods because convertToTimezone returns UTC values representing Phoenix time
+  //   const appointmentMinute = roundedAppointment.getUTCMinutes()
+    
+  //   // Generate time slots (5 AM to 8 PM, 30-min intervals)
+  //   // CRITICAL: Create slots matching main calendar approach
+  //   // Extract the appointment date components and create a fresh date for that day
+  //   // Then set hours on it (matching how main calendar creates slots)
+  //   const slots: Date[] = []
+  //   // Get the appointment date components in local time (for the appointment's day)
+  //   // appointmentDate has UTC values representing Phoenix time, so we need to extract the date properly
+  //   const appointmentYear = appointmentDate.getUTCFullYear()
+  //   const appointmentMonth = appointmentDate.getUTCMonth()
+  //   const appointmentDay = appointmentDate.getUTCDate()
+  //   // Create a fresh date for the appointment day (using local date constructor)
+  //   const baseDate = new Date(appointmentYear, appointmentMonth, appointmentDay)
+    
+  //   for (let hour = 5; hour <= 20; hour++) {
+  //     for (let minute = 0; minute < 60; minute += 30) {
+  //       const time = new Date(baseDate)
+  //       time.setHours(hour, minute, 0, 0)
+  //       slots.push(time)
+  //     }
+  //   }
+    
+  //   return (
+  //     <div style={{ 
+  //       padding: '12px', 
+  //       background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+  //       height: '100%', 
+  //       overflowY: 'auto',
+  //       borderRight: '1px solid #1b2b4d',
+  //       scrollbarWidth: 'thin',
+  //       scrollbarColor: '#1b2b4d #0a1222'
+  //     }}
+  //     className="scrollbar-thin scrollbar-thumb-[#1b2b4d] scrollbar-track-[#0a1222]"
+  //     >
+  //       {/* Day Header */}
+  //       <div style={{
+  //         color: '#cfe1ff',
+  //         fontWeight: 'bold',
+  //         fontSize: '14px',
+  //         marginBottom: '16px',
+  //         position: 'sticky',
+  //         top: 0,
+  //         background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+  //         paddingBottom: '12px',
+  //         borderBottom: '1px solid #1b2b4d',
+  //         zIndex: 10
+  //       }}>
+  //         {appointmentDate.toLocaleDateString('en-US', { 
+  //           weekday: 'long',
+  //           month: 'short', 
+  //           day: 'numeric' 
+  //         })}
+  //       </div>
+        
+  //       {/* Time Slots */}
+  //       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+  //         {slots.map((time) => {
+  //           // CRITICAL: Pass the slot's date (not appointmentDate) to getAppointmentForSlot
+  //           // This matches how the main calendar works - it passes the calendar date, not the appointment date
+  //           const slotDate = new Date(time)
+  //           slotDate.setHours(0, 0, 0, 0) // Reset to midnight for date comparison
+  //           const slotAppointment = getAppointmentForSlot(slotDate, time)
+  //           // CRITICAL: Check if this slot matches the current appointment
+  //           // Slots are created with local hours (setHours) which we treat as Phoenix time visually
+  //           // Appointment hours are from UTC methods which represent Phoenix time
+  //           const slotHour = time.getHours()
+  //           const slotMinute = time.getMinutes()
+            
+  //           // PRIMARY: Check if getAppointmentForSlot found THIS specific appointment
+  //           const foundThisAppointment = appointment?.id && slotAppointment?.id === appointment.id
+            
+  //           // FALLBACK: Direct time comparison (only if getAppointmentForSlot didn't find it)
+  //           // Slots are created with local hours representing Phoenix time visually
+  //           // Appointment hours are from UTC methods representing Phoenix time
+  //           // So slotHour (local) should equal appointmentHour (UTC) when both represent the same Phoenix time
+  //           const timeMatches = appointment?.id && !foundThisAppointment && appointmentHour === slotHour && appointmentMinute === slotMinute
+            
+  //           // Highlight if we found this appointment OR if time matches
+  //           const isSelected = foundThisAppointment || timeMatches
+            
+  //           // DEBUG: Log when we find a match (remove after fixing)
+  //           if (isSelected && process.env.NODE_ENV === 'development') {
+  //             console.log('🔍 Sidebar slot match:', {
+  //               slotTime: `${slotHour}:${slotMinute}`,
+  //               appointmentTime: `${appointmentHour}:${appointmentMinute}`,
+  //               foundThisAppointment,
+  //               timeMatches,
+  //               slotAppointmentId: slotAppointment?.id,
+  //               appointmentId: appointment?.id
+  //             })
+  //           }
+  //           const isAvailable = !slotAppointment
+  //           const timeString = `${slotHour.toString().padStart(2, '0')}:${slotMinute.toString().padStart(2, '0')}`
+  //           const isMoveSelected = showMoveForm && selectedMoveTime === timeString
+
+  //           return (
+  //             <div 
+  //               key={time.getTime()}
+  //               onClick={() => {
+  //                 if (showMoveForm && isAvailable) {
+  //                   setSelectedMoveTime(timeString)
+  //                 } else if (slotAppointment && slotAppointment.id !== appointment?.id) {
+  //                   if (onAppointmentSwitch) {
+  //                     onAppointmentSwitch(slotAppointment.id)
+  //                   }
+  //                 }
+  //               }}
+  //               style={{
+  //                 padding: '10px',
+  //                 borderRadius: '10px',
+  //                 fontSize: '12px',
+  //                 cursor: 'pointer',
+  //                 transition: 'all 0.2s',
+  //                 background: isMoveSelected
+  //                   ? 'linear-gradient(135deg, rgba(0, 230, 255, 0.3), rgba(0, 230, 255, 0.2))'
+  //                   : isSelected
+  //                     ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.3), rgba(211, 47, 47, 0.2))'
+  //                     : slotAppointment
+  //                       ? '#0a1222'
+  //                       : 'linear-gradient(135deg, rgba(25,214,127,.18), rgba(25,214,127,.12))',
+  //                 border: isMoveSelected
+  //                   ? '2px solid #00e6ff'
+  //                   : isSelected
+  //                     ? '2px solid #00e6ff'
+  //                     : slotAppointment
+  //                       ? '2px solid #e53935'
+  //                       : '2px solid rgba(25,214,127,.6)',
+  //                 boxShadow: isMoveSelected
+  //                   ? '0 0 12px rgba(0, 230, 255, 0.4)'
+  //                   : isSelected
+  //                     ? '0 0 12px rgba(229, 57, 53, 0.4), 0 0 20px rgba(0, 230, 255, 0.3)'
+  //                     : slotAppointment
+  //                       ? '0 0 8px rgba(229, 57, 53, 0.3)'
+  //                       : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+  //                 color: slotAppointment ? '#ffffff' : '#cde7da'
+  //               }}
+  //               onMouseEnter={(e) => {
+  //                 e.currentTarget.style.filter = 'brightness(1.15)'
+  //               }}
+  //               onMouseLeave={(e) => {
+  //                 e.currentTarget.style.filter = 'brightness(1)'
+  //               }}
+  //             >
+  //               <div style={{ fontWeight: 'bold', fontSize: '13px', color: slotAppointment ? '#ffffff' : '#cde7da' }}>{formatTime(time)}</div>
+  //               {slotAppointment && (
+  //                 <>
+  //                   <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: '600', color: '#ffffff' }}>
+  //                     {slotAppointment.patients?.first_name} {slotAppointment.patients?.last_name}
+  //                   </div>
+  //                   <span style={{
+  //                     display: 'inline-block',
+  //                     padding: '2px 6px',
+  //                     borderRadius: '4px',
+  //                     fontSize: '9px',
+  //                     fontWeight: 'bold',
+  //                     marginTop: '4px',
+  //                     textTransform: 'uppercase',
+  //                     background: slotAppointment.visit_type === 'video' ? 'rgba(0, 230, 255, 0.25)' :
+  //                                slotAppointment.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.25)' :
+  //                                slotAppointment.visit_type === 'async' ? 'rgba(176, 122, 255, 0.25)' : 'rgba(255,255,255,0.1)',
+  //                     border: `1px solid ${slotAppointment.visit_type === 'video' ? '#00e6ff' :
+  //                                         slotAppointment.visit_type === 'phone' ? '#00c26e' :
+  //                                         slotAppointment.visit_type === 'async' ? '#b07aff' : 'transparent'}`,
+  //                     color: slotAppointment.visit_type === 'video' ? '#00e6ff' :
+  //                            slotAppointment.visit_type === 'phone' ? '#00c26e' :
+  //                            slotAppointment.visit_type === 'async' ? '#b07aff' : '#fff'
+  //                   }}>
+  //                     {slotAppointment.visit_type === 'video' ? 'VIDEO' :
+  //                      slotAppointment.visit_type === 'phone' ? 'PHONE' :
+  //                      slotAppointment.visit_type === 'async' ? 'ASYNC' : 'VISIT'}
+  //                   </span>
+  //                   {(() => {
+  //                     const reason = getAppointmentReason(slotAppointment)
+  //                     if (!reason) return null
+  //                     const words = reason.trim().split(/\s+/)
+  //                     const shortReason = words.slice(0, 2).join(' ')
+  //                     return (
+  //                       <div style={{ fontSize: '10px', marginTop: '4px', color: '#ffffff', opacity: 0.9 }}>
+  //                         {shortReason}
+  //                       </div>
+  //                     )
+  //                   })()}
+  //                 </>
+  //               )}
+  //               {isAvailable && (
+  //                 <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8, fontWeight: '600' }}>Available</div>
+  //               )}
+  //             </div>
+  //           )
+  //         })}
+  //       </div>
+  //     </div>
+  //   )
+  // }
 
   if (!isOpen) return null
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // ╔══════════════════════════════════════════════════════════════════════╗
-  // ║  UPGRADED RENDER — NEW "CALL MODE" LAYOUT                          ║
-  // ║  Video pinned left, Patient card below, SOAP/Panels right          ║
-  // ║  Grouped toolbar, action dropdown, always-visible video            ║
-  // ╚══════════════════════════════════════════════════════════════════════╝
-  // ═══════════════════════════════════════════════════════════════════════
-
   return (
     <>
-      {/* Backdrop */}
-      {!isMinimized && (
-        <div className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300" onClick={onClose} />
-      )}
+      <div 
+        className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
+        onClick={onClose}
+      />
       
-      {isMinimized ? (
-        /* ═══ MINIMIZED STATE — Fixed bottom bar (UNCHANGED) ═══ */
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-t border-cyan-500/30 shadow-2xl">
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <h2 className="text-white font-bold text-sm">
-                  <span className="text-cyan-400">APPOINTMENT</span>
-                  {appointment?.requested_date_time && (
-                    <> • {(() => {
-                      const doctorTimezone = 'America/Phoenix'
-                      const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-                      return appointmentDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-                    })()}</>
-                  )}
-                  {appointment?.status && (
-                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${appointment.status === 'pending' ? 'bg-yellow-600' : appointment.status === 'accepted' ? 'bg-green-600' : appointment.status === 'completed' ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                      {appointment.status.toUpperCase()}
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {EHR_PANELS.map(panel => (
-                  <button key={panel.id} onClick={() => { setIsMinimized(false); handleToolbarPanelClick(panel.id) }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg transition-colors text-xs font-medium ${panel.hoverBg}`}
-                    style={{ backgroundColor: panel.color + '99' }}>
-                    <panel.icon className="h-3.5 w-3.5" />{panel.label}
-                  </button>
-                ))}
-                {appointment && appointment.status === 'pending' && (
-                  <>
-                    <button onClick={() => handleAppointmentAction('accept')} disabled={actionLoading === 'accept'} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50"><CheckCircle className="h-3.5 w-3.5" />Accept</button>
-                    <button onClick={() => handleAppointmentAction('reject')} disabled={actionLoading === 'reject'} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50"><XCircle className="h-3.5 w-3.5" />Reject</button>
-                  </>
-                )}
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs"><ArrowRight className="h-3.5 w-3.5" />Move</button>
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-xs"><RotateCcw className="h-3.5 w-3.5" />Reschedule</button>
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"><XCircle className="h-3.5 w-3.5" />Cancel Appt</button>
-                <button onClick={() => { setIsMinimized(false); layout.setIsCustomizeMode(true) }} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"><Edit className="h-3.5 w-3.5" />Customize</button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setIsMinimized(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs font-medium" title="Restore panel"><Maximize2 className="h-4 w-4" /></button>
-                <button onClick={onClose} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs"><X className="h-4 w-4" /></button>
-              </div>
-            </div>
-          </div>
+      {/* Main container with calendar sidebar + panel */}
+      <div className="fixed top-0 right-0 h-full w-full z-50 flex">
+        {/* Left Calendar Sidebar - Updated styling */}
+        <div style={{
+          width: '12%',
+          minWidth: '140px',
+          maxWidth: '200px',
+          height: '100%',
+          borderRight: '1px solid #1b2b4d',
+          background: 'linear-gradient(180deg, #0d1424, #0b1222)',
+          boxShadow: '0 0 40px rgba(0,0,0,0.5)'
+        }}>
+          {renderCurrentDaySlots()}
         </div>
-      ) : (
-        /* ═══════════════════════════════════════════════════════════════
-           EXPANDED STATE — UPGRADED "CALL MODE" LAYOUT
-           ═══════════════════════════════════════════════════════════════ */
-        <div className="fixed top-0 right-0 h-full w-full z-50 flex"
-          ref={panelRef}
-          style={panelMode === 'floating' ? {
-            top: panelY !== null ? `${panelY}px` : '2%',
-            left: panelX !== null ? `${panelX}px` : '8%',
-            right: 'auto',
-            width: panelWidth ? `${panelWidth}px` : '84%',
-            height: panelHeight ? `${panelHeight}px` : '96%',
-            borderRadius: '12px',
-            boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)',
-            transition: (isResizing || isDraggingPanel) ? 'none' : 'border-radius 0.3s ease',
-            overflow: 'hidden'
-          } : {}}>
-          
-          {/* Resize handles (floating mode only) */}
-          {panelMode === 'floating' && !panelLocked && (
-            <>
-              <div className="absolute top-0 left-0 w-full h-1.5 cursor-n-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'top')} />
-              <div className="absolute bottom-0 left-0 w-full h-1.5 cursor-s-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'bottom')} />
-              <div className="absolute top-0 left-0 h-full w-1.5 cursor-w-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'left')} />
-              <div className="absolute top-0 right-0 h-full w-1.5 cursor-e-resize z-50 hover:bg-cyan-500/20 transition-colors" onMouseDown={(e) => handleResizeStart(e, 'right')} />
-              {/* Corner handles */}
-              <div className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'top-left')} />
-              <div className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'top-right')} />
-              <div className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'bottom-left')} />
-              <div className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-50" onMouseDown={(e) => handleResizeStart(e, 'bottom-right')} />
-            </>
-          )}
-          {/* Left Calendar Sidebar — UNCHANGED */}
-          <div style={{ width: '12%', minWidth: '140px', maxWidth: '200px', height: '100%', borderRight: '1px solid #1b2b4d', background: 'linear-gradient(180deg, #0d1424, #0b1222)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
-            {renderCurrentDaySlots()}
-          </div>
-          
-          {/* ═══ MAIN PANEL (replaces old right panel) ═══ */}
-          <div className="flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl flex flex-col overflow-hidden">
-            
-            {/* ═══ HEADER — Compact with grouped toolbar ═══ */}
-            <div className="sticky top-0 z-10 flex-shrink-0" style={{ background: 'linear-gradient(90deg, #0a1628 0%, #0f172a 50%, #0a1628 100%)', borderBottom: '1px solid #1e293b' }}>
-              {/* Row 1: Branding + Appointment info + Window controls */}
-              <div className="flex items-center justify-between px-4 py-1.5"
-                style={{ cursor: panelMode === 'floating' && !panelLocked ? 'grab' : 'default' }}
-                onMouseDown={(e) => {
-                  // Only drag if clicking on the header itself (not buttons)
-                  if ((e.target as HTMLElement).closest('button')) return
-                  handleDragPanelStart(e)
-                }}>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-extrabold tracking-tight">
-                    <span className="text-cyan-400">MEDAZON</span>
-                    <span className="text-white/30 mx-1">+</span>
-                    <span className="text-white">HEALTH</span>
-                  </span>
-                  {panelMode === 'floating' && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider"
-                      style={{ background: panelLocked ? '#16653430' : '#1e293b', border: `1px solid ${panelLocked ? '#16653460' : '#334155'}`, color: panelLocked ? '#00cba9' : '#64748b' }}>
-                      {panelLocked ? '🔒 Locked' : '↕ Floating'}
-                    </span>
-                  )}
-                  <span className="w-px h-4 bg-white/10" />
-                  <span className="text-xs text-cyan-400 font-bold">APPOINTMENT</span>
-                  {appointment?.requested_date_time && (
-                    <span className="text-xs text-slate-400">
-                      • {(() => {
-                        const doctorTimezone = 'America/Phoenix'
-                        const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
-                        return appointmentDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-                      })()}
-                    </span>
-                  )}
-                  {appointment?.status && (
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      appointment.status === 'pending' ? 'bg-yellow-600/80' :
-                      appointment.status === 'accepted' ? 'bg-green-600/80' :
-                      appointment.status === 'completed' ? 'bg-blue-600/80' : 'bg-gray-600/80'
-                    } text-white`}>
-                      {appointment.status}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {/* Panel mode: floating / full */}
-                  <button onClick={handleTogglePanelMode}
-                    className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs"
-                    title={panelMode === 'full' ? 'Float panel (resize/move)' : 'Full screen'}>
-                    {panelMode === 'full' ? <GripVertical className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        
+        {/* Right Panel - 90% width */}
+        <div className={`flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl transform transition-transform duration-300 ${
+        isOpen ? 'translate-x-0' : 'translate-x-full'
+      } flex flex-col overflow-hidden`}>
+        {/* Header */}
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 flex-shrink-0 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-white font-bold text-sm sm:text-base">
+              <span className="text-cyan-400">APPOINTMENT</span>
+              {appointment?.requested_date_time && (
+                <> • {(() => {
+                  // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                  // This must match the main calendar which always uses Phoenix timezone
+                  const doctorTimezone = 'America/Phoenix'
+                  const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+                  return appointmentDate.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })
+                })()}</>
+              )}
+              {appointment?.status && (
+                <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                  appointment.status === 'pending' ? 'bg-yellow-600' :
+                  appointment.status === 'accepted' ? 'bg-green-600' :
+                  appointment.status === 'completed' ? 'bg-blue-600' :
+                  appointment.status === 'cancelled' ? 'bg-gray-600' : 'bg-gray-600'
+                }`}>
+                  {appointment.status.toUpperCase()}
+                </span>
+              )}
+            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* EHR Panel Buttons */}
+              {!layout.isCustomizeMode && appointment && EHR_PANELS.map(panel => {
+                const Icon = panel.icon
+                return (
+                  <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all border border-white/10 hover:border-white/30 text-slate-300 hover:text-white"
+                    style={{ background: 'rgba(255,255,255,0.05)' }}>
+                    <Icon className="h-3.5 w-3.5" style={{ color: panel.color }} />{panel.label}
                   </button>
-                  {/* Lock / Unlock */}
-                  {panelMode === 'floating' && (
-                    <button onClick={panelLocked ? handleUnlockPanel : handleLockPanel}
-                      className="w-6 h-6 flex items-center justify-center rounded text-xs transition-all"
-                      style={{
-                        background: panelLocked ? '#16653440' : '#1e293b80',
-                        border: `1px solid ${panelLocked ? '#16653480' : '#334155'}`,
-                        color: panelLocked ? '#00cba9' : '#94a3b8'
-                      }}
-                      title={panelLocked ? 'Unlock panel (saved)' : 'Lock panel size & position'}>
-                      {panelLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                    </button>
-                  )}
-                  <span className="w-px h-4 bg-white/10" />
-                  <button onClick={() => setIsMinimized(true)} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs" title="Minimize">—</button>
-                  <button onClick={() => setIsMinimized(false)} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-slate-600 text-white rounded text-xs" title="Restore">□</button>
-                  <button onClick={onClose} className="w-6 h-6 flex items-center justify-center bg-slate-700/80 hover:bg-red-600 text-white rounded" title="Close"><X className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-              
-              {/* Row 2: EHR Panel Toolbar + Action Buttons */}
-              <div className="flex items-center gap-1 px-4 py-1.5 overflow-x-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                {/* EHR Panel buttons — compact icon + short label */}
-                {!layout.isCustomizeMode && appointment && EHR_PANELS.map(panel => {
-                  const Icon = panel.icon
-                  return (
-                    <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition-all duration-150 border"
-                      style={{ borderColor: '#1e293b', color: '#94a3b8', background: 'transparent' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = panel.color + '80'; e.currentTarget.style.color = panel.color }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-                    >
-                      <Icon className="h-3.5 w-3.5" />{panel.label}
-                    </button>
-                  )
-                })}
-                
-                <span className="flex-1" />
-                
-                {/* Action buttons — separated by divider */}
-                {!layout.isCustomizeMode && appointment && (
-                  <div className="flex items-center gap-1 pl-2 ml-1" style={{ borderLeft: '1px solid #1e293b' }}>
-                    {appointment.status === 'pending' && (
-                      <>
-                        <button onClick={() => handleAppointmentAction('accept')} disabled={actionLoading === 'accept'}
-                          className="px-2 py-1 rounded text-[10px] font-bold text-green-400 disabled:opacity-50 transition-all"
-                          style={{ background: '#16653450' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#16653490'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#16653450'}>
-                          {actionLoading === 'accept' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Accept'}
-                        </button>
-                        <button onClick={() => handleAppointmentAction('reject')} disabled={actionLoading === 'reject'}
-                          className="px-2 py-1 rounded text-[10px] font-bold text-red-400 disabled:opacity-50 transition-all"
-                          style={{ background: '#991b1b50' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#991b1b90'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#991b1b50'}>
-                          {actionLoading === 'reject' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Reject'}
-                        </button>
-                      </>
-                    )}
-                    {appointment.status === 'accepted' && (
-                      <button onClick={() => handleAppointmentAction('complete')} disabled={actionLoading === 'complete'}
-                        className="px-2 py-1 rounded text-[10px] font-bold text-blue-400 disabled:opacity-50 transition-all"
-                        style={{ background: '#1e3a5f50' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#1e3a5f90'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#1e3a5f50'}>
-                        {actionLoading === 'complete' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Complete'}
-                      </button>
-                    )}
-                    
-                    {/* More actions dropdown */}
-                    <div className="relative">
-                      <button onClick={() => setShowActionsDropdown(!showActionsDropdown)}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-slate-400 transition-all"
-                        style={{ background: showActionsDropdown ? '#1e293b' : 'transparent', border: '1px solid #1e293b' }}>
-                        <MoreHorizontal className="h-3.5 w-3.5" />More
-                      </button>
-                      {showActionsDropdown && (
-                        <div className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-2xl py-1 min-w-[160px]" style={{ background: '#0f172a', border: '1px solid #1e293b' }}>
-                          <button onClick={() => { setShowMoveForm(!showMoveForm); setShowRescheduleForm(false); setShowCancelConfirm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-cyan-400 hover:bg-slate-800 transition-colors">
-                            <ArrowRight className="h-3.5 w-3.5" />{showMoveForm ? 'Cancel Move' : 'Move'}
-                          </button>
-                          <button onClick={() => { setShowRescheduleForm(!showRescheduleForm); setShowMoveForm(false); setShowCancelConfirm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-slate-800 transition-colors">
-                            <RotateCcw className="h-3.5 w-3.5" />{showRescheduleForm ? 'Cancel' : 'Reschedule'}
-                          </button>
-                          <button onClick={() => { setShowCancelConfirm(!showCancelConfirm); setShowMoveForm(false); setShowRescheduleForm(false); setShowActionsDropdown(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-slate-800 transition-colors">
-                            <XCircle className="h-3.5 w-3.5" />Cancel Appt
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Customize mode buttons */}
-                {layout.isCustomizeMode ? (
-                  <>
-                    <button onClick={layout.saveLayout} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs"><Save className="h-3.5 w-3.5" />Save Layout</button>
-                    <button onClick={() => layout.setIsCustomizeMode(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs"><X className="h-3.5 w-3.5" />Cancel</button>
-                  </>
-                ) : (
-                  <button onClick={() => layout.setIsCustomizeMode(true)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-purple-400 transition-all border border-purple-500/30 hover:border-purple-400 hover:bg-purple-500/10">
-                    <Edit className="h-3.5 w-3.5" />Customize
-                  </button>
-                )}
-              </div>
-              
-              {/* Action Forms (Move/Reschedule/Cancel) — slide down */}
-              {showMoveForm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(6, 182, 212, 0.08)', borderTop: '1px solid rgba(6, 182, 212, 0.2)' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="text-cyan-300 text-xs"><Clock className="h-3.5 w-3.5 inline mr-2" />Select a new time slot from the calendar on the left{selectedMoveTime && <span className="ml-2 font-bold">Selected: {selectedMoveTime}</span>}</div>
-                    <button onClick={handleMoveAppointment} disabled={!selectedMoveTime || moveLoading} className="px-3 py-1 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-2">
-                      {moveLoading ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Confirm Move'}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {showRescheduleForm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(249, 115, 22, 0.08)', borderTop: '1px solid rgba(249, 115, 22, 0.2)' }}>
-                  <div className="flex items-center gap-3">
-                    <Calendar className="h-3.5 w-3.5 text-orange-300" />
-                    <input type="datetime-local" value={newDateTime} onChange={(e) => setNewDateTime(e.target.value)} className="flex-1 px-3 py-1 bg-slate-800 border border-white/20 rounded-lg text-white text-xs" />
-                    <button onClick={handleReschedule} disabled={!newDateTime || rescheduleLoading} className="px-3 py-1 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs flex items-center gap-2">
-                      {rescheduleLoading ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Confirm Reschedule'}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {showCancelConfirm && (
-                <div className="px-4 py-2" style={{ background: 'rgba(239, 68, 68, 0.08)', borderTop: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="text-red-300 text-xs">Are you sure you want to cancel this appointment? This action cannot be undone.</div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setShowCancelConfirm(false)} className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-xs">No, Keep It</button>
-                      <button onClick={handleCancelAppointment} disabled={cancelling} className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-xs flex items-center gap-2">
-                        {cancelling ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : 'Yes, Cancel'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+                )
+              })}
 
-            {/* ═══ CONTENT: Two-column "Call Mode" layout ═══ */}
-            <div className="flex-1 flex overflow-hidden">
-              {loading ? (
-                <div className="flex items-center justify-center w-full py-20">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
-                </div>
-              ) : error && !appointment ? (
-                <div className="w-full p-4">
-                  <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">{error}</div>
-                </div>
-              ) : appointment ? (
+              {/* Action Buttons - only show when not in customize mode */}
+              {!layout.isCustomizeMode && appointment && (
                 <>
-                  {/* ═══ LEFT COLUMN: Video (sticky) + Patient Card ═══ */}
-                  <div className="flex flex-col overflow-hidden" style={{ width: '45%', minWidth: '380px', borderRight: '1px solid #1e293b', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                    {/* Video Area — fills available space, never scrolls away */}
-                    <div className="flex-1 min-h-0 relative" style={{ background: '#000' }}>
-                      {renderSection('meeting-info', 'left')}
-                      
-                      {/* ═══ VIDEO OVERLAY ACTION BAR ═══ */}
-                      {/* Floating buttons: Call Patient, Quick SMS, Resend Link */}
-                      <div className="absolute bottom-3 left-3 right-3 z-20 flex items-end justify-between pointer-events-none">
-                        {/* Left: Quick actions */}
-                        <div className="flex items-center gap-1.5 pointer-events-auto">
-                          {/* Call Patient (dialpad / direct call) */}
-                          <div className="relative">
-                            <button onClick={() => { setShowDialpad(!showDialpad); setShowQuickSMS(false); setShowResendLink(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: communication.isCalling ? '#dc2626' : showDialpad ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${communication.isCalling ? '#ef4444' : showDialpad ? '#00e6ff' : 'rgba(255,255,255,0.15)'}`,
-                                color: communication.isCalling ? '#fca5a5' : '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title={communication.isCalling ? 'Call in progress' : 'Call patient directly'}>
-                              {communication.isCalling ? <><PhoneOff className="h-3.5 w-3.5" />In Call</> : <><Phone className="h-3.5 w-3.5" />Call</>}
-                            </button>
-                            {/* Dialpad dropdown */}
-                            {showDialpad && !communication.isCalling && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[220px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">Call Patient</div>
-                                {/* Quick call button — one tap to patient's number */}
-                                {appointment?.patients?.phone && (
-                                  <button onClick={() => handleDialpadCall(appointment.patients?.phone || '')}
-                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-green-400 mb-2 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#16653470'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = '#16653440'}>
-                                    <PhoneCall className="h-3.5 w-3.5" />
-                                    Call {appointment.patients.phone}
-                                  </button>
-                                )}
-                                {/* Dial custom number */}
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="tel"
-                                    value={dialpadNumber}
-                                    onChange={(e) => setDialpadNumber(e.target.value)}
-                                    placeholder="Enter number..."
-                                    className="flex-1 px-2 py-1.5 rounded-lg text-xs text-white"
-                                    style={{ background: '#1e293b', border: '1px solid #334155', outline: 'none' }}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') handleDialpadCall() }}
-                                  />
-                                  <button onClick={() => handleDialpadCall()}
-                                    disabled={!dialpadNumber.trim()}
-                                    className="p-1.5 rounded-lg text-green-400 disabled:opacity-30 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}>
-                                    <Phone className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                                {/* Dialpad grid */}
-                                <div className="grid grid-cols-3 gap-1 mt-2">
-                                  {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
-                                    <button key={d} onClick={() => handleDialpadDigit(d)}
-                                      className="py-1.5 rounded-lg text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-700 transition-all"
-                                      style={{ background: '#1e293b' }}>
-                                      {d}
-                                    </button>
-                                  ))}
-                                </div>
-                                {dialpadNumber && (
-                                  <button onClick={() => setDialpadNumber('')}
-                                    className="w-full mt-1.5 py-1 rounded-lg text-[10px] text-slate-500 hover:text-slate-300 transition-all"
-                                    style={{ background: '#1e293b40' }}>
-                                    Clear
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {/* Active call controls */}
-                            {communication.isCalling && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[200px]"
-                                style={{ background: '#0f172a', border: '1px solid #dc2626', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-red-400 mb-2 flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                  Call in progress — {communication.formatDuration(communication.callDuration)}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button onClick={communication.handleToggleMute}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
-                                    style={{ background: communication.isMuted ? '#f59e0b30' : '#1e293b', color: communication.isMuted ? '#f59e0b' : '#94a3b8', border: `1px solid ${communication.isMuted ? '#f59e0b50' : '#334155'}` }}>
-                                    {communication.isMuted ? 'Unmute' : 'Mute'}
-                                  </button>
-                                  <button onClick={async () => {
-                                    await communication.handleEndCall()
-                                    await handleLogCallCommunication({ type: 'call', direction: 'outbound', to_number: communication.callPhoneNumber, status: 'completed', duration: communication.callDuration, patient_id: appointment?.patient_id, completed_at: new Date().toISOString() })
-                                  }}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-bold text-red-400 transition-all"
-                                    style={{ background: '#dc262640', border: '1px solid #dc262680' }}>
-                                    End Call
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Quick SMS */}
-                          <div className="relative">
-                            <button onClick={() => { setShowQuickSMS(!showQuickSMS); setShowDialpad(false); setShowResendLink(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: showQuickSMS ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${showQuickSMS ? '#00cba9' : 'rgba(255,255,255,0.15)'}`,
-                                color: '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title="Send SMS to patient">
-                              <MessageSquare className="h-3.5 w-3.5" />SMS
-                            </button>
-                            {/* Quick SMS panel */}
-                            {showQuickSMS && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[280px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center justify-between">
-                                  <span>Quick SMS to {appointment?.patients?.first_name || 'Patient'}</span>
-                                  <span className="text-slate-600 font-normal">{appointment?.patients?.phone}</span>
-                                </div>
-                                <textarea
-                                  value={quickSMSMessage}
-                                  onChange={(e) => setQuickSMSMessage(e.target.value)}
-                                  placeholder="Type message..."
-                                  rows={3}
-                                  className="w-full px-3 py-2 rounded-lg text-xs text-white resize-none"
-                                  style={{ background: '#1e293b', border: '1px solid #334155', outline: 'none' }}
-                                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSMS() } }}
-                                />
-                                <div className="flex items-center justify-between mt-2">
-                                  {/* Quick templates */}
-                                  <div className="flex gap-1">
-                                    {['Running late', 'Please join video', 'Connection issue'].map(tpl => (
-                                      <button key={tpl} onClick={() => setQuickSMSMessage(tpl)}
-                                        className="px-1.5 py-0.5 rounded text-[9px] text-slate-500 hover:text-slate-300 transition-all"
-                                        style={{ background: '#1e293b40', border: '1px solid #334155' }}>
-                                        {tpl}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <button onClick={handleQuickSMS}
-                                    disabled={!quickSMSMessage.trim() || sendingQuickSMS}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold text-green-400 disabled:opacity-30 transition-all"
-                                    style={{ background: '#16653440', border: '1px solid #16653480' }}>
-                                    {sendingQuickSMS ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-green-400" /> : <><Send className="h-3 w-3" />Send</>}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Resend Link */}
-                          <div className="relative">
-                            <button onClick={() => { setShowResendLink(!showResendLink); setShowDialpad(false); setShowQuickSMS(false) }}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                              style={{
-                                background: showResendLink ? '#0f172a' : 'rgba(15, 23, 42, 0.85)',
-                                border: `1px solid ${showResendLink ? '#818cf8' : 'rgba(255,255,255,0.15)'}`,
-                                color: '#e2e8f0',
-                                backdropFilter: 'blur(8px)'
-                              }}
-                              title="View/resend appointment link">
-                              <Link2 className="h-3.5 w-3.5" />Link
-                            </button>
-                            {/* Resend link panel */}
-                            {showResendLink && (
-                              <div className="absolute bottom-full left-0 mb-2 z-30 rounded-xl shadow-2xl p-3 w-[300px]"
-                                style={{ background: '#0f172a', border: '1px solid #1e293b', backdropFilter: 'blur(12px)' }}>
-                                <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">Appointment Link</div>
-                                {getMeetingLink() ? (
-                                  <>
-                                    <div className="flex items-center gap-1.5 p-2 rounded-lg mb-2" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-                                      <span className="flex-1 text-[10px] text-cyan-300 truncate font-mono">{getMeetingLink()}</span>
-                                      <button onClick={handleCopyMeetingLink}
-                                        className="p-1 rounded transition-all"
-                                        style={{ color: linkCopied ? '#00cba9' : '#94a3b8' }}>
-                                        {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                      </button>
-                                      <a href={getMeetingLink()!} target="_blank" rel="noopener noreferrer"
-                                        className="p-1 rounded text-slate-400 hover:text-white transition-all">
-                                        <ExternalLink className="h-3.5 w-3.5" />
-                                      </a>
-                                    </div>
-                                    <button onClick={handleResendLinkSMS}
-                                      disabled={resendingLink || !appointment?.patients?.phone}
-                                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold text-indigo-300 disabled:opacity-30 transition-all"
-                                      style={{ background: '#4338ca30', border: '1px solid #4338ca60' }}>
-                                      {resendingLink ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-300" />
-                                        : <><Send className="h-3 w-3" />SMS Link to {appointment?.patients?.phone || 'Patient'}</>}
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="text-[11px] text-slate-500 text-center py-3">No meeting link available for this appointment</div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Right: Call timer (when active) */}
-                        {callActive && (
-                          <div className="pointer-events-auto flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
-                            style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(0, 230, 255, 0.3)', backdropFilter: 'blur(8px)', color: '#00e6ff' }}>
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            {formatCallTime(callTime)}
-                          </div>
+                  {/* Accept/Reject for pending appointments */}
+                  {appointment.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => handleAppointmentAction('accept')}
+                        disabled={actionLoading === 'accept'}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50"
+                      >
+                        {actionLoading === 'accept' ? (
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        ) : (
+                          <CheckCircle className="h-3.5 w-3.5" />
                         )}
-                      </div>
-                    </div>
-                    
-                    {/* Patient Card — below video, collapsible */}
-                    <div style={{ borderTop: '1px solid #1e293b', background: 'linear-gradient(180deg, #0d1424, #0a1018)', flexShrink: 0, maxHeight: patientCardCollapsed ? '40px' : '45%', transition: 'max-height 0.3s ease', overflow: 'hidden' }}>
-                      {/* Collapse toggle */}
-                      <button onClick={() => setPatientCardCollapsed(!patientCardCollapsed)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
-                        style={{ background: 'rgba(10, 16, 24, 0.5)' }}>
-                        <span className="flex items-center gap-2">
-                          <span className="text-cyan-400">{appointment?.patients?.first_name} {appointment?.patients?.last_name}</span>
-                          <span className="text-slate-500">• {(appointment as any)?.patients?.date_of_birth ? `DOB: ${(appointment as any).patients.date_of_birth}` : `${appointment?.patients?.phone || ''}`}</span>
-                          {/* Allergy alert badge */}
-                          {(problemsMedications as any).allergies && ((problemsMedications as any).allergies as any[]).length > 0 && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 border border-red-500/50 text-red-300 animate-pulse">
-                              ⚠ ALLERGIES
-                            </span>
-                          )}
-                        </span>
-                        {patientCardCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                        Accept
                       </button>
-                      {/* Patient details — uses existing PatientHeader section */}
-                      {!patientCardCollapsed && (
-                        <div className="overflow-auto px-2 pb-2" style={{ maxHeight: 'calc(100% - 36px)' }}>
-                          {renderSection('patient-header', 'left')}
-                        </div>
+                      <button
+                        onClick={() => handleAppointmentAction('reject')}
+                        disabled={actionLoading === 'reject'}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50"
+                      >
+                        {actionLoading === 'reject' ? (
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5" />
+                        )}
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  
+                  {/* Move button */}
+                  <button
+                    onClick={() => {
+                      setShowMoveForm(!showMoveForm)
+                      setShowRescheduleForm(false)
+                      setShowCancelConfirm(false)
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 ${showMoveForm ? 'bg-cyan-700' : 'bg-cyan-600'} text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs`}
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    {showMoveForm ? 'Cancel Move' : 'Move'}
+                  </button>
+                  
+                  {/* Reschedule button */}
+                  <button
+                    onClick={() => {
+                      setShowRescheduleForm(!showRescheduleForm)
+                      setShowMoveForm(false)
+                      setShowCancelConfirm(false)
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 ${showRescheduleForm ? 'bg-orange-700' : 'bg-orange-600'} text-white rounded-lg hover:bg-orange-700 transition-colors text-xs`}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    {showRescheduleForm ? 'Cancel' : 'Reschedule'}
+                  </button>
+                  
+                  {/* Cancel appointment button */}
+                  <button
+                    onClick={() => {
+                      setShowCancelConfirm(!showCancelConfirm)
+                      setShowMoveForm(false)
+                      setShowRescheduleForm(false)
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 ${showCancelConfirm ? 'bg-red-700' : 'bg-red-600'} text-white rounded-lg hover:bg-red-700 transition-colors text-xs`}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Cancel Appt
+                  </button>
+                  
+                  {/* Complete button for accepted appointments */}
+                  {appointment.status === 'accepted' && (
+                    <button
+                      onClick={() => handleAppointmentAction('complete')}
+                      disabled={actionLoading === 'complete'}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50"
+                    >
+                      {actionLoading === 'complete' ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                      ) : (
+                        <CheckCircle className="h-3.5 w-3.5" />
                       )}
-                    </div>
-                  </div>
-
-                  {/* ═══ RIGHT COLUMN: SOAP Notes + all other sections (scrollable) ═══ */}
-                  <div className="flex-1 flex flex-col overflow-hidden" style={{ transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                    {/* SOAP Tab bar */}
-                    <div className="flex gap-0 flex-shrink-0" style={{ borderBottom: '1px solid #1e293b', background: 'rgba(10, 18, 32, 0.5)' }}>
-                      {['Subjective', 'Objective', 'Assessment', 'Plan'].map((tab, i) => (
-                        <button key={tab}
-                          className="flex-1 py-2 text-xs font-bold transition-all"
-                          style={{
-                            color: i === 0 ? '#00cba9' : '#64748b',
-                            borderBottom: i === 0 ? '2px solid #00cba9' : '2px solid transparent',
-                            background: i === 0 ? 'rgba(30, 41, 59, 0.3)' : 'transparent'
-                          }}>
-                          {tab.charAt(0)}<span className="text-[10px] font-normal ml-0.5">{tab.slice(1)}</span>
-                        </button>
-                      ))}
-                    </div>
-                    
-                    {/* Scrollable content area — all sections */}
-                    <div ref={layout.scrollContainerRef} className="flex-1 overflow-y-auto p-4"
-                      style={{ scrollBehavior: 'auto', scrollPaddingTop: '0' }}
-                      onFocus={(e) => {
-                        if (preventAutoScrollRef.current && layout.scrollContainerRef.current) {
-                          e.stopPropagation()
-                          setTimeout(() => { if (layout.scrollContainerRef.current) layout.scrollContainerRef.current.scrollTop = 0 }, 0)
-                        }
-                      }}>
-                      {/* Doctor Notes (SOAP) — primary content */}
-                      <div className="space-y-4">
-                        {/* Filter out patient-header and meeting-info since they're in left column now */}
-                        {layout.leftPanelSections.filter(id => id !== 'patient-header' && id !== 'meeting-info').map((sectionId) => renderSection(sectionId, 'left'))}
-                        {layout.rightPanelSections.map((sectionId) => renderSection(sectionId, 'right'))}
-                      </div>
-                    </div>
-                    
-                    {/* Bottom bar — auto-save status */}
-                    <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5" style={{ borderTop: '1px solid #1e293b', background: 'rgba(10, 16, 24, 0.5)' }}>
-                      <span className="text-[11px] text-green-400 flex items-center gap-1.5">
-                        <CheckCircle className="h-3 w-3" />{soapSaveStatus === 'saving' ? 'Saving...' : soapSaveStatus === 'saved' ? 'Auto-saved' : 'Ready'}
-                      </span>
-                      {error && <span className="text-[11px] text-red-400 truncate max-w-xs">{error}</span>}
-                    </div>
-                  </div>
+                      Complete
+                    </button>
+                  )}
                 </>
-              ) : null}
+              )}
+              
+              {layout.isCustomizeMode ? (
+                <>
+                  <button
+                    onClick={layout.saveLayout}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm"
+                  >
+                    <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Save Layout</span>
+                    <span className="sm:hidden">Save</span>
+                  </button>
+                  <button
+                    onClick={() => layout.setIsCustomizeMode(false)}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm"
+                  >
+                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Cancel</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => layout.setIsCustomizeMode(true)}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs sm:text-sm"
+                  >
+                    <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Customize</span>
+                    <span className="sm:hidden">Edit</span>
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm"
+                  >
+                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
+          
+          {/* Action Forms */}
+          {showMoveForm && (
+            <div className="mt-3 p-3 bg-cyan-900/50 rounded-lg border border-cyan-500/30">
+              <div className="flex items-center justify-between">
+                <div className="text-cyan-300 text-sm">
+                  <Clock className="h-4 w-4 inline mr-2" />
+                  Select a new time slot from the calendar on the left
+                  {selectedMoveTime && (
+                    <span className="ml-2 font-bold">Selected: {selectedMoveTime}</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleMoveAppointment}
+                  disabled={!selectedMoveTime || moveLoading}
+                  className="px-4 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2"
+                >
+                  {moveLoading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    'Confirm Move'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {showRescheduleForm && (
+            <div className="mt-3 p-3 bg-orange-900/50 rounded-lg border border-orange-500/30">
+              <div className="flex items-center gap-3">
+                <Calendar className="h-4 w-4 text-orange-300" />
+                <input
+                  type="datetime-local"
+                  value={newDateTime}
+                  onChange={(e) => setNewDateTime(e.target.value)}
+                  className="flex-1 px-3 py-1.5 bg-slate-800 border border-white/20 rounded-lg text-white text-sm"
+                />
+                <button
+                  onClick={handleReschedule}
+                  disabled={!newDateTime || rescheduleLoading}
+                  className="px-4 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2"
+                >
+                  {rescheduleLoading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    'Confirm Reschedule'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {showCancelConfirm && (
+            <div className="mt-3 p-3 bg-red-900/50 rounded-lg border border-red-500/30">
+              <div className="flex items-center justify-between">
+                <div className="text-red-300 text-sm">
+                  Are you sure you want to cancel this appointment? This action cannot be undone.
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowCancelConfirm(false)}
+                    className="px-4 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
+                  >
+                    No, Keep It
+                  </button>
+                  <button
+                    onClick={handleCancelAppointment}
+                    disabled={cancelling}
+                    className="px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm flex items-center gap-2"
+                  >
+                    {cancelling ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      'Yes, Cancel Appointment'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
-      {/* ═══════════════════════════════════════════════════════════════
-         ALL EXISTING OVERLAY PANELS — UNCHANGED
-         ═══════════════════════════════════════════════════════════════ */}
+        {/* Content */}
+        <div 
+          ref={layout.scrollContainerRef}
+          className="flex-1 overflow-y-auto p-4 sm:p-6"
+          style={{ 
+            scrollBehavior: 'auto',
+            scrollPaddingTop: '0'
+          }}
+          onFocus={(e) => {
+            // Prevent focus from causing scroll during initial load
+            if (preventAutoScrollRef.current && layout.scrollContainerRef.current) {
+              e.stopPropagation()
+              // Reset scroll if it moved
+              setTimeout(() => {
+                if (layout.scrollContainerRef.current) {
+                  layout.scrollContainerRef.current.scrollTop = 0
+                }
+              }, 0)
+            }
+          }}
+        >
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
+            </div>
+          ) : error ? (
+            <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
+              {error}
+            </div>
+          ) : appointment ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              {/* Left Panel */}
+              <div className="space-y-4 sm:space-y-6">
+                {layout.leftPanelSections.map((sectionId) => renderSection(sectionId, 'left'))}
+              </div>
 
+              {/* Right Panel */}
+              <div className="space-y-4 sm:space-y-6">
+                {layout.rightPanelSections.map((sectionId) => renderSection(sectionId, 'right'))}
+              </div>
+            </div>
+          ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Document Viewer Modal */}
       {documentUpload.selectedDocument && (
-        <DocumentViewer document={documentUpload.selectedDocument} onClose={() => documentUpload.setSelectedDocument(null)} />
+        <DocumentViewer
+          document={documentUpload.selectedDocument}
+          onClose={() => documentUpload.setSelectedDocument(null)}
+        />
       )}
 
+      {/* EHR Overlay Panels */}
       {appointment?.patient_id && (
         <MedicationHistoryPanel isOpen={showMedicationHistoryPanel} onClose={() => setShowMedicationHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} patientDOB={appointment?.patients?.date_of_birth ?? undefined}
           onReconcile={(medications) => {
@@ -2187,11 +2294,6 @@ export default function AppointmentDetailModal({
 
       {appointment?.patient_id && (
         <MedicationsPanel isOpen={showMedicationsPanel} onClose={() => setShowMedicationsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
-      )}
-
-      {/* Close actions dropdown on outside click */}
-      {showActionsDropdown && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowActionsDropdown(false)} />
       )}
     </>
   )
