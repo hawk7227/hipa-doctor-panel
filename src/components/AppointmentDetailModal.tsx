@@ -336,7 +336,7 @@ export default function AppointmentDetailModal({
   // NEW: Quick actions from video panel
   const [showQuickSMS, setShowQuickSMS] = useState(false)
   const [quickSMSMessage, setQuickSMSMessage] = useState('')
-  const [sendingQuickSMS, setSendingQuickSMS] = useState(false)
+  const [sendingQuickSMS, setQuickSMSSending] = useState(false)
   const [quickSMSSent, setQuickSMSSent] = useState(false)
   const [showDialpad, setShowDialpad] = useState(false)
   const [dialpadNumber, setDialpadNumber] = useState('')
