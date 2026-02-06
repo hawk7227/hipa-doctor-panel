@@ -169,3 +169,4 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_key
 - Error handling on all async operations
 - HIPAA-compliant audit logging included
 - Offline-capable data structures
+_
