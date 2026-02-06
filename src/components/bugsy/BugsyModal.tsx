@@ -1,9 +1,2 @@
 
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
 
