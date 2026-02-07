@@ -125,7 +125,7 @@ export interface Appointment {
   zoom_meeting_id?: string
   zoom_meeting_password?: string
   notes?: string
-  chart_locked?: boolean
+  chart_locked?:
   updated_at: string
   patients?: Patient | null
 }
