@@ -13,7 +13,7 @@ import {
   Loader2, RefreshCw, Eye, Lock, Trash2, ChevronDown,
   ChevronUp, Globe, Monitor, X, Send, Volume2, VolumeX,
   SkipBack, ArrowLeft, MousePointer2, Pencil, Tag,
-  BarChart3, Inbox, Wrench, Ban, User, Save,
+  BarChart3, Inbox, Wrench, Ban, User, Save, Phone,
 } from 'lucide-react';
 
 // ============================================================================
@@ -97,6 +97,10 @@ export default function AdminBugReportsPage() {
   const [pendingChanges, setPendingChanges] = useState<Record<string, PendingChange>>({});
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [saveResults, setSaveResults] = useState<{ id: string; success: boolean; desc: string }[] | null>(null);
+
+  // ── LIVE SESSION ──
+  const [requestingSession, setRequestingSession] = useState<string | null>(null);
+  const [sessionRoomUrl, setSessionRoomUrl] = useState<string | null>(null);
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
@@ -236,6 +240,34 @@ export default function AdminBugReportsPage() {
       setReports(p => p.filter(r => r.id !== id));
       if (expandedId === id) setExpandedId(null);
     } catch (err) { console.error('Delete error:', err); }
+  };
+
+  // ── Live Session ──
+  const requestLiveSession = async (id: string) => {
+    setRequestingSession(id);
+    try {
+      const res = await fetch(`/api/bugsy/admin/reports/${id}/live-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requested_by: 'admin' }),
+      });
+      const data = await res.json();
+      if (data.success && data.room_url) {
+        setSessionRoomUrl(data.room_url);
+        setReports(p => p.map(r => r.id === id ? { ...r, live_session_status: 'requested' as any, live_session_room_url: data.room_url } : r));
+      } else {
+        alert('Failed to create session: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Live session error:', err);
+      alert('Failed to request live session');
+    } finally {
+      setRequestingSession(null);
+    }
+  };
+
+  const joinLiveSession = (roomUrl: string) => {
+    window.open(roomUrl, '_blank');
   };
 
   // ── Helpers ──
@@ -570,6 +602,43 @@ export default function AdminBugReportsPage() {
                             </button>
                           </div>
 
+                          {/* Live Session */}
+                          <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
+                            <span className="text-xs text-gray-500 uppercase tracking-wide block mb-3">Live Support Session</span>
+                            {(report as any).live_session_status === 'active' && (report as any).live_session_room_url ? (
+                              <button
+                                onClick={() => joinLiveSession((report as any).live_session_room_url)}
+                                className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                              >
+                                <Phone className="w-4 h-4" /> Join Active Session
+                              </button>
+                            ) : (report as any).live_session_status === 'requested' && (report as any).live_session_room_url ? (
+                              <div className="space-y-2">
+                                <div className="px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-xs text-center">
+                                  Session requested — waiting for doctor to join
+                                </div>
+                                <button
+                                  onClick={() => joinLiveSession((report as any).live_session_room_url)}
+                                  className="w-full px-4 py-2.5 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 font-medium rounded-xl flex items-center justify-center gap-2 transition-colors text-xs"
+                                >
+                                  <Phone className="w-3.5 h-3.5" /> Join Room (waiting for doctor)
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => requestLiveSession(report.id)}
+                                disabled={requestingSession === report.id}
+                                className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-blue-500/20 disabled:opacity-50"
+                              >
+                                {requestingSession === report.id ? (
+                                  <><Loader2 className="w-4 h-4 animate-spin" /> Creating session...</>
+                                ) : (
+                                  <><Phone className="w-4 h-4" /> Request Live Session</>
+                                )}
+                              </button>
+                            )}
+                          </div>
+
                           {/* Delete */}
                           <button onClick={() => deleteReport(report.id)} className="w-full px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-medium rounded-xl flex items-center justify-center gap-2 transition-colors">
                             <Trash2 className="w-3.5 h-3.5" /> Delete Report
@@ -587,4 +656,5 @@ export default function AdminBugReportsPage() {
     </div>
   );
 }
+
 
