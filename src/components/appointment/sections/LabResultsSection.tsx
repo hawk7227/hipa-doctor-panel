@@ -1,6 +1,7 @@
 import React from 'react'
 import { FileText, Download } from 'lucide-react'
 import type { LabResult } from '../hooks/useLabResults'
+import ChartFileUpload from '../../ChartFileUpload'
 
 interface LabResultsSectionProps {
   labResults: LabResult[]
@@ -8,6 +9,8 @@ interface LabResultsSectionProps {
   isCustomizeMode: boolean
   sectionProps: any
   onLoadLabResults: () => void
+  patientId?: string
+  appointmentId?: string
 }
 
 export default function LabResultsSection({
@@ -15,7 +18,9 @@ export default function LabResultsSection({
   isLoadingLabs,
   isCustomizeMode,
   sectionProps,
-  onLoadLabResults
+  onLoadLabResults,
+  patientId,
+  appointmentId
 }: LabResultsSectionProps) {
   return (
     <div {...sectionProps}>
@@ -99,8 +104,14 @@ export default function LabResultsSection({
             No lab results available. Click "Import Labs" to fetch from lab system.
           </p>
         )}
+
+        {/* File Uploads */}
+        {patientId && appointmentId && (
+          <ChartFileUpload patientId={patientId} appointmentId={appointmentId} section="labs" />
+        )}
       </div>
     </div>
   )
 }
+
 

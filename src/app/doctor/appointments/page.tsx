@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Appointment } from '@/lib/supabase'
 import { sendAppointmentStatusEmail } from '@/lib/email'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
@@ -109,6 +110,8 @@ interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_
   subjective_notes?: string | null
   chief_complaint?: string | null
   reason?: string | null
+  chart_locked: boolean | null
+  created_at?: string | null
 }
 
 type ViewType = 'calendar' | 'list'
@@ -117,7 +120,25 @@ export default function DoctorAppointments() {
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(
+    searchParams.get('apt') || null
+  )
+
+  // Sync selectedAppointmentId to URL so refresh preserves the open chart
+  useEffect(() => {
+    const currentApt = searchParams.get('apt') || null
+    if (selectedAppointmentId !== currentApt) {
+      const url = new URL(window.location.href)
+      if (selectedAppointmentId) {
+        url.searchParams.set('apt', selectedAppointmentId)
+      } else {
+        url.searchParams.delete('apt')
+      }
+      router.replace(url.pathname + url.search, { scroll: false })
+    }
+  }, [selectedAppointmentId])
   
   // Initialize currentDate based on Phoenix timezone
   const [currentDate, setCurrentDate] = useState(() => {
@@ -1571,7 +1592,7 @@ export default function DoctorAppointments() {
       {/* ============================================ */}
       {/* FLOATING PARTICLES - FRONTEND ONLY (Added) */}
       {/* ============================================ */}
-      {showEffects && (
+      {showEffects && !selectedAppointmentId && !showCreateDialog && (
         <div className="particles-container">
           {particles.map(particle => (
             <div
@@ -1594,7 +1615,7 @@ export default function DoctorAppointments() {
       {/* ============================================ */}
       {/* CONFETTI BURST - FRONTEND ONLY (Added) */}
       {/* ============================================ */}
-      {showEffects && confetti.length > 0 && (
+      {showEffects && !selectedAppointmentId && !showCreateDialog && confetti.length > 0 && (
         <div className="confetti-container">
           {confetti.map(piece => (
             <div
@@ -1613,7 +1634,7 @@ export default function DoctorAppointments() {
       {/* ============================================ */}
       {/* WELCOME BANNER - FRONTEND ONLY (Added) */}
       {/* ============================================ */}
-      {showWelcome && (
+      {showWelcome && !selectedAppointmentId && !showCreateDialog && (
         <div className="welcome-banner">
           <div className="welcome-icon">✨</div>
           <div>
@@ -1747,7 +1768,13 @@ export default function DoctorAppointments() {
                                   <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
                                 </div>
                               ) : (
-                                <div className={`availability-event blocked ${appointment.visit_type || 'video'}`}>
+                                <div className={`availability-event blocked ${appointment.visit_type || 'video'}`} style={{ position: 'relative' }}>
+                                  {appointment.chart_locked && (
+                                    <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '10px', color: '#fbbf24', filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))' }} title="Chart locked">🔒</span>
+                                  )}
+                                  {appointment.status === 'completed' && !appointment.chart_locked && (
+                                    <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '10px', color: '#4ade80', opacity: 0.8 }} title="Completed">✓</span>
+                                  )}
                                   <div className="appointment-name">
                                     {appointment.patients?.first_name} {appointment.patients?.last_name}
                                   </div>
@@ -2061,6 +2088,163 @@ export default function DoctorAppointments() {
     </>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

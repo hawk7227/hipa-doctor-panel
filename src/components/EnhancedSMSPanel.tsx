@@ -173,105 +173,28 @@ export default function EnhancedSMSPanel({
   const [showTemplates, setShowTemplates] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const isInitialMountRef = useRef(true)
-  const previousMessagesLengthRef = useRef(0)
 
   // Load mock messages on mount
   useEffect(() => {
     setMessages(generateMockMessages())
-    // Mark initial mount as complete after a brief delay
-    setTimeout(() => {
-      isInitialMountRef.current = false
-      previousMessagesLengthRef.current = generateMockMessages().length
-    }, 100)
   }, [])
 
-  // Sync phone number from props - ensure +1 prefix for USA
+  // Sync phone number from props
   useEffect(() => {
     if (initialPhoneNumber) {
-      let cleaned = initialPhoneNumber.replace(/[^\d+]/g, '')
-      
-      // If it starts with +1, keep it
-      if (cleaned.startsWith('+1')) {
-        cleaned = '+1' + cleaned.slice(2).replace(/\D/g, '')
-      } else if (cleaned.startsWith('1')) {
-        // If it starts with 1, add + prefix
-        cleaned = '+1' + cleaned.slice(1).replace(/\D/g, '')
-      } else {
-        // Otherwise, add +1 prefix
-        cleaned = '+1' + cleaned.replace(/\D/g, '')
-      }
-      
-      // Limit to 10 digits after +1
-      const digits = cleaned.slice(2)
-      if (digits.length > 10) {
-        cleaned = '+1' + digits.slice(0, 10)
-      }
-      
-      setPhoneNumber(cleaned)
-    } else {
-      // If no initial phone number, set default +1
-      setPhoneNumber('+1')
+      setPhoneNumber(initialPhoneNumber)
     }
   }, [initialPhoneNumber])
 
-  // Scroll to bottom when NEW messages arrive (not on initial load)
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
-    // Skip scrolling on initial mount to prevent modal from auto-scrolling
-    if (isInitialMountRef.current) {
-      previousMessagesLengthRef.current = messages.length
-      return
-    }
-    
-    // Only scroll if messages actually increased (new message added)
-    const currentMessagesLength = messages.length
-    if (currentMessagesLength > previousMessagesLengthRef.current && messagesEndRef.current) {
-      // Use a small delay to ensure DOM is updated
-      setTimeout(() => {
-        // Try to find the scrollable container within the SMS panel first
-        const smsContainer = messagesEndRef.current?.closest('.overflow-y-auto')
-        if (smsContainer && smsContainer !== document.body) {
-          // Scroll the SMS panel's own container, not the parent modal
-          smsContainer.scrollTop = smsContainer.scrollHeight
-        } else if (messagesEndRef.current) {
-          // Fallback: use scrollIntoView with block: 'nearest' to minimize parent scroll
-          // This will only scroll the nearest scrollable ancestor, not necessarily the modal
-          messagesEndRef.current.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'nearest',
-            inline: 'nearest'
-          })
-        }
-      }, 50)
-    }
-    
-    previousMessagesLengthRef.current = currentMessagesLength
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Handle phone number change - ensure +1 prefix for USA
+  // Handle phone number change
   const handlePhoneChange = (value: string) => {
-    // Remove any existing +1 prefix and non-digit characters except +
-    let cleaned = value.replace(/[^\d+]/g, '')
-    
-    // If it starts with +1, keep it
-    if (cleaned.startsWith('+1')) {
-      cleaned = '+1' + cleaned.slice(2).replace(/\D/g, '')
-    } else if (cleaned.startsWith('1')) {
-      // If it starts with 1, add + prefix
-      cleaned = '+1' + cleaned.slice(1).replace(/\D/g, '')
-    } else {
-      // Otherwise, add +1 prefix
-      cleaned = '+1' + cleaned.replace(/\D/g, '')
-    }
-    
-    // Limit to 11 digits after +1 (US phone numbers)
-    const digits = cleaned.slice(2)
-    if (digits.length > 10) {
-      cleaned = '+1' + digits.slice(0, 10)
-    }
-    
-    setPhoneNumber(cleaned)
-    onPhoneNumberChange?.(cleaned)
+    setPhoneNumber(value)
+    onPhoneNumberChange?.(value)
     setError(null)
   }
 
@@ -370,7 +293,7 @@ export default function EnhancedSMSPanel({
             type="tel"
             value={phoneNumber}
             onChange={(e) => handlePhoneChange(e.target.value)}
-            placeholder="+1 (602) 549-8598"
+            placeholder="(602)-549-8598"
             className="w-full h-10 px-4 pr-12 rounded-lg border border-white/20 bg-slate-700/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-base"
           />
           <button
@@ -576,3 +499,4 @@ export default function EnhancedSMSPanel({
 }
 
 export type { SMSMessage, CommunicationHistoryEntry as SMSCommunicationHistoryEntry, EnhancedSMSPanelProps }
+

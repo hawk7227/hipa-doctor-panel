@@ -1,6 +1,7 @@
 import React from 'react'
 import { Shield } from 'lucide-react'
 import type { PriorAuth } from '../hooks/usePriorAuth'
+import ChartFileUpload from '../../ChartFileUpload'
 
 interface PriorAuthSectionProps {
   priorAuths: PriorAuth[]
@@ -17,6 +18,8 @@ interface PriorAuthSectionProps {
   sectionProps: any
   onSubmitPriorAuth: () => Promise<void>
   error?: string | null
+  patientId?: string
+  appointmentId?: string
 }
 
 export default function PriorAuthSection({
@@ -29,7 +32,9 @@ export default function PriorAuthSection({
   isCustomizeMode,
   sectionProps,
   onSubmitPriorAuth,
-  error
+  error,
+  patientId,
+  appointmentId
 }: PriorAuthSectionProps) {
   return (
     <div {...sectionProps}>
@@ -119,8 +124,14 @@ export default function PriorAuthSection({
         ) : (
           <p className="text-gray-400 text-sm text-center py-4">No prior authorizations. Click "+ New PA" to submit one.</p>
         )}
+
+        {/* File Uploads */}
+        {patientId && appointmentId && (
+          <ChartFileUpload patientId={patientId} appointmentId={appointmentId} section="prior-auth" />
+        )}
       </div>
     </div>
   )
 }
+
 

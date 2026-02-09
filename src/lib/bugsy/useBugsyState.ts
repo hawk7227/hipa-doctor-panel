@@ -30,7 +30,6 @@ import {
   isClinicHours,
   determineGaps,
   getRequiredQuestions,
-  isReadyToSubmit,
   getPageNameFromUrl,
   getBrowserInfo,
   getScreenSize,
@@ -56,8 +55,6 @@ export interface UseBugsyStateReturn {
   confidence: ConfidenceData;
   
   // Computed values
-  isReadyToSubmit: boolean;
-  requiredQuestions: string[];
   canGoBack: boolean;
   
   // Error state
@@ -71,6 +68,7 @@ export interface UseBugsyStateReturn {
   confirmReflection: (confirmed: boolean, corrections?: string[]) => void;
   answerQuestion: (questionKey: string, answer: string | string[] | null) => void;
   setAnswers: (answers: Partial<DoctorAnswers>) => void;
+  skipToVerification: () => void;
   goBack: () => void;
   submit: () => Promise<{ success: boolean; reportId?: string; error?: string }>;
   reset: () => void;
@@ -146,8 +144,8 @@ const getInitialConfidence = (): ConfidenceData => ({
     pattern_bonus: 0,
     total: 0,
   },
-  minimum_required: BUGSY_CONFIG.MINIMUM_CONFIDENCE_TO_SUBMIT,
-  ready_to_submit: false,
+  minimum_required: 0,
+  ready_to_submit: true,
 });
 
 // ============================================================================
@@ -176,7 +174,6 @@ export function useBugsyState(): UseBugsyStateReturn {
   // ============================================================================
 
   const canGoBack = phase !== 'idle' && phase !== 'recording' && phase !== 'submitting' && phase !== 'success';
-  const requiredQuestions = getRequiredQuestions(gaps);
 
   // ============================================================================
   // CONFIDENCE RECALCULATION
@@ -203,8 +200,8 @@ export function useBugsyState(): UseBugsyStateReturn {
     setConfidence({
       score: breakdown.total,
       breakdown,
-      minimum_required: BUGSY_CONFIG.MINIMUM_CONFIDENCE_TO_SUBMIT,
-      ready_to_submit: breakdown.total >= BUGSY_CONFIG.MINIMUM_CONFIDENCE_TO_SUBMIT,
+      minimum_required: 0,
+      ready_to_submit: true,
     });
   }, [transcript, analysis, interactions, markers, context.page_url, answers.reflection_confirmed, gaps]);
 
@@ -349,6 +346,12 @@ export function useBugsyState(): UseBugsyStateReturn {
     }
   }, [answers, phase]);
 
+  // Skip directly to verification — bypasses reflection/clarifying
+  const skipToVerification = useCallback(() => {
+    phaseHistoryRef.current.push(phase);
+    setPhase('verification');
+  }, [phase]);
+
   const goBack = useCallback(() => {
     const previousPhase = phaseHistoryRef.current.pop();
     if (previousPhase) {
@@ -357,9 +360,7 @@ export function useBugsyState(): UseBugsyStateReturn {
   }, []);
 
   const submit = useCallback(async (): Promise<{ success: boolean; reportId?: string; error?: string }> => {
-    if (!confidence.ready_to_submit) {
-      return { success: false, error: 'Report not ready to submit. Please answer all required questions.' };
-    }
+    // Submit is always allowed — no confidence/answer requirements
 
     phaseHistoryRef.current.push(phase);
     setPhase('submitting');
@@ -375,6 +376,40 @@ export function useBugsyState(): UseBugsyStateReturn {
         isClinicHours: isClinicHours(),
       });
 
+      // Upload recording video directly to Supabase Storage
+      let uploadedVideoUrl: string | null = null;
+      if (recording.video_url && recording.video_url.startsWith('blob:')) {
+        try {
+          console.log('Bugsy: Uploading recording to storage...');
+          const videoBlob = await fetch(recording.video_url).then(r => r.blob());
+          const fileName = `recordings/${context.user_id}/${Date.now()}-recording.webm`;
+
+          // Dynamic import to avoid circular deps — use the same supabase the app uses
+          const { supabase } = await import('@/lib/supabase');
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('bug-reports')
+            .upload(fileName, videoBlob, {
+              contentType: 'video/webm',
+              cacheControl: '3600',
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error('Bugsy: Video upload error:', uploadError);
+          } else if (uploadData) {
+            const { data: urlData } = supabase.storage
+              .from('bug-reports')
+              .getPublicUrl(uploadData.path);
+            uploadedVideoUrl = urlData.publicUrl;
+            console.log('Bugsy: Video uploaded:', uploadedVideoUrl);
+          }
+        } catch (uploadErr) {
+          console.error('Bugsy: Failed to upload video:', uploadErr);
+          // Continue — report still has transcript
+        }
+      }
+
       // Build the report
       const reportData: CreateBugReportRequest = {
         description: analysis.problem_identified || transcript.full_text.slice(0, 500),
@@ -383,16 +418,16 @@ export function useBugsyState(): UseBugsyStateReturn {
         what_happened: analysis.problem_identified,
         expected_behavior: answers.expected_behavior.join('. '),
         steps_to_reproduce: buildStepsFromInteractions(interactions),
-        recording_url: recording.video_url || undefined,
+        recording_url: uploadedVideoUrl || undefined,
         recording_duration_seconds: recording.duration_seconds,
         transcript: transcript.full_text,
         transcript_segments: transcript.segments,
         markers,
         interactions,
-        attachments: recording.video_url ? [{
+        attachments: uploadedVideoUrl ? [{
           id: generateId('attachment'),
           type: 'video',
-          url: recording.video_url,
+          url: uploadedVideoUrl,
           name: `recording-${Date.now()}.webm`,
           size: recording.file_size_bytes,
           mime_type: 'video/webm',
@@ -490,8 +525,6 @@ export function useBugsyState(): UseBugsyStateReturn {
     confidence,
     
     // Computed
-    isReadyToSubmit: confidence.ready_to_submit,
-    requiredQuestions,
     canGoBack,
     
     // Error
@@ -505,6 +538,7 @@ export function useBugsyState(): UseBugsyStateReturn {
     confirmReflection,
     answerQuestion,
     setAnswers,
+    skipToVerification,
     goBack,
     submit,
     reset,
@@ -513,3 +547,5 @@ export function useBugsyState(): UseBugsyStateReturn {
 }
 
 export default useBugsyState;
+
+

@@ -38,6 +38,7 @@ interface Appointment {
   signed_at: string | null
   signed_by: string | null
   is_locked: boolean | null
+  chart_locked: boolean | null
   cdss_auto_generated: boolean | null
   resolved_problems: any[] | null
   medication_history: any[] | null

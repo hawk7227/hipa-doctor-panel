@@ -1,2585 +1,2121 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Search, Phone, MessageSquare, Video, Send, Clock, PhoneCall, Play, Pause, Download } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
-import type { Device, Call } from '@twilio/voice-sdk'
-import Dialog from '@/components/Dialog'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { supabase, Appointment } from '@/lib/supabase'
+import { sendAppointmentStatusEmail } from '@/lib/email'
+import AppointmentDetailModal from '@/components/AppointmentDetailModal'
+import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
+import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
+import '../availability/availability.css'
 
-interface Patient {
-  id: string
-  first_name: string
-  last_name: string
-  mobile_phone: string
-  email: string
+function convertToTimezone(dateString: string, timezone: string): Date {
+  const date = new Date(dateString)
+  
+  // Get the date/time components in the doctor's timezone
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', options)
+  const parts = formatter.formatToParts(date)
+  
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  const hour = parseInt(getValue('hour'))
+  const minute = parseInt(getValue('minute'))
+  const second = parseInt(getValue('second'))
+  
+  const converted = new Date(Date.UTC(year, month, day, hour, minute, second))
+  
+  return converted
 }
 
-interface CommunicationHistory {
+function getDateString(date: Date, timezone?: string): string {
+  if (timezone) {
+    // When timezone is provided, the date should be from convertToTimezone which returns
+    // a Date with UTC values representing the timezone's local time.
+    // We use UTC methods to extract the date components.
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  // Fallback to UTC date string
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Helper function to create a time slot explicitly as Phoenix time
+// This ensures time slots represent Phoenix time regardless of browser timezone
+function createPhoenixTimeSlot(hour: number, minute: number): Date {
+  // Get today's date in Phoenix timezone
+  const today = new Date()
+  const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Phoenix',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = phoenixFormatter.formatToParts(today)
+  const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+  
+  const year = parseInt(getValue('year'))
+  const month = parseInt(getValue('month')) - 1
+  const day = parseInt(getValue('day'))
+  
+  // Create a UTC Date representing this Phoenix time
+  // This creates a Date where UTC values represent Phoenix local time
+  return new Date(Date.UTC(year, month, day, hour, minute, 0))
+}
+
+interface ClinicalNote {
   id: string
-  type: 'call' | 'sms' | 'video' | 'email'
-  direction: 'inbound' | 'outbound'
-  to_number?: string
-  from_number?: string
-  message?: string
-  status?: string
-  duration?: number
-  twilio_sid?: string
-  meeting_url?: string
-  meeting_id?: string
-  recording_url?: string
-  created_at: string
-  updated_at?: string
-  users?: {
+  note_type: string
+  content: string | null
+}
+
+interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_date_time' | 'visit_type'> {
+  requested_date_time: string | null // Override to match AppointmentDetailModal type (was string | undefined)
+  visit_type: string | null // Override to match AppointmentDetailModal type (was 'async' | 'video' | 'phone' | undefined)
+  patients?: {
+    first_name?: string | null
+    last_name?: string | null
+    email?: string | null
+    phone?: string | null
+    chief_complaint?: string | null
+  } | null
+  doctors?: {
+    timezone: string
+  }
+  // Clinical notes joined from clinical_notes table
+  clinical_notes?: ClinicalNote[] | null
+  // Additional fields from appointments table (fetched with *)
+  subjective_notes?: string | null
+  chief_complaint?: string | null
+  reason?: string | null
+  chart_locked: boolean | null
+  created_at?: string | null
+}
+
+type ViewType = 'calendar' | 'list'
+
+export default function DoctorAppointments() {
+  const [appointments, setAppointments] = useState<CalendarAppointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(
+    searchParams.get('apt') || null
+  )
+
+  // Sync selectedAppointmentId to URL so refresh preserves the open chart
+  useEffect(() => {
+    const currentApt = searchParams.get('apt') || null
+    if (selectedAppointmentId !== currentApt) {
+      const url = new URL(window.location.href)
+      if (selectedAppointmentId) {
+        url.searchParams.set('apt', selectedAppointmentId)
+      } else {
+        url.searchParams.delete('apt')
+      }
+      router.replace(url.pathname + url.search, { scroll: false })
+    }
+  }, [selectedAppointmentId])
+  
+  // Initialize currentDate based on Phoenix timezone
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    console.log('🗓️ Initializing calendar to Phoenix date:', month, '/', day, '/', year)
+    return new Date(year, month - 1, day, 12, 0, 0) // Use noon to avoid DST issues
+  })
+  
+  const [viewType, setViewType] = useState<ViewType>('calendar')
+  const [currentDoctorId, setCurrentDoctorId] = useState<string | null>(null)
+  const [calendarViewType, setCalendarViewType] = useState<'week' | 'month' | '3month'>('week')
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [selectedSlotDate, setSelectedSlotDate] = useState<Date | null>(null)
+  const [selectedSlotTime, setSelectedSlotTime] = useState<Date | null>(null)
+  const [followUpPatientData, setFollowUpPatientData] = useState<{
     id: string
     first_name: string
     last_name: string
+    email: string
     mobile_phone: string
-    email?: string
-  }
-}
+  } | null>(null)
+  const [instantVisitQueue, setInstantVisitQueue] = useState<CalendarAppointment[]>([])
+  const [activeInstantVisit, setActiveInstantVisit] = useState<CalendarAppointment | null>(null)
+  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false)
 
-export default function CommunicationPanel() {
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [history, setHistory] = useState<CommunicationHistory[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showPatientList, setShowPatientList] = useState(false)
+  // ============================================
+  // CELEBRATION STATE - FRONTEND ONLY (Added)
+  // ============================================
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [particles, setParticles] = useState<Array<{id: number, x: number, color: string, size: number, duration: number, delay: number, shape: string}>>([])
+  const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
+  const [soundEnabled, setSoundEnabled] = useState(false)
+  const [showEffects, setShowEffects] = useState(true) // Toggle for particles/confetti
+  const [currentPhoenixTime, setCurrentPhoenixTime] = useState<{hour: number, minute: number, formatted: string, dateStr: string}>({ hour: 0, minute: 0, formatted: '', dateStr: '' })
+  const celebrationTriggeredRef = useRef(false)
+  const calendarScrollRef = useRef<HTMLDivElement>(null)
+  const currentTimeRowRef = useRef<HTMLDivElement>(null)
 
-  // SMS State
-  const [smsTo, setSmsTo] = useState('')
-  const [smsMessage, setSmsMessage] = useState('')
-  const [isSendingSMS, setIsSendingSMS] = useState(false)
-
-  // Call State
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [isCalling, setIsCalling] = useState(false)
-  const [callStatus, setCallStatus] = useState('Initializing...')
-  const [isMuted, setIsMuted] = useState(false)
-  const [callDuration, setCallDuration] = useState(0)
-  const [isDeviceReady, setIsDeviceReady] = useState(false)
-  const [isCallLoading, setIsCallLoading] = useState(false)
-
-  // Video State
-  const [videoMeeting, setVideoMeeting] = useState<any>(null)
-
-  // Dial Pad State
-  const [dialPadNumber, setDialPadNumber] = useState('')
-
-  // Audio Device State
-  const [availableMicrophones, setAvailableMicrophones] = useState<MediaDeviceInfo[]>([])
-  const [availableSpeakers, setAvailableSpeakers] = useState<MediaDeviceInfo[]>([])
-  const [selectedMicId, setSelectedMicId] = useState<string>('default')
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>('default')
-  const [micPermissionGranted, setMicPermissionGranted] = useState<boolean>(false)
-  const [micPermissionStatus, setMicPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'checking'>('prompt')
-
-  // Audio Player State
-  const [playingRecordingId, setPlayingRecordingId] = useState<string | null>(null)
-  const audioRefs = useRef<{ [key: string]: HTMLAudioElement | null }>({})
-  const recordingUrlCache = useRef<{ [key: string]: string }>({}) // Key: twilio_sid or meeting_id
-  const fetchingRecordings = useRef<Set<string>>(new Set()) // Key: twilio_sid or meeting_id
-
-  // Dialog State
-  const [dialog, setDialog] = useState<{
-    isOpen: boolean
-    title: string
-    message: string
-    type: 'success' | 'error' | 'warning' | 'info'
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'info'
-  })
-
-  // Twilio Device
-  const deviceRef = useRef<Device | null>(null)
-  const activeCallRef = useRef<any>(null)
-  const callDurationRef = useRef<NodeJS.Timeout | null>(null)
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null) // CRITICAL: For playing remote audio
-
-  // Phone number validation function
-  const validatePhoneNumber = (phone: string): { valid: boolean; error?: string } => {
-    if (!phone || !phone.trim()) {
-      return { valid: false, error: 'Phone number is required' }
-    }
-
-    // Remove spaces, dashes, and parentheses for validation
-    const cleaned = phone.trim().replace(/[\s\-\(\)]/g, '')
-    
-    // Check if it starts with + (required for international format)
-    if (!cleaned.startsWith('+')) {
-      // If no +, add it but warn user
-      if (!/^\d+$/.test(cleaned)) {
-        return {
-          valid: false,
-          error: 'Phone number must include country code. Format: +1234567890'
-        }
-      }
-    }
-
-    // After adding +, validate the format
-    const formatted = cleaned.startsWith('+') ? cleaned : `+${cleaned}`
-    
-    // Phone number should be 10-16 digits after +
-    const digitsAfterPlus = formatted.substring(1)
-    
-    if (!/^\d+$/.test(digitsAfterPlus)) {
-      return {
-        valid: false,
-        error: 'Phone number can only contain numbers and +. Remove spaces, dashes, or letters.'
-      }
-    }
-
-    if (digitsAfterPlus.length < 10) {
-      return {
-        valid: false,
-        error: 'Phone number is too short. Minimum 10 digits required (including country code).'
-      }
-    }
-
-    if (digitsAfterPlus.length > 15) {
-      return {
-        valid: false,
-        error: 'Phone number is too long. Maximum 15 digits allowed (including country code).'
-      }
-    }
-
-    // Common invalid patterns
-    if (digitsAfterPlus.match(/^0+$/)) {
-      return {
-        valid: false,
-        error: 'Invalid phone number. Number cannot be all zeros.'
-      }
-    }
-
-    // Check for obviously invalid numbers (too many repeated digits)
-    if (/(\d)\1{8,}/.test(digitsAfterPlus)) {
-      return {
-        valid: false,
-        error: 'Phone number appears invalid. Too many repeated digits.'
-      }
-    }
-
-    return { valid: true }
-  }
-
+  // Update current Phoenix time every minute
   useEffect(() => {
-    fetchPatients()
-    fetchHistory()
-    initializeTwilioDevice()
-    // Try to load devices with permission request
-    loadAudioDevices(true)
-    
-    // Listen for device changes (e.g., user plugs in new device)
-    const handleDeviceChange = () => {
-      loadAudioDevices(false) // Don't re-request permission on device change
+    const updateTime = () => {
+      const now = new Date()
+      
+      // Get Phoenix date
+      const phoenixDateFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+      const phoenixDateStr = phoenixDateFormatter.format(now)
+      
+      // Get Phoenix time in 24-hour format for calculations
+      const phoenixTime24 = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+      }).format(now)
+      const [hour24, minute] = phoenixTime24.split(':').map(Number)
+      
+      // Also get the 12-hour formatted time for display
+      const phoenixTimeFormatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Phoenix',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(now)
+      
+      setCurrentPhoenixTime({ hour: hour24, minute, formatted: phoenixTimeFormatted, dateStr: phoenixDateStr })
+      console.log('🕐 Phoenix NOW:', phoenixDateStr, phoenixTimeFormatted, '(24h:', hour24 + ':' + String(minute).padStart(2, '0') + ')')
     }
-    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
     
-    return () => {
-      if (deviceRef.current) {
-        deviceRef.current.destroy()
-      }
-      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange)
-    }
+    updateTime() // Run immediately
+    const interval = setInterval(updateTime, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
+
+  // Generate particles IMMEDIATELY on mount (no waiting for loading)
+  useEffect(() => {
+    const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ff0080', '#00ffcc']
+    const shapes = ['circle', 'square', 'diamond']
+    const newParticles = Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: Math.random() * 16 + 8,
+      duration: Math.random() * 12 + 8,
+      delay: Math.random() * 8,
+      shape: shapes[Math.floor(Math.random() * shapes.length)]
+    }))
+    setParticles(newParticles)
+    console.log('🎉 Particles generated:', newParticles.length)
   }, [])
 
   useEffect(() => {
-    if (selectedPatient) {
-      const patientPhone = selectedPatient.mobile_phone || ''
-      setSmsTo(patientPhone)
-      setPhoneNumber(patientPhone)
+    fetchCurrentDoctor()
+  }, [])
+
+  // ============================================
+  // CELEBRATION EFFECT - FRONTEND ONLY (Added)
+  // ============================================
+  useEffect(() => {
+    if (!loading && !celebrationTriggeredRef.current) {
+      celebrationTriggeredRef.current = true
+      console.log('🎊 Celebration triggered!')
       
-      // Validate patient's phone number and show warning if invalid
-      if (patientPhone) {
-        const phoneValidation = validatePhoneNumber(patientPhone)
-        if (!phoneValidation.valid) {
-          setDialog({
-            isOpen: true,
-            title: 'Invalid Patient Phone Number',
-            message: `The selected patient has an invalid phone number format: ${phoneValidation.error}. Please update the patient's phone number or enter a different number.`,
-            type: 'warning'
-          })
+      // Generate confetti burst
+      const confettiColors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff6600', '#9933ff', '#00ff88', '#ff0080']
+      const newConfetti = Array.from({ length: 80 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+        delay: Math.random() * 3
+      }))
+      setConfetti(newConfetti)
+      console.log('🎊 Confetti generated:', newConfetti.length)
+      
+      // Show welcome banner immediately
+      setShowWelcome(true)
+      
+      // Play celebration sound (may be blocked by browser autoplay policy)
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        const playNote = (freq: number, startTime: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = freq
+          osc.type = 'sine'
+          gain.gain.setValueAtTime(0.2, startTime)
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
+          osc.start(startTime)
+          osc.stop(startTime + duration)
         }
+        const now = ctx.currentTime
+        playNote(523.25, now, 0.15)        // C5
+        playNote(659.25, now + 0.1, 0.15)  // E5
+        playNote(783.99, now + 0.2, 0.2)   // G5
+        playNote(1046.50, now + 0.35, 0.3) // C6
+        setSoundEnabled(true)
+      } catch (e) {
+        console.log('Audio blocked - will play on first click')
+      }
+      
+      // Auto-hide welcome and confetti
+      setTimeout(() => setShowWelcome(false), 10000)
+      setTimeout(() => setConfetti([]), 6000)
+    }
+  }, [loading])
+
+  // ============================================
+  // AUTO-SCROLL TO CURRENT TIME - FRONTEND ONLY
+  // ============================================
+  useEffect(() => {
+    if (!loading && calendarScrollRef.current && currentPhoenixTime.hour > 0) {
+      // Wait a bit for DOM to render
+      setTimeout(() => {
+        if (currentTimeRowRef.current) {
+          currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          console.log('📍 Auto-scrolled to current time row')
+        }
+      }, 800)
+    }
+  }, [loading, currentPhoenixTime.hour])
+
+  // Check if a time slot is the current time slot
+  const isCurrentTimeSlot = useCallback((time: Date) => {
+    const { hour, minute } = currentPhoenixTime
+    const slotHour = time.getUTCHours()
+    const slotMinute = time.getUTCMinutes()
+    // Match if within the same 30-minute slot
+    if (slotHour === hour) {
+      if (minute < 30 && slotMinute === 0) return true
+      if (minute >= 30 && slotMinute === 30) return true
+    }
+    return false
+  }, [currentPhoenixTime])
+
+  // Check if a date is today (in Phoenix timezone)
+  const isToday = useCallback((date: Date) => {
+    // Get today in Phoenix timezone using the server/client time
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixTodayStr = phoenixFormatter.format(now)
+    const [todayMonth, todayDay, todayYear] = phoenixTodayStr.split('/').map(Number)
+    
+    // The calendar date is a local Date object
+    const calMonth = date.getMonth() + 1
+    const calDay = date.getDate()
+    const calYear = date.getFullYear()
+    
+    const isMatch = calYear === todayYear && calMonth === todayMonth && calDay === todayDay
+    
+    // Debug logging
+    console.log('📍 isToday check:', {
+      phoenixToday: `${todayMonth}/${todayDay}/${todayYear}`,
+      calendarDate: `${calMonth}/${calDay}/${calYear}`,
+      isMatch
+    })
+    
+    return isMatch
+  }, [])
+
+  // Go to today (in Phoenix timezone)
+  const goToToday = () => {
+    const now = new Date()
+    const phoenixFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Phoenix',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+    const phoenixStr = phoenixFormatter.format(now)
+    const [month, day, year] = phoenixStr.split('/').map(Number)
+    const phoenixDate = new Date(year, month - 1, day, 12, 0, 0)
+    console.log('📍 Going to Phoenix today:', month, '/', day, '/', year)
+    setCurrentDate(phoenixDate)
+    // Scroll to current time after state update
+    setTimeout(() => {
+      if (currentTimeRowRef.current) {
+        currentTimeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+  }
+
+  // Toggle effects (particles + confetti)
+  const toggleEffects = () => {
+    setShowEffects(!showEffects)
+    if (!showEffects) {
+      // Re-generate particles when turning back on
+      const colors = ['#00ff88', '#00f5ff', '#ff00ff', '#ffff00', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ff0080', '#00ffcc']
+      const shapes = ['circle', 'square', 'diamond']
+      const newParticles = Array.from({ length: 60 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: Math.random() * 16 + 8,
+        duration: Math.random() * 12 + 8,
+        delay: Math.random() * 8,
+        shape: shapes[Math.floor(Math.random() * shapes.length)]
+      }))
+      setParticles(newParticles)
+    }
+  }
+
+  // ============================================
+  // SOUND EFFECTS - FRONTEND ONLY (Added)
+  // ============================================
+  const playClickSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      
+      // If first sound, play celebration chime!
+      if (!soundEnabled) {
+        setSoundEnabled(true)
+        const playNote = (freq: number, startTime: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = freq
+          osc.type = 'sine'
+          gain.gain.setValueAtTime(0.2, startTime)
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration)
+          osc.start(startTime)
+          osc.stop(startTime + duration)
+        }
+        const now = ctx.currentTime
+        playNote(523.25, now, 0.15)
+        playNote(659.25, now + 0.1, 0.15)
+        playNote(783.99, now + 0.2, 0.2)
+        playNote(1046.50, now + 0.35, 0.3)
+      } else {
+        // Normal click sound
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.value = 880
+        osc.type = 'sine'
+        gain.gain.setValueAtTime(0.12, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.08)
+      }
+    } catch (e) {}
+  }
+
+  const playHoverSound = () => {
+    if (!soundEnabled) return // Don't play hover until first click
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 1200
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0.04, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.04)
+    } catch (e) {}
+  }
+
+  const getWeekDates = (date: Date) => {
+    // Use the passed date to calculate the week
+    // The date passed is currentDate which represents what week we want to show
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const day = date.getDate()
+    
+    // Create a date for the start calculation
+    const targetDate = new Date(year, month, day, 12, 0, 0) // Use noon to avoid DST issues
+    
+    // Calculate the Monday of the week containing this date
+    const dayOfWeek = targetDate.getDay() // 0 = Sunday, 1 = Monday, etc.
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Get to Monday
+    
+    const monday = new Date(targetDate)
+    monday.setDate(targetDate.getDate() + mondayOffset)
+    
+    const dates = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      dates.push(d)
+    }
+    
+    console.log('📆 Showing week for date:', month + 1, '/', day, '/', year)
+    console.log('📆 Week dates:', dates.map(d => `${d.getMonth()+1}/${d.getDate()}`).join(', '))
+    
+    return dates
+  }
+
+  const getMonthDates = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    
+    const dates = []
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      dates.push(new Date(year, month, day))
+    }
+    return dates
+  }
+
+  const getThreeMonthDates = (date: Date) => {
+    const dates: Date[] = []
+    const startMonth = date.getMonth()
+    const year = date.getFullYear()
+    
+    for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
+      const currentMonth = new Date(year, startMonth + monthOffset, 1)
+      const lastDay = new Date(year, startMonth + monthOffset + 1, 0)
+      
+      for (let day = 1; day <= lastDay.getDate(); day++) {
+        dates.push(new Date(year, startMonth + monthOffset, day))
       }
     }
-  }, [selectedPatient])
+    return dates
+  }
 
-  const fetchPatients = async () => {
+  const getVisibleDates = () => {
+    if (calendarViewType === 'week') {
+      return getWeekDates(currentDate)
+    } else if (calendarViewType === 'month') {
+      return getMonthDates(currentDate)
+    } else {
+      return getThreeMonthDates(currentDate)
+    }
+  }
+
+  // Memoize time slots to avoid recreating on every render
+  // CRITICAL: Create time slots explicitly as Phoenix time, not browser local time
+  // This ensures the calendar works correctly regardless of where the doctor views it from
+  // Normal doctor hours: 9 AM to 6 PM, but also include any appointment times outside this range
+  const timeSlots = useMemo(() => {
+    const slots: Date[] = []
+    const hoursSet = new Set<string>()
+    
+    // Default doctor hours: 9 AM to 6 PM
+    for (let hour = 9; hour <= 18; hour++) {
+      hoursSet.add(`${hour}:0`)
+      hoursSet.add(`${hour}:30`)
+    }
+    
+    // Also include hours for any existing appointments outside normal hours
+    if (appointments && appointments.length > 0) {
+      appointments.forEach(apt => {
+        if (apt.requested_date_time) {
+          try {
+            const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+            const aptHour = aptDate.getUTCHours()
+            const aptMinute = aptDate.getUTCMinutes() < 30 ? 0 : 30
+            
+            // Add this slot
+            hoursSet.add(`${aptHour}:${aptMinute}`)
+            
+            // Add surrounding slots for context
+            if (aptMinute === 0 && aptHour > 0) {
+              hoursSet.add(`${aptHour - 1}:30`)
+            }
+            if (aptMinute === 30 && aptHour < 23) {
+              hoursSet.add(`${aptHour + 1}:0`)
+            }
+          } catch (e) {
+            console.error('Error processing appointment time:', e)
+          }
+        }
+      })
+    }
+    
+    // Convert to sorted array and create time slots
+    const sortedHours = Array.from(hoursSet)
+      .map(h => {
+        const [hour, minute] = h.split(':').map(Number)
+        return { hour, minute }
+      })
+      .filter(h => h.hour >= 0 && h.hour <= 23)
+      .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute))
+    
+    sortedHours.forEach(({ hour, minute }) => {
+      const time = createPhoenixTimeSlot(hour, minute)
+      slots.push(time)
+    })
+    
+    console.log('📅 Time slots generated:', sortedHours.length, 'slots from', sortedHours[0]?.hour + ':' + sortedHours[0]?.minute, 'to', sortedHours[sortedHours.length-1]?.hour + ':' + sortedHours[sortedHours.length-1]?.minute)
+    
+    return slots
+  }, [appointments])
+
+  const formatTime = (date: Date) => {
+    // CRITICAL: Time slots are now Phoenix time (UTC values representing Phoenix local time)
+    // Use UTC methods to extract hour/minute since they represent Phoenix time
+    const hours = date.getUTCHours()
+    const minutes = date.getUTCMinutes()
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours % 12 || 12
+    const displayMinutes = minutes.toString().padStart(2, '0')
+    return `${displayHours}:${displayMinutes} ${period}`
+  }
+
+  // Helper function to get the actual appointment time from appointment object
+  // Uses UTC methods since convertToTimezone stores doctor's local time in UTC values
+  const getAppointmentActualTime = (appointment: CalendarAppointment): string => {
+    if (!appointment.requested_date_time) return ''
+    
+    // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+    const doctorTimezone = 'America/Phoenix'
+    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+    
+    // Use UTC methods since convertToTimezone returns UTC values that represent doctor's local time
+    const hours = appointmentDate.getUTCHours()
+    const minutes = appointmentDate.getUTCMinutes()
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours % 12 || 12
+    const displayMinutes = minutes.toString().padStart(2, '0')
+    
+    return `${displayHours}:${displayMinutes} ${period}`
+  }
+
+  // Helper function to get the reason from clinical_notes table
+  const getAppointmentReason = (appointment: CalendarAppointment): string => {
+    // First check clinical_notes for chief_complaint or subjective notes
+    if (appointment.clinical_notes && appointment.clinical_notes.length > 0) {
+      // Look for chief_complaint or subjective note type
+      const reasonNote = appointment.clinical_notes.find(
+        note => note.note_type === 'chief_complaint' || note.note_type === 'subjective'
+      )
+      if (reasonNote?.content) {
+        return reasonNote.content
+      }
+    }
+    
+    // Fallback to other fields
+    return appointment.chief_complaint || 
+           appointment.patients?.chief_complaint || 
+           appointment.reason || 
+           ''
+  }
+
+  // Helper function to round a time to the nearest 30-minute slot
+  const roundToNearestSlot = (appointmentDate: Date): Date => {
+    const rounded = new Date(appointmentDate)
+    // Use UTC methods since convertToTimezone returns UTC dates
+    const minutes = appointmentDate.getUTCMinutes()
+    const hours = appointmentDate.getUTCHours()
+    
+    // Round to nearest 30-minute slot (:00 or :30)
+    if (minutes < 15) {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours)
+    } else if (minutes < 45) {
+      rounded.setUTCMinutes(30, 0, 0)
+      rounded.setUTCHours(hours)
+    } else {
+      rounded.setUTCMinutes(0, 0, 0)
+      rounded.setUTCHours(hours + 1)
+    }
+    
+    return rounded
+  }
+
+  // Create a memoized appointment lookup map for O(1) access
+  const appointmentMap = useMemo(() => {
+    const map = new Map<string, CalendarAppointment>()
+    
+    appointments.forEach(appointment => {
+      if (!appointment.requested_date_time) {
+        return
+      }
+      
+      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+      // All appointments are stored in Phoenix time, so we always use Phoenix for display
+      const doctorTimezone = 'America/Phoenix'
+      // Convert the UTC date to Phoenix timezone first
+      const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+      // Get date string from the converted date (which has UTC values representing Phoenix local time)
+      const dateStr = getDateString(appointmentDate, doctorTimezone)
+      const roundedSlot = roundToNearestSlot(appointmentDate)
+      
+      // Extract hour and minute from the rounded slot in doctor's timezone
+      // Since convertToTimezone returns a Date with UTC values representing doctor's local time,
+      // we use UTC methods to get the hour/minute
+      const hour = roundedSlot.getUTCHours()
+      const minute = roundedSlot.getUTCMinutes()
+      const key = `${dateStr}_${hour}_${minute}`
+      
+      map.set(key, appointment)
+    })
+    
+    return map
+  }, [appointments])
+
+  const getAppointmentForSlot = useCallback((date: Date, time: Date) => {
+    // The calendar displays dates and time slots (5:00 AM - 8:00 PM) which represent
+    // the doctor's timezone hours. CRITICAL: Provider timezone is ALWAYS America/Phoenix
+    const doctorTimezone = 'America/Phoenix'
+    
+    // Convert the date to Phoenix timezone first (matching how appointments are mapped)
+    const dateInPhoenix = convertToTimezone(date.toISOString(), doctorTimezone)
+    // Format the date string from the converted date (which has UTC values representing Phoenix local time)
+    const slotDateStr = getDateString(dateInPhoenix, doctorTimezone)
+    
+    // CRITICAL: Time slots are now created explicitly as Phoenix time using createPhoenixTimeSlot()
+    // This means time.getUTCHours() and time.getUTCMinutes() already represent Phoenix time
+    // (since createPhoenixTimeSlot creates a UTC Date representing Phoenix local time)
+    const hour = time.getUTCHours()
+    const minute = time.getUTCMinutes()
+    
+    const key = `${slotDateStr}_${hour}_${minute}`
+    
+    const found = appointmentMap.get(key) || null
+    
+    return found
+  }, [appointmentMap, appointments])
+
+  // Memoize visible dates - must be before any conditional returns
+  const visibleDates = useMemo(() => {
+    if (calendarViewType === 'week') {
+      return getWeekDates(currentDate)
+    } else if (calendarViewType === 'month') {
+      return getMonthDates(currentDate)
+    } else {
+      return getThreeMonthDates(currentDate)
+    }
+  }, [currentDate, calendarViewType])
+
+  const navigateCalendar = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentDate)
+    if (calendarViewType === 'week') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7))
+    } else if (calendarViewType === 'month') {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1))
+    } else if (calendarViewType === '3month') {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 3 : -3))
+    }
+    setCurrentDate(newDate)
+  }
+
+  const fetchCurrentDoctor = async () => {
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          phone,
-          email
-        `)
-        .not('phone', 'is', null)
+      // Get the current user from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        console.error('No authenticated user found')
+        setLoading(false)
+        return
+      }
 
-      if (error) throw error
+      // Get the doctor record associated with this user's email
+      const { data: doctor, error } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('email', user.email)
+        .single()
 
-      const patientsList: Patient[] = (data || []).map((item: any) => ({
-        id: item.id,
-        first_name: item.first_name || '',
-        last_name: item.last_name || '',
-        mobile_phone: item.phone || '',
-        email: item.email || ''
-      }))
+      if (error) {
+        console.error('Error fetching doctor:', error)
+        setLoading(false)
+        return
+      }
 
-      setPatients(patientsList)
+      if (doctor) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Current doctor ID:', doctor.id)
+        }
+        setCurrentDoctorId(doctor.id)
+        // Fetch appointments for this doctor
+        fetchAppointments(doctor.id)
+      }
     } catch (error) {
-      console.error('Error fetching patients:', error)
-    } finally {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error fetching current doctor:', error)
+      }
       setLoading(false)
     }
   }
 
-  const fetchHistory = async () => {
+  const fetchAppointments = useCallback(async (doctorId: string, skipLoading = false) => {
     try {
-      // Get access token for authentication
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      if (!skipLoading) {
+        setLoading(true)
+      }
+      
+      // Fetch appointments excluding cancelled - use * to get all fields for type safety
+      // Include clinical_notes to get the reason/subjective notes
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          doctors!appointments_doctor_id_fkey(timezone),
+          patients!appointments_patient_id_fkey(first_name, last_name, email, phone, chief_complaint),
+          clinical_notes(id, note_type, content)
+        `)
+        .eq('doctor_id', doctorId)
+        .neq('status', 'cancelled')
+        .order('requested_date_time', { ascending: true })
 
-      const response = await fetch('/api/communication/history', {
-        method: 'GET',
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('❌ Error fetching appointments:', error)
+        }
+        return
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📅 Fetched appointments:', data?.length || 0)
+        if (data && data.length > 0) {
+          console.log('📅 Sample appointment:', {
+            id: data[0].id,
+            requested_date_time: data[0].requested_date_time,
+            status: data[0].status,
+            doctor_id: data[0].doctor_id,
+            patient_name: `${data[0].patients?.first_name} ${data[0].patients?.last_name}`
+          })
+        }
+      }
+
+      // Update state immediately - cast to fix type issues with Supabase relations
+      setAppointments((data || []) as any)
+    } catch (error) {
+      console.error('❌ Error fetching appointments:', error)
+    } finally {
+      if (!skipLoading) {
+        setLoading(false)
+      }
+    }
+  }, [])
+
+  // Detect instant visits and manage queue
+  useEffect(() => {
+    if (!currentDoctorId) return
+
+    const instantVisits = appointments.filter(apt => 
+      apt.visit_type === 'instant' && 
+      apt.status !== 'completed' && 
+      apt.status !== 'cancelled'
+    )
+
+    setInstantVisitQueue(instantVisits)
+
+    // Auto-open modal if there's a new instant visit and none is active
+    if (instantVisits.length > 0 && !activeInstantVisit) {
+      setActiveInstantVisit(instantVisits[0])
+      setIsQueueModalOpen(true)
+    }
+  }, [appointments, currentDoctorId, activeInstantVisit])
+
+  // Real-time subscription for instant visits
+  useEffect(() => {
+    if (!currentDoctorId) return
+
+    const channel = supabase
+      .channel('instant-visits-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'appointments',
+          filter: `doctor_id=eq.${currentDoctorId}`
+        },
+        (payload) => {
+          const newAppointment = payload.new as CalendarAppointment
+          
+          // Check if it's an instant visit
+          if (newAppointment.visit_type === 'instant' && 
+              newAppointment.status !== 'completed' && 
+              newAppointment.status !== 'cancelled') {
+            
+            // Refresh appointments to get full data (including patient info)
+            if (currentDoctorId) {
+              fetchAppointments(currentDoctorId, true)
+            }
+            
+            // Show notification
+            setNotification({
+              type: 'success',
+              message: `⚡ New instant visit: ${newAppointment.patients?.first_name || 'Patient'} ${newAppointment.patients?.last_name || ''}`
+            })
+            setTimeout(() => setNotification(null), 5000)
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'appointments',
+          filter: `doctor_id=eq.${currentDoctorId}`
+        },
+        (payload) => {
+          const updatedAppointment = payload.new as CalendarAppointment
+          
+          // If instant visit was completed or cancelled, refresh
+          if (updatedAppointment.visit_type === 'instant' && 
+              (updatedAppointment.status === 'completed' || updatedAppointment.status === 'cancelled')) {
+            if (currentDoctorId) {
+              fetchAppointments(currentDoctorId, true)
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentDoctorId, fetchAppointments])
+
+  const handleStartCall = async (appointmentId: string) => {
+    // Find appointment and open Zoom if available
+    const appointment = appointments.find(apt => apt.id === appointmentId)
+    if (appointment?.zoom_meeting_url) {
+      window.open(appointment.zoom_meeting_url, '_blank')
+    } else {
+      setNotification({
+        type: 'error',
+        message: 'No Zoom meeting link available for this appointment'
+      })
+      setTimeout(() => setNotification(null), 5000)
+    }
+  }
+
+  const handleCompleteInstantVisit = async (appointmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'completed' })
+        .eq('id', appointmentId)
+
+      if (error) throw error
+
+      setNotification({
+        type: 'success',
+        message: 'Instant visit completed'
+      })
+      setTimeout(() => setNotification(null), 5000)
+
+      // Close modal and refresh
+      setIsQueueModalOpen(false)
+      setActiveInstantVisit(null)
+      if (currentDoctorId) fetchAppointments(currentDoctorId)
+    } catch (error) {
+      console.error('Error completing visit:', error)
+      setNotification({
+        type: 'error',
+        message: 'Failed to complete visit'
+      })
+      setTimeout(() => setNotification(null), 5000)
+    }
+  }
+
+  const handleCancelInstantVisit = async (appointmentId: string) => {
+    if (!confirm('Remove this patient from the instant visit queue?')) return
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', appointmentId)
+
+      if (error) throw error
+
+      setNotification({
+        type: 'success',
+        message: 'Patient removed from queue'
+      })
+      setTimeout(() => setNotification(null), 5000)
+
+      // Close modal and refresh
+      setIsQueueModalOpen(false)
+      setActiveInstantVisit(null)
+      if (currentDoctorId) fetchAppointments(currentDoctorId)
+    } catch (error) {
+      console.error('Error cancelling visit:', error)
+      setNotification({
+        type: 'error',
+        message: 'Failed to remove patient'
+      })
+      setTimeout(() => setNotification(null), 5000)
+    }
+  }
+
+  const handleAppointmentAction = async (appointmentId: string, action: 'accept' | 'reject' | 'complete') => {
+    try {
+      if (action === 'complete') {
+        // Handle completion separately (no payment/email needed)
+        const { error } = await supabase
+          .from('appointments')
+          .update({ status: 'completed' })
+          .eq('id', appointmentId)
+
+        if (error) {
+          console.error('Error updating appointment:', error)
+          setNotification({
+            type: 'error',
+            message: 'Failed to mark appointment as complete'
+          })
+          setTimeout(() => setNotification(null), 5000)
+          return
+        }
+
+        setNotification({
+          type: 'success',
+          message: 'Appointment marked as complete'
+        })
+        setTimeout(() => setNotification(null), 5000)
+        if (currentDoctorId) fetchAppointments(currentDoctorId)
+        return
+      }
+
+      // Handle accept/reject with payment and email
+      const endpoint = action === 'accept' ? '/api/appointments/accept' : '/api/appointments/reject'
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': accessToken ? `Bearer ${accessToken}` : '',
         },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('Failed to fetch history:', response.status, errorData)
-        setDialog({
-          isOpen: true,
-          title: 'Error',
-          message: errorData.error || `Failed to fetch history (${response.status})`,
-          type: 'error'
-        })
-        return
-      }
-
-      const data = await response.json()
-      
-      if (data.success && data.history) {
-        console.log(`✅ Loaded ${data.history.length} history records`)
-        setHistory(data.history)
-        
-        // Cache recording URLs to avoid re-fetching
-        data.history.forEach((item: CommunicationHistory) => {
-          if (item.recording_url) {
-            // Cache by twilio_sid for calls or meeting_id for video calls
-            const cacheKey = item.twilio_sid || item.meeting_id
-            if (cacheKey) {
-              recordingUrlCache.current[cacheKey] = item.recording_url
-            }
-          }
-        })
-      } else {
-        console.warn('No history data received:', data)
-        setHistory([])
-      }
-    } catch (error) {
-      console.error('❌ Error fetching history:', error)
-      setHistory([])
-    }
-  }
-
-  const initializeTwilioDevice = async () => {
-    try {
-      // First, verify the user is authenticated with Supabase client
-      const { data: { user: supabaseUser }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError || !supabaseUser) {
-        console.error('Not authenticated:', authError)
-        setCallStatus('Please login to make calls')
-        return
-      }
-
-      // Get user data
-      const user = await getCurrentUser()
-      if (!user) {
-        console.error('User not found or not a doctor')
-        setCallStatus('Doctor account not found. Please login as a doctor.')
-        return
-      }
-
-      console.log('User authenticated, fetching Twilio token...', { email: user.email })
-
-      // Get the access token from Supabase session
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        console.error('No access token found in session')
-        setCallStatus('Session expired. Please refresh and login again.')
-        return
-      }
-
-      // Get Twilio token - send access token as Authorization header
-      const response = await fetch('/api/communication/twilio-token', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        credentials: 'include', // Ensure cookies are sent
-        body: JSON.stringify({ identity: user.email })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Failed to get Twilio token:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        })
-        
-        if (response.status === 401) {
-          setCallStatus('Authentication failed. Please refresh the page and login again.')
-        } else {
-          setCallStatus(`Error: ${errorData.error || errorData.details || 'Failed to get Twilio token'}`)
-        }
-        return
-      }
-
-      const data = await response.json()
-      const { token } = data
-      
-      if (!token) {
-        console.error('Failed to get Twilio token: No token in response', data)
-        setCallStatus('Failed to get Twilio token: Invalid response')
-        return
-      }
-
-      console.log('Twilio token received, initializing device...')
-
-      // Dynamically import Twilio Device
-      // Twilio Voice SDK v2.x exports Device as a named export
-      const TwilioSDK = await import('@twilio/voice-sdk')
-      // Device can be exported as default, named export, or in Device property
-      const Device = TwilioSDK.Device || (TwilioSDK as any).default || TwilioSDK
-      
-      // Verify Device is a constructor
-      if (typeof Device !== 'function') {
-        console.error('Device is not a constructor:', typeof Device, Device)
-        throw new Error('Failed to import Twilio Device class')
-      }
-
-      // Initialize Twilio Device with WebSocket support
-      const device = new Device(token, {
-        logLevel: 1,
-        codecPreferences: ['opus', 'pcmu'] as any,
-        enableRingtones: true,
-        allowIncomingWhileBusy: false
-      } as any)
-
-      // Track device state changes
-      device.on('registered', () => {
-        console.log('✅ Twilio device registered and ready')
-        setCallStatus('Ready to make calls')
-        setIsDeviceReady(true)
-      })
-
-      device.on('registering', () => {
-        console.log('🔄 Twilio device registering...')
-        setCallStatus('Registering device...')
-        setIsDeviceReady(false)
-      })
-
-      device.on('tokenWillExpire', async () => {
-        console.log('🔄 Token expiring, refreshing...')
-        setCallStatus('Refreshing token...')
-        // Refresh token
-        const refreshResponse = await fetch('/api/communication/twilio-token', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify({ identity: user.email })
-        })
-        const { token: newToken } = await refreshResponse.json()
-        if (newToken) {
-          device.updateToken(newToken)
-          setCallStatus('Ready to make calls')
-        }
-      })
-
-      device.on('error', (error: any) => {
-        console.error('❌ Twilio device error:', error)
-        setCallStatus(`Error: ${error.message || error}`)
-        setIsCalling(false)
-        setIsDeviceReady(false)
-      })
-
-      device.on('unregistered', () => {
-        console.log('⚠️ Twilio device unregistered')
-        setCallStatus('Device disconnected. Reconnecting...')
-        setIsDeviceReady(false)
-      })
-
-      device.on('incoming', (call: Call) => {
-        console.log('📞 Incoming call:', call)
-        activeCallRef.current = call
-        setIsCalling(true)
-        setCallStatus('Incoming call...')
-        
-        // Setup incoming call event handlers
-        setupCallHandlers(call)
-      })
-
-      deviceRef.current = device
-      
-      // Register the device immediately
-      device.register()
-      
-      // Apply audio devices when device is ready
-      device.on('registered', () => {
-        applyAudioDevices()
-      })
-      
-      // Set initial status
-      console.log('Device state:', device.state)
-      if (device.state === 'registered') {
-        setCallStatus('Ready to make calls')
-        setIsDeviceReady(true)
-        applyAudioDevices()
-      } else {
-        setCallStatus('Registering device...')
-      }
-    } catch (error) {
-      console.error('Error initializing Twilio device:', error)
-      setCallStatus('Failed to initialize device')
-    }
-  }
-
-  const setupCallHandlers = (call: Call) => {
-    console.log('📞 Setting up call handlers for call:', {
-      direction: (call as any).direction,
-      status: (call as any).status,
-      parameters: (call as any).parameters
-    })
-
-    call.on('accept', () => {
-      console.log('✅ Call accepted - connection established')
-      console.log('Call details:', {
-        sid: (call as any).parameters?.CallSid || (call as any).sid,
-        to: (call as any).parameters?.To,
-        from: (call as any).parameters?.From
-      })
-      setCallStatus('Call connected')
-      setIsCalling(true)
-      setCallDuration(0)
-      
-      // Apply selected audio devices when call is accepted
-      applyAudioDevices(call)
-      
-      // Verify audio tracks are active
-      const localAudioTracks = (call as any).localStream?.getAudioTracks() || []
-      const remoteAudioTracks = (call as any).remoteStream?.getAudioTracks() || []
-      
-      console.log('📊 Audio tracks:', {
-        local: localAudioTracks.length,
-        remote: remoteAudioTracks.length,
-        localEnabled: localAudioTracks.filter((t: MediaStreamTrack) => t.enabled).length,
-        remoteEnabled: remoteAudioTracks.filter((t: MediaStreamTrack) => t.enabled).length
-      })
-      
-      // CRITICAL: Check if local audio tracks exist
-      if (localAudioTracks.length === 0) {
-        console.error('❌ NO LOCAL AUDIO TRACKS! Microphone not working!')
-        console.error('This means the recipient CANNOT hear you!')
-        console.error('Check: 1) Microphone permission 2) Selected microphone device 3) rtcConstraints')
-      }
-
-      // Detailed audio diagnostics
-      localAudioTracks.forEach((track: MediaStreamTrack, idx: number) => {
-        const settings = track.getSettings ? track.getSettings() : {}
-        console.log(`🎤 Local audio track ${idx}:`, {
-          id: track.id,
-          kind: track.kind,
-          label: track.label,
-          enabled: track.enabled,
-          muted: track.muted,
-          readyState: track.readyState,
-          deviceId: settings.deviceId,
-          groupId: settings.groupId,
-          settings: track.getSettings ? track.getSettings() : 'N/A'
-        })
-        
-        // CRITICAL WARNING if track is disabled or muted
-        if (!track.enabled) {
-          console.error(`❌ Local audio track ${idx} is DISABLED! Recipient cannot hear you!`)
-        }
-        if (track.muted) {
-          console.warn(`⚠️ Local audio track ${idx} is MUTED!`)
-        }
-        if (track.readyState !== 'live') {
-          console.error(`❌ Local audio track ${idx} is not LIVE! Current state: ${track.readyState}`)
-        }
-      })
-      
-      remoteAudioTracks.forEach((track: MediaStreamTrack, idx: number) => {
-        console.log(`🔊 Remote audio track ${idx}:`, {
-          id: track.id,
-          kind: track.kind,
-          label: track.label,
-          enabled: track.enabled,
-          muted: track.muted,
-          readyState: track.readyState
-        })
-      })
-      
-      // CRITICAL: Ensure remote audio is unmuted and enabled
-      // Sometimes Twilio starts with muted remote audio
-      if ((call as any).isMuted && (call as any).isMuted()) {
-        console.log('⚠️ Call is muted, attempting to unmute...')
-        try {
-          ;(call as any).mute(false)
-        } catch (err) {
-          console.error('Failed to unmute call:', err)
-        }
-      }
-      
-      // Ensure all audio tracks are enabled
-      remoteAudioTracks.forEach((track: MediaStreamTrack) => {
-        if (!track.enabled) {
-          console.log('⚠️ Enabling disabled remote audio track:', track.id)
-          track.enabled = true
-        }
-      })
-      
-      localAudioTracks.forEach((track: MediaStreamTrack) => {
-        if (!track.enabled) {
-          console.log('⚠️ Enabling disabled local audio track:', track.id)
-          track.enabled = true
-        }
-      })
-      
-      // ✨ CRITICAL FIX: Manually attach and play remote audio stream
-      // Twilio Voice SDK doesn't automatically play remote audio to speakers
-      // We must create an HTMLAudioElement and attach the remote stream
-      try {
-        const remoteStream = (call as any).remoteStream
-        if (remoteStream) {
-          console.log('🔊 Creating audio element for remote stream')
-          
-          // Create or reuse audio element
-          if (!remoteAudioRef.current) {
-            remoteAudioRef.current = new Audio()
-            remoteAudioRef.current.autoplay = true
-            console.log('✅ Created new audio element')
-          }
-          
-          // Attach remote stream to audio element
-          remoteAudioRef.current.srcObject = remoteStream
-          
-          // Set output device if selected
-          if (selectedSpeakerId && selectedSpeakerId !== 'default') {
-            if (typeof remoteAudioRef.current.setSinkId === 'function') {
-              remoteAudioRef.current.setSinkId(selectedSpeakerId)
-                .then(() => console.log('✅ Remote audio output device set:', selectedSpeakerId))
-                .catch((err: any) => console.warn('⚠️ Failed to set output device:', err))
-            }
-          }
-          
-          // Ensure audio plays
-          remoteAudioRef.current.play()
-            .then(() => console.log('✅ Remote audio playing'))
-            .catch((err: any) => {
-              console.error('❌ Failed to play remote audio:', err)
-              // Try again after a short delay
-              setTimeout(() => {
-                remoteAudioRef.current?.play()
-                  .then(() => console.log('✅ Remote audio playing (retry)'))
-                  .catch((e: any) => console.error('❌ Failed to play remote audio (retry):', e))
-              }, 500)
-            })
-          
-          console.log('🔊 Remote audio element configured:', {
-            hasStream: !!remoteAudioRef.current.srcObject,
-            paused: remoteAudioRef.current.paused,
-            muted: remoteAudioRef.current.muted,
-            volume: remoteAudioRef.current.volume
-          })
-        } else {
-          console.warn('⚠️ No remote stream available yet')
-        }
-      } catch (error) {
-        console.error('❌ Error setting up remote audio:', error)
-      }
-      
-      // Start call duration timer
-      callDurationRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1)
-      }, 1000)
-    })
-
-    // Listen for when remote stream becomes available
-    // Sometimes the remote stream arrives after the accept event
-    call.on('sample', () => {
-      // This event fires when audio samples are received
-      // Use it as a signal that remote audio is flowing
-      const remoteStream = (call as any).remoteStream
-      if (remoteStream && remoteAudioRef.current && !remoteAudioRef.current.srcObject) {
-        console.log('🔊 Remote stream now available, attaching to audio element')
-        remoteAudioRef.current.srcObject = remoteStream
-        remoteAudioRef.current.play().catch((err: any) => 
-          console.warn('⚠️ Failed to play remote audio on sample event:', err)
-        )
-      }
-    })
-
-    // Monitor media connection status
-    call.on('mute', (isMuted: boolean) => {
-      console.log('🎤 Call muted:', isMuted)
-      setCallStatus(isMuted ? 'Call connected (muted)' : 'Call connected')
-    })
-
-
-    call.on('disconnect', () => {
-      console.log('📞 Call disconnected')
-      const disconnectReason = (call as any).disconnectReason || 'Unknown'
-      const disconnectCause = (call as any).disconnectCause || 'Unknown'
-      console.log('Disconnect details:', {
-        reason: disconnectReason,
-        cause: disconnectCause,
-        status: (call as any).status
-      })
-      setCallStatus(`Call ended (${disconnectReason})`)
-      setIsCalling(false)
-      activeCallRef.current = null
-      
-      // Clear call duration timer
-      if (callDurationRef.current) {
-        clearInterval(callDurationRef.current)
-        callDurationRef.current = null
-      }
-      setCallDuration(0)
-      
-      // Cleanup remote audio element
-      if (remoteAudioRef.current) {
-        console.log('🧹 Cleaning up remote audio element')
-        remoteAudioRef.current.pause()
-        remoteAudioRef.current.srcObject = null
-        remoteAudioRef.current = null
-      }
-    })
-
-    call.on('cancel', () => {
-      console.log('❌ Call cancelled')
-      setCallStatus('Call cancelled')
-      setIsCalling(false)
-      activeCallRef.current = null
-      
-      if (callDurationRef.current) {
-        clearInterval(callDurationRef.current)
-        callDurationRef.current = null
-      }
-      setCallDuration(0)
-    })
-
-    call.on('reject', () => {
-      console.log('❌ Call rejected')
-      setCallStatus('Call rejected')
-      setIsCalling(false)
-      activeCallRef.current = null
-    })
-
-    call.on('warning', (warningName: string, warningData: any) => {
-      console.warn('⚠️ Call warning:', warningName, warningData)
-      
-      // Handle audio/network quality warnings
-      if (warningName === 'high-rtt' || warningName === 'high-jitter' || warningName === 'high-packet-loss') {
-        console.warn('📊 Network quality warning - this may affect audio quality')
-        setCallStatus('Call connected (poor network quality)')
-      }
-      
-      if (warningName === 'low-mos' || warningName === 'mos-degradation') {
-        console.warn('📉 Call quality degradation detected')
-        setCallStatus('Call connected (low quality)')
-      }
-    })
-
-    call.on('warning-cleared', (warningName: string) => {
-      console.log('✅ Warning cleared:', warningName)
-    })
-
-    call.on('error', (error: any) => {
-      console.error('❌ Call error:', error)
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        name: error.name,
-        stack: error.stack
-      })
-      setCallStatus(`Call error: ${error.message || error.code || 'Unknown error'}`)
-      setIsCalling(false)
-      activeCallRef.current = null
-      
-      if (callDurationRef.current) {
-        clearInterval(callDurationRef.current)
-        callDurationRef.current = null
-      }
-      setCallDuration(0)
-    })
-  }
-
-  const handleSendSMS = async () => {
-    // Prevent multiple simultaneous sends
-    if (isSendingSMS) {
-      return
-    }
-
-    if (!smsTo || !smsMessage) {
-      setDialog({
-        isOpen: true,
-        title: 'Missing Information',
-        message: 'Please enter phone number and message',
-        type: 'warning'
-      })
-      return
-    }
-
-    if (!smsMessage.trim()) {
-      setDialog({
-        isOpen: true,
-        title: 'Invalid Message',
-        message: 'Please enter a message',
-        type: 'warning'
-      })
-      return
-    }
-
-    // Validate phone number format
-    const phoneValidation = validatePhoneNumber(smsTo)
-    if (!phoneValidation.valid) {
-      setDialog({
-        isOpen: true,
-        title: 'Invalid Phone Number',
-        message: phoneValidation.error || 'Please enter a valid phone number with country code (e.g., +1234567890)',
-        type: 'error'
-      })
-      return
-    }
-
-    // If patient is selected, validate their phone number too
-    if (selectedPatient && selectedPatient.mobile_phone) {
-      const patientPhoneValidation = validatePhoneNumber(selectedPatient.mobile_phone)
-      if (!patientPhoneValidation.valid && smsTo === selectedPatient.mobile_phone) {
-        setDialog({
-          isOpen: true,
-          title: 'Invalid Patient Phone Number',
-          message: `The selected patient has an invalid phone number format: ${patientPhoneValidation.error}. Please enter a different number or contact support.`,
-          type: 'error'
-        })
-        return
-      }
-    }
-
-    setIsSendingSMS(true)
-
-    try {
-      // Get current user for authentication
-      const user = await getCurrentUser()
-      if (!user) {
-        setIsSendingSMS(false)
-        setDialog({
-          isOpen: true,
-          title: 'Authentication Required',
-          message: 'Please log in to send SMS',
-          type: 'warning'
-        })
-        return
-      }
-
-      // Get access token for authentication
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      // Format phone number
-      let formattedTo = smsTo.trim()
-      if (!formattedTo.startsWith('+')) {
-        formattedTo = `+${formattedTo}`
-      }
-
-      console.log('📱 Sending SMS:', {
-        to: formattedTo,
-        messageLength: smsMessage.length,
-        patientId: selectedPatient?.id || 'none'
-      })
-
-      const response = await fetch('/api/communication/sms', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': accessToken ? `Bearer ${accessToken}` : '',
-        },
-        credentials: 'include',
         body: JSON.stringify({
-          to: formattedTo,
-          message: smsMessage.trim(),
-          patientId: selectedPatient?.id
+          appointmentId,
+          reason: action === 'reject' ? 'Doctor unavailable at this time' : undefined
         })
       })
 
-      const data = await response.json()
+      const result = await response.json()
 
       if (!response.ok) {
-        console.error('❌ SMS API error:', response.status, data)
-        setIsSendingSMS(false)
-        setDialog({
-          isOpen: true,
-          title: 'Error',
-          message: data.error || 'Failed to send SMS. Please try again.',
-          type: 'error'
+        setNotification({
+          type: 'error',
+          message: result.error || `Failed to ${action} appointment`
         })
+        setTimeout(() => setNotification(null), 5000)
         return
       }
 
-      if (data.success) {
-        console.log('✅ SMS sent successfully:', data.sid)
-        setIsSendingSMS(false)
-        setDialog({
-          isOpen: true,
-          title: 'Success',
-          message: 'SMS sent successfully!',
-          type: 'success'
-        })
-        setSmsMessage('')
-        setSmsTo('') // Clear the phone number too
-        fetchHistory()
-      } else {
-        console.error('❌ SMS failed:', data.error)
-        setIsSendingSMS(false)
-        setDialog({
-          isOpen: true,
-          title: 'Error',
-          message: data.error || 'Failed to send SMS. Please try again.',
-          type: 'error'
-        })
-      }
-    } catch (error: any) {
-      console.error('❌ Error sending SMS:', error)
-      setIsSendingSMS(false)
-      setDialog({
-        isOpen: true,
-        title: 'Error',
-        message: error.message || 'Network error. Please try again.',
-        type: 'error'
-      })
-    }
-  }
-
-  const handleMakeCall = async () => {
-    // Prevent multiple simultaneous calls
-    if (isCallLoading || isCalling) {
-      return
-    }
-
-    if (!phoneNumber) {
-      setDialog({
-        isOpen: true,
-        title: 'Missing Information',
-        message: 'Please enter a phone number',
-        type: 'warning'
-      })
-      return
-    }
-
-    // Request microphone permissions before making the call
-    // Use selected microphone if available
-    try {
-      const audioConstraints: MediaTrackConstraints = selectedMicId !== 'default' && selectedMicId 
-        ? { deviceId: { exact: selectedMicId } }
-        : { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      // Show success message with details
+      let successMessage = `Appointment ${action}ed successfully`
       
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: audioConstraints, 
-        video: false 
-      })
-      // Stop the stream immediately - we just needed permission
-      stream.getTracks().forEach(track => track.stop())
-      console.log('✅ Microphone permission granted')
-      
-      // Reload devices after permission is granted (to get full device labels)
-      await loadAudioDevices()
-    } catch (error: any) {
-      console.error('❌ Microphone permission denied:', error)
-      setDialog({
-        isOpen: true,
-        title: 'Microphone Permission Required',
-        message: 'Please allow microphone access to make calls. Click the microphone icon in your browser\'s address bar and allow access.',
-        type: 'error'
-      })
-      setIsCallLoading(false)
-      return
-    }
-
-    // Validate phone number format
-    const phoneValidation = validatePhoneNumber(phoneNumber)
-    if (!phoneValidation.valid) {
-      setDialog({
-        isOpen: true,
-        title: 'Invalid Phone Number',
-        message: phoneValidation.error || 'Please enter a valid phone number with country code (e.g., +1234567890)',
-        type: 'error'
-      })
-      return
-    }
-
-    // If patient is selected, validate their phone number too
-    if (selectedPatient && selectedPatient.mobile_phone) {
-      const patientPhoneValidation = validatePhoneNumber(selectedPatient.mobile_phone)
-      if (!patientPhoneValidation.valid && phoneNumber === selectedPatient.mobile_phone) {
-        setDialog({
-          isOpen: true,
-          title: 'Invalid Patient Phone Number',
-          message: `The selected patient has an invalid phone number format: ${patientPhoneValidation.error}. Please enter a different number or contact support.`,
-          type: 'error'
-        })
-        return
-      }
-    }
-
-    if (!deviceRef.current) {
-      setDialog({
-        isOpen: true,
-        title: 'Device Not Ready',
-        message: 'Twilio device not initialized. Please wait a moment and try again.',
-        type: 'warning'
-      })
-      return
-    }
-
-    setIsCallLoading(true)
-
-    try {
-      // Check device state
-      const device = deviceRef.current
-      
-      // If device is not registered, wait for it (with timeout)
-      if (!device || device.state !== 'registered') {
-        setCallStatus('Waiting for device to register...')
-        
-        // Wait for device to be ready with timeout (10 seconds)
-        const timeout = 10000
-        const startTime = Date.now()
-        
-        await new Promise<void>((resolve, reject) => {
-          const checkReady = () => {
-            const elapsed = Date.now() - startTime
-            
-            if (device?.state === 'registered') {
-              console.log('✅ Device is now registered')
-              resolve()
-            } else if (elapsed > timeout) {
-              console.error('❌ Device registration timeout')
-              setIsCallLoading(false)
-              reject(new Error('Device registration timeout. Please refresh the page.'))
-        } else {
-              // Check again in 100ms
-              setTimeout(checkReady, 100)
-            }
-          }
-          checkReady()
-          
-          // Also listen for registered event
-          device.once('registered', () => {
-            console.log('✅ Device registered via event')
-            resolve()
-          })
-        })
-      }
-
-      setIsCalling(true)
-      setCallStatus('Connecting...')
-
-      // Format phone number (ensure it starts with +)
-      const formattedNumber = phoneNumber.startsWith('+') 
-        ? phoneNumber 
-        : `+${phoneNumber}`
-
-      console.log(`📞 Making call to: ${formattedNumber}`)
-
-      // Apply audio devices BEFORE making the call to ensure correct mic is selected
-      applyAudioDevices()
-
-      // Use Voice SDK to make the call with WebSocket support
-      // CRITICAL: Must pass rtcConstraints to enable audio with specific device
-      const audioConstraints = selectedMicId && selectedMicId !== 'default' 
-        ? { deviceId: { exact: selectedMicId } }
-        : true
-
-      console.log('🎤 Audio constraints for call:', audioConstraints)
-
-      const call = await deviceRef.current.connect({
-        params: {
-          To: formattedNumber
-        },
-        rtcConstraints: {
-          audio: audioConstraints  // Enable audio with selected microphone
+      if (action === 'accept') {
+        if (result.data.paymentCaptured) {
+          successMessage += ' • Payment captured'
         }
-      } as any)
-
-      activeCallRef.current = call
-      
-      // Setup call event handlers
-      setupCallHandlers(call)
-      
-      // Apply audio devices again after call is created (for speaker)
-      applyAudioDevices(call)
-
-      // Save to communication history immediately when call starts
-      // Save even without selected patient - patient_id will be null
-      try {
-        const user = await getCurrentUser()
-        if (user) {
-          const { data: doctor } = await supabase
-            .from('doctors')
-            .select('id')
-            .eq('email', user.email!)
-            .single()
-
-          if (doctor) {
-            // Function to save or update call history
-            const saveCallHistory = async (callSid: string, status: string) => {
-              try {
-                // Check if record already exists
-                const { data: existing } = await supabase
-                  .from('communication_history')
-                  .select('id')
-                  .eq('twilio_sid', callSid)
-                  .eq('doctor_id', doctor.id)
-                  .single()
-
-                if (existing) {
-                  // Update existing record
-                  const updateData: any = { status }
-                  if (selectedPatient?.id) {
-                    updateData.patient_id = selectedPatient.id
-                  }
-                  
-                  const { error: updateError } = await supabase
-                    .from('communication_history')
-                    .update(updateData)
-                    .eq('twilio_sid', callSid)
-                    .eq('doctor_id', doctor.id)
-                  
-                  if (updateError) {
-                    console.error('Error updating call status:', updateError)
-                  } else {
-                    console.log(`✅ Call status updated to ${status}`)
-                    fetchHistory()
-                  }
-                } else {
-                  // Insert new record
-                  const insertData: any = {
-                    doctor_id: doctor.id,
-                    type: 'call',
-                    direction: 'outbound',
-                    to_number: formattedNumber,
-                    status: status,
-                    twilio_sid: callSid
-                  }
-                  
-                  if (selectedPatient?.id) {
-                    insertData.patient_id = selectedPatient.id
-                  }
-                  
-                  const { error: insertError } = await supabase.from('communication_history').insert(insertData)
-                  
-                  if (insertError) {
-                    console.error('Error saving communication history:', insertError)
-                    console.error('Insert data:', insertData)
-                  } else {
-                    console.log(`✅ Communication history saved (${status})`)
-                    fetchHistory()
-                  }
-                }
-              } catch (err: any) {
-                console.error('Error saving/updating call history:', err)
-              }
-            }
-
-            // Store callSid for later use (using ref-like pattern)
-            let callSid: string | null = (call as any).parameters?.CallSid || (call as any).sid || null
-            
-            // Wait a moment for CallSid to be available if not immediate
-            if (!callSid) {
-              console.log('⏳ Waiting for CallSid...')
-              // Try again after a short delay
-              setTimeout(async () => {
-                const delayedCallSid = (call as any).parameters?.CallSid || (call as any).sid || null
-                if (delayedCallSid) {
-                  callSid = delayedCallSid
-                  await saveCallHistory(delayedCallSid, 'initiated')
-                } else {
-                  console.warn('⚠️ CallSid still not available after delay')
-                }
-              }, 500)
-            } else {
-              // Save immediately if CallSid is available
-              await saveCallHistory(callSid, 'initiated')
-            }
-            
-            // Also try to get CallSid when call state changes
-            call.on('ringing', () => {
-              if (!callSid) {
-                const ringingCallSid = (call as any).parameters?.CallSid || (call as any).sid || null
-                if (ringingCallSid) {
-                  callSid = ringingCallSid
-                  saveCallHistory(ringingCallSid, 'initiated').catch(console.error)
-                }
-              }
-            })
-
-            // Update when call is accepted (CallSid should definitely be available now)
-            call.on('accept', async () => {
-              const acceptedCallSid = (call as any).parameters?.CallSid || (call as any).sid || callSid
-              if (acceptedCallSid) {
-                callSid = acceptedCallSid // Store for later use
-                await saveCallHistory(acceptedCallSid, 'connected')
-              }
-            })
-
-            // Update call duration and status when disconnected
-            call.on('disconnect', async () => {
-              const disconnectedCallSid = (call as any).parameters?.CallSid || (call as any).sid || callSid
-              if (disconnectedCallSid) {
-                try {
-                  // Check current status before updating
-                  const { data: currentRecord } = await supabase
-                    .from('communication_history')
-                    .select('status')
-                    .eq('twilio_sid', disconnectedCallSid)
-                    .eq('doctor_id', doctor.id)
-                    .single()
-
-                  const finalDuration = callDuration
-                  const updateData: any = {
-                    duration: finalDuration
-                  }
-
-                  // Only update status to 'completed' if call was 'connected'
-                  // Otherwise keep the status as 'initiated' or whatever it was
-                  if (currentRecord?.status === 'connected') {
-                    updateData.status = 'completed'
-                  } else if (!currentRecord?.status || currentRecord.status === 'initiated') {
-                    // If never connected, update to 'ended' instead of 'completed'
-                    updateData.status = 'ended'
-                  }
-
-                  await supabase
-                    .from('communication_history')
-                    .update(updateData)
-                    .eq('twilio_sid', disconnectedCallSid)
-                    .eq('doctor_id', doctor.id)
-                  
-                  console.log(`✅ Call ${updateData.status || 'ended'}, duration: ${finalDuration}s`)
-                  // Refresh history after call ends
-                  fetchHistory()
-                } catch (err: any) {
-                  console.error('Error updating call duration:', err)
-                }
-              }
-            })
-          }
+        if (result.data.zoomMeeting) {
+          successMessage += ' • Zoom meeting created'
         }
-      } catch (error) {
-        console.error('Error saving communication history:', error)
-      }
-
-      setIsCallLoading(false)
-      fetchHistory()
-    } catch (error: any) {
-      console.error('❌ Error making call:', error)
-      setIsCallLoading(false)
-      setIsCalling(false)
-      setCallStatus(`Error: ${error.message || 'Failed to make call'}`)
-      setDialog({
-        isOpen: true,
-        title: 'Call Failed',
-        message: error.message || 'Failed to make call. Please try again.',
-        type: 'error'
-      })
-    }
-  }
-
-  const handleEndCall = async () => {
-    if (activeCallRef.current) {
-      console.log('📞 Ending call...')
-      activeCallRef.current.disconnect()
-      activeCallRef.current = null
-    }
-    
-    if (callDurationRef.current) {
-      clearInterval(callDurationRef.current)
-      callDurationRef.current = null
-    }
-    
-    setIsCalling(false)
-    setCallStatus('Call ended')
-    setCallDuration(0)
-    fetchHistory()
-  }
-
-  const handleToggleMute = () => {
-    if (activeCallRef.current) {
-      if (isMuted) {
-        activeCallRef.current.mute(false)
-        setIsMuted(false)
-        console.log('🔊 Unmuted')
-      } else {
-        activeCallRef.current.mute(true)
-        setIsMuted(true)
-        console.log('🔇 Muted')
-      }
-    }
-  }
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  // Request microphone permission
-  const requestMicPermission = async (): Promise<boolean> => {
-    setMicPermissionStatus('checking')
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      })
-      // Stop the stream immediately - we just needed permission
-      stream.getTracks().forEach(track => track.stop())
-      setMicPermissionGranted(true)
-      setMicPermissionStatus('granted')
-      console.log('✅ Microphone permission granted')
-      return true
-    } catch (error: any) {
-      console.error('❌ Microphone permission denied:', error)
-      setMicPermissionGranted(false)
-      
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        setMicPermissionStatus('denied')
-        setDialog({
-          isOpen: true,
-          title: 'Microphone Permission Required',
-          message: 'Please allow microphone access to use audio devices. Click the microphone icon in your browser\'s address bar and allow access, then refresh the page.',
-          type: 'warning'
-        })
-      } else if (error.name === 'NotFoundError') {
-        setMicPermissionStatus('denied')
-        setDialog({
-          isOpen: true,
-          title: 'No Microphone Found',
-          message: 'No microphone device detected. Please connect a microphone and refresh the page.',
-          type: 'warning'
-        })
-      } else {
-        setMicPermissionStatus('denied')
-        setDialog({
-          isOpen: true,
-          title: 'Microphone Access Error',
-          message: `Failed to access microphone: ${error.message || 'Unknown error'}`,
-          type: 'error'
-        })
-      }
-      return false
-    }
-  }
-
-  // Load available audio devices (microphones and speakers)
-  const loadAudioDevices = async (requestPermission: boolean = false) => {
-    try {
-      // Request permission if needed or requested
-      if (requestPermission || !micPermissionGranted) {
-        const permissionGranted = await requestMicPermission()
-        if (!permissionGranted) {
-          // Permission denied, still try to enumerate (might get some devices)
-          console.log('Permission denied, attempting to enumerate devices anyway...')
+      } else if (action === 'reject') {
+        if (result.data.paymentRefunded) {
+          successMessage += ` • Payment refunded ($${(result.data.refundAmount / 100).toFixed(2)})`
         }
       }
 
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const mics = devices.filter(device => device.kind === 'audioinput')
-      const speakers = devices.filter(device => device.kind === 'audiooutput')
-      
-      // Check if we got actual device labels (means permission is granted)
-      const hasDeviceLabels = mics.length > 0 && mics.some(mic => mic.label && mic.label.trim() !== '')
-      
-      if (hasDeviceLabels) {
-        setMicPermissionGranted(true)
-        setMicPermissionStatus('granted')
-      } else if (mics.length === 0 && !micPermissionGranted) {
-        // No devices found and permission not granted - might need permission
-        setMicPermissionStatus('prompt')
-      }
-      
-      setAvailableMicrophones(mics)
-      setAvailableSpeakers(speakers)
-      
-      // Auto-select default devices
-      if (mics.length > 0) {
-        const defaultMic = mics.find(mic => mic.deviceId === 'default') || mics[0]
-        if (defaultMic) {
-          setSelectedMicId(defaultMic.deviceId)
-        }
-      }
-      
-      if (speakers.length > 0) {
-        const defaultSpeaker = speakers.find(speaker => speaker.deviceId === 'default') || speakers[0]
-        if (defaultSpeaker) {
-          setSelectedSpeakerId(defaultSpeaker.deviceId)
-        }
-      }
+      setNotification({
+        type: 'success',
+        message: successMessage
+      })
+      setTimeout(() => setNotification(null), 5000)
+
+      // Refresh appointments
+      if (currentDoctorId) fetchAppointments(currentDoctorId)
     } catch (error) {
-      console.error('Error loading audio devices:', error)
-      setMicPermissionStatus('denied')
-    }
-  }
-
-  // Apply selected audio devices to Twilio
-  const applyAudioDevices = (call: Call | null = null) => {
-    try {
-      const device = deviceRef.current
-      if (!device) return
-
-      console.log('🎙️ Applying audio devices:', {
-        selectedMic: selectedMicId,
-        selectedSpeaker: selectedSpeakerId,
-        hasCall: !!call,
-        deviceAudioAvailable: !!(device.audio)
+      console.error('Error updating appointment:', error)
+      setNotification({
+        type: 'error',
+        message: 'An unexpected error occurred'
       })
-
-      // CRITICAL: Apply microphone selection to the Device (BEFORE making calls)
-      // This ensures the correct mic is used from the start
-      if (selectedMicId && selectedMicId !== 'default' && device.audio) {
-        try {
-          if (typeof (device.audio as any).setInputDevice === 'function') {
-            (device.audio as any).setInputDevice(selectedMicId)
-              .then(() => console.log('✅ Microphone device set via Twilio API:', selectedMicId))
-              .catch((err: any) => console.warn('⚠️ Error setting mic device:', err))
-          }
-        } catch (error) {
-          console.warn('⚠️ Error setting microphone device:', error)
-        }
-      }
-
-      // Apply speaker selection
-      // For Twilio Voice SDK, speaker selection is typically done via HTMLAudioElement.setSinkId()
-      // on the remote audio element, or through the device.audio API
-      if (selectedSpeakerId && selectedSpeakerId !== 'default') {
-        try {
-          // Method 1: Try Twilio Voice SDK v2.x API
-          if (device.audio && typeof (device.audio as any).setOutputDevice === 'function') {
-            (device.audio as any).setOutputDevice(selectedSpeakerId)
-              .then(() => console.log('✅ Speaker device set via Twilio API:', selectedSpeakerId))
-              .catch((err: any) => console.warn('⚠️ Error setting speaker device:', err))
-          }
-          // Method 2: Try HTMLAudioElement.setSinkId() if available (Chrome/Edge)
-          else if (call && (call as any).remoteStream) {
-            const remoteAudioTracks = (call as any).remoteStream.getAudioTracks() || []
-            // Note: setSinkId is set on the HTMLAudioElement, not the MediaStreamTrack
-            // Twilio manages the audio element internally, so we may need to wait for it
-            console.log('Speaker selection will be applied when audio element is available')
-          }
-        } catch (error) {
-          console.warn('⚠️ Error setting speaker device:', error)
-          // Some browsers/devices may not support setSinkId
-        }
-      }
-
-      // If call already exists, try to update the input device on existing tracks
-      if (call && selectedMicId !== 'default') {
-        try {
-          const localAudioTracks = (call as any)?.localStream?.getAudioTracks() || []
-          if (localAudioTracks.length > 0) {
-            localAudioTracks.forEach((track: MediaStreamTrack) => {
-              if ('applyConstraints' in track && 'getSettings' in track) {
-                const currentSettings = track.getSettings()
-                console.log('🎤 Current mic settings:', currentSettings)
-                // Only apply if device is different
-                if (currentSettings.deviceId !== selectedMicId) {
-                  console.log('🔄 Switching microphone on active call...')
-                  track.applyConstraints({ deviceId: { exact: selectedMicId } } as any)
-                    .then(() => console.log('✅ Microphone switched successfully'))
-                    .catch((err: any) => console.warn('⚠️ Error applying mic constraints:', err))
-                }
-              }
-            })
-          }
-        } catch (error) {
-          console.warn('⚠️ Error setting microphone device on call:', error)
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error applying audio devices:', error)
+      setTimeout(() => setNotification(null), 5000)
     }
   }
 
-  const handleDialPadInput = (digit: string) => {
-    setDialPadNumber(prev => prev + digit)
-    setPhoneNumber(prev => prev + digit)
+  const gridCols = calendarViewType === 'week' ? 'grid-cols-7' : calendarViewType === 'month' ? 'grid-cols-7' : 'grid-cols-7'
+
+  // Count today's appointments for welcome banner
+  const todayAppointmentsCount = useMemo(() => {
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    return appointments.filter(apt => {
+      if (!apt.requested_date_time) return false
+      const aptDate = convertToTimezone(apt.requested_date_time, 'America/Phoenix')
+      const aptDateStr = getDateString(aptDate, 'America/Phoenix')
+      return aptDateStr === todayStr
+    }).length
+  }, [appointments])
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <div className="w-12 h-12 border-b-2 border-teal-500 rounded-full animate-spin"></div>
+      </div>
+    )
   }
-
-  const handleDialPadClear = () => {
-    setDialPadNumber('')
-    setPhoneNumber('')
-  }
-
-  const handleGenerateVideoLink = async () => {
-    if (!selectedPatient) {
-      alert('Please select a patient first')
-      return
-    }
-
-    try {
-      // Get the access token from Supabase session
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        alert('Session expired. Please refresh and login again.')
-        return
-      }
-
-      const response = await fetch('/api/communication/video', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        credentials: 'include', // Ensure cookies are sent
-        body: JSON.stringify({
-          patientId: selectedPatient.id,
-          patientName: `${selectedPatient.first_name} ${selectedPatient.last_name}`
-        })
-      })
-
-      const data = await response.json()
-      if (data.success && data.meeting) {
-        setVideoMeeting(data.meeting)
-        fetchHistory()
-        alert(`Meeting link created! Join URL: ${data.meeting.join_url}`)
-      } else {
-        alert(`Failed to create meeting: ${data.error || 'Unknown error'}`)
-      }
-    } catch (error) {
-      console.error('Error creating video call:', error)
-      alert('Failed to create video meeting')
-    }
-  }
-
-
-  const formatHistoryDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffTime = Math.abs(now.getTime() - date.getTime())
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-
-    if (diffDays === 0) return 'Today'
-    if (diffDays === 1) return '1 day ago'
-    if (diffDays < 7) return `${diffDays} days ago`
-    return date.toLocaleDateString()
-  }
-
-  const filteredPatients = patients.filter(patient =>
-    searchQuery === '' ||
-    `${patient.first_name} ${patient.last_name}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    patient.mobile_phone?.includes(searchQuery) ||
-    patient.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  // Close patient list when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      if (!target.closest('.patient-selector-container')) {
-        setShowPatientList(false)
-      }
-    }
-
-    if (showPatientList) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [showPatientList])
 
   return (
-    <div className="min-h-screen bg-[#0a1f1f] text-white p-6">
-      {/* Patient Selection Section */}
-      <div className="mb-6 patient-selector-container">
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Select Patient
-        </label>
-        <div className="relative">
-          <div
-            onClick={() => setShowPatientList(!showPatientList)}
-            className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-4 py-3 cursor-pointer flex items-center justify-between hover:border-teal-500 transition-colors"
-          >
-            <div className="flex items-center">
-              {selectedPatient ? (
-                <div>
-                  <p className="text-white font-medium">
-                    {selectedPatient.first_name} {selectedPatient.last_name}
-                  </p>
-                  <p className="text-sm text-gray-400">{selectedPatient.mobile_phone}</p>
-                </div>
-              ) : (
-                <p className="text-gray-400">Choose a patient...</p>
-              )}
-            </div>
-            <Search className="w-5 h-5 text-gray-400" />
-          </div>
+    <>
+      {/* ============================================ */}
+      {/* CELEBRATION STYLES - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      <style>{`
+        .particles-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 9997;
+          overflow: hidden;
+        }
+        .particle {
+          position: absolute;
+          bottom: -50px;
+          border-radius: 50%;
+          animation: floatParticle linear infinite;
+          opacity: 0.9;
+          box-shadow: 0 0 20px currentColor, 0 0 40px currentColor;
+          filter: brightness(1.5);
+        }
+        .particle.square {
+          border-radius: 4px;
+          transform: rotate(45deg);
+        }
+        .particle.diamond {
+          border-radius: 2px;
+          transform: rotate(45deg);
+        }
+        @keyframes floatParticle {
+          0% { 
+            transform: translateY(0) rotate(0deg); 
+            opacity: 0; 
+          }
+          5% { 
+            opacity: 0.8; 
+          }
+          95% { 
+            opacity: 0.6; 
+          }
+          100% { 
+            transform: translateY(-110vh) rotate(720deg); 
+            opacity: 0; 
+          }
+        }
+        .confetti-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 9998;
+          overflow: hidden;
+        }
+        .confetti-piece {
+          position: absolute;
+          top: -20px;
+          width: 12px;
+          height: 24px;
+          animation: confettiFall 4s ease-out forwards;
+        }
+        @keyframes confettiFall {
+          0% { transform: translateY(0) rotateZ(0deg) rotateY(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotateZ(720deg) rotateY(360deg); opacity: 0; }
+        }
+        .welcome-banner {
+          position: fixed;
+          top: 80px;
+          right: 20px;
+          background: linear-gradient(135deg, rgba(0, 200, 100, 0.95), rgba(20, 184, 166, 0.95));
+          border-radius: 16px;
+          padding: 20px 24px;
+          z-index: 9999;
+          box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3);
+          animation: welcomeSlideIn 0.5s ease-out, welcomePulse 2s ease-in-out infinite;
+          max-width: 380px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        @keyframes welcomeSlideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes welcomePulse {
+          0%, 100% { box-shadow: 0 20px 60px rgba(0, 200, 100, 0.4), 0 0 40px rgba(20, 184, 166, 0.3); }
+          50% { box-shadow: 0 20px 80px rgba(0, 200, 100, 0.6), 0 0 60px rgba(20, 184, 166, 0.5); }
+        }
+        .welcome-icon {
+          width: 50px;
+          height: 50px;
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+          animation: iconBounce 1s ease infinite;
+        }
+        @keyframes iconBounce {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        .welcome-close {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: rgba(255, 255, 255, 0.2);
+          border: none;
+          border-radius: 50%;
+          width: 28px;
+          height: 28px;
+          cursor: pointer;
+          color: #fff;
+          font-size: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+        }
+        .welcome-close:hover {
+          background: rgba(255, 255, 255, 0.3);
+          transform: scale(1.1);
+        }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .availability-page {
+          background: linear-gradient(-45deg, #0a0a1a, #1a0a2e, #0a1a2e, #0a0a1a) !important;
+          background-size: 400% 400% !important;
+          animation: gradientShift 15s ease infinite !important;
+        }
 
-          {showPatientList && (
-            <div className="absolute top-full mt-2 w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg max-h-96 overflow-y-auto z-20 shadow-xl">
-              <div className="p-3 border-b border-[#1a3d3d] sticky top-0 bg-[#0d2626]">
-                <input
-                  type="text"
-                  placeholder="Search patients..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#164e4e] border border-[#1a5a5a] rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-teal-500"
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-              <div className="max-h-80 overflow-y-auto">
-                {loading ? (
-                  <div className="p-4 text-center text-gray-400">Loading patients...</div>
-                ) : filteredPatients.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400">No patients found</div>
-                ) : (
-                  filteredPatients.map((patient) => (
-                    <div
-                      key={patient.id}
-                      onClick={() => {
-                        setSelectedPatient(patient)
-                        setShowPatientList(false)
-                        setSearchQuery('')
-                      }}
-                      className={`p-4 hover:bg-[#164e4e] cursor-pointer border-b border-[#1a3d3d] ${
-                        selectedPatient?.id === patient.id ? 'bg-[#164e4e] border-l-4 border-teal-500' : ''
-                      }`}
-                    >
-                      <p className="text-white font-medium">
-                        {patient.first_name} {patient.last_name}
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">{patient.mobile_phone}</p>
-                      {patient.email && (
-                        <p className="text-xs text-gray-500 mt-1">{patient.email}</p>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+        /* ============================================ */
+        /* BRIGHT CALENDAR GRID STYLES - Visual Only */
+        /* ============================================ */
+        
+        /* Bright header row */
+        .availability-dayhead {
+          background: linear-gradient(180deg, rgba(0, 245, 255, 0.15), rgba(20, 184, 166, 0.1)) !important;
+          color: #00f5ff !important;
+          text-shadow: 0 0 10px rgba(0, 245, 255, 0.5) !important;
+          border-bottom: 2px solid rgba(0, 245, 255, 0.3) !important;
+          font-weight: 700 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 1px !important;
+        }
 
+        /* Time column */
+        .availability-time {
+          color: #ff00ff !important;
+          text-shadow: 0 0 10px rgba(255, 0, 255, 0.4) !important;
+          font-weight: 600 !important;
+        }
 
+        /* Available slots - BRIGHT GREEN with glow */
+        .availability-event.available {
+          background: linear-gradient(135deg, rgba(0, 255, 100, 0.35), rgba(20, 255, 150, 0.25)) !important;
+          border: 2px solid rgba(0, 255, 100, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 255, 100, 0.3), inset 0 0 20px rgba(0, 255, 100, 0.1) !important;
+          animation: availablePulse 3s ease-in-out infinite !important;
+          transition: all 0.3s ease !important;
+        }
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* New SMS Card */}
-        <div className="bg-[#0d2626] rounded-lg p-6 border border-[#1a3d3d]">
-          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <MessageSquare className="w-6 h-6 text-teal-400 mr-2" />
-            New SMS
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm text-gray-400 mb-2 block">To</label>
-              <input
-                type="tel"
-                value={smsTo}
-                onChange={(e) => setSmsTo(e.target.value)}
-                placeholder="Phone number"
-                className="w-full bg-[#164e4e] border border-[#1a5a5a] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-400 mb-2 block">TEXT HERE</label>
-              <textarea
-                value={smsMessage}
-                onChange={(e) => setSmsMessage(e.target.value)}
-                placeholder="Type your message..."
-                rows={6}
-                className="w-full bg-[#164e4e] border border-[#1a5a5a] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-teal-500 resize-none"
-              />
-            </div>
-            <button
-              onClick={handleSendSMS}
-              disabled={isSendingSMS}
-              className="w-full bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] py-3 rounded-lg font-bold transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSendingSMS ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#0a1f1f] mr-2"></div>
-                  <span>Sending...</span>
-                </>
-              ) : (
-                <>
-              <Send className="w-5 h-5 mr-2" />
-              Send
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+        @keyframes availablePulse {
+          0%, 100% { 
+            box-shadow: 0 0 15px rgba(0, 255, 100, 0.3), inset 0 0 15px rgba(0, 255, 100, 0.1);
+            border-color: rgba(0, 255, 100, 0.5);
+          }
+          50% { 
+            box-shadow: 0 0 30px rgba(0, 255, 100, 0.5), inset 0 0 25px rgba(0, 255, 100, 0.2);
+            border-color: rgba(0, 255, 100, 0.8);
+          }
+        }
 
-        {/* Dial Pad Card */}
-        <div className="bg-[#0d2626] rounded-lg p-6 border border-[#1a3d3d]">
-          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <Phone className="w-6 h-6 text-teal-400 mr-2" />
-            Dial Pad
-          </h3>
-          <div className="mb-4">
-            <input
-              type="tel"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="Enter number"
-              disabled={isCalling}
-              className="w-full bg-[#164e4e] border border-[#1a5a5a] rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        .availability-event.available:hover {
+          transform: scale(1.05) !important;
+          box-shadow: 0 0 40px rgba(0, 255, 100, 0.6), inset 0 0 30px rgba(0, 255, 100, 0.2) !important;
+          border-color: #00ff64 !important;
+        }
+
+        /* Booked slots - Vibrant colors */
+        .availability-event.blocked {
+          transition: all 0.3s ease !important;
+          box-shadow: 0 0 15px rgba(255, 100, 100, 0.3) !important;
+        }
+
+        .availability-event.blocked:hover {
+          transform: scale(1.05) !important;
+          z-index: 100 !important;
+        }
+
+        .availability-event.blocked.video {
+          background: linear-gradient(135deg, rgba(0, 200, 255, 0.4), rgba(0, 150, 220, 0.3)) !important;
+          border: 2px solid rgba(0, 220, 255, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 220, 255, 0.4) !important;
+        }
+
+        .availability-event.blocked.phone {
+          background: linear-gradient(135deg, rgba(0, 255, 150, 0.4), rgba(0, 200, 100, 0.3)) !important;
+          border: 2px solid rgba(0, 255, 150, 0.6) !important;
+          box-shadow: 0 0 20px rgba(0, 255, 150, 0.4) !important;
+        }
+
+        .availability-event.blocked.async {
+          background: linear-gradient(135deg, rgba(180, 100, 255, 0.4), rgba(150, 80, 220, 0.3)) !important;
+          border: 2px solid rgba(180, 100, 255, 0.6) !important;
+          box-shadow: 0 0 20px rgba(180, 100, 255, 0.4) !important;
+        }
+
+        .availability-event.blocked.instant {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.4), rgba(255, 150, 0, 0.3)) !important;
+          border: 2px solid rgba(255, 180, 0, 0.6) !important;
+          box-shadow: 0 0 20px rgba(255, 180, 0, 0.4) !important;
+          animation: instantPulse 1.5s ease-in-out infinite !important;
+        }
+
+        @keyframes instantPulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(255, 180, 0, 0.4); }
+          50% { box-shadow: 0 0 35px rgba(255, 180, 0, 0.7); }
+        }
+
+        /* Calendar cell hover */
+        .availability-cell {
+          transition: all 0.2s ease !important;
+        }
+
+        .availability-cell:hover {
+          background: rgba(0, 245, 255, 0.05) !important;
+        }
+
+        /* Calendar grid lines - subtle glow */
+        .availability-cal-row {
+          border-bottom: 1px solid rgba(0, 245, 255, 0.1) !important;
+        }
+
+        /* Appointment name text */
+        .appointment-name {
+          color: #fff !important;
+          font-weight: 700 !important;
+          text-shadow: 0 0 10px rgba(255, 255, 255, 0.3) !important;
+        }
+
+        /* Type badges - brighter */
+        .appointment-type-badge {
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.5px !important;
+          padding: 4px 10px !important;
+          border-radius: 12px !important;
+          font-size: 10px !important;
+        }
+
+        .appointment-type-badge.video {
+          background: rgba(0, 220, 255, 0.3) !important;
+          color: #00f5ff !important;
+          box-shadow: 0 0 10px rgba(0, 220, 255, 0.4) !important;
+        }
+
+        .appointment-type-badge.phone {
+          background: rgba(0, 255, 150, 0.3) !important;
+          color: #00ff96 !important;
+          box-shadow: 0 0 10px rgba(0, 255, 150, 0.4) !important;
+        }
+
+        .appointment-type-badge.async {
+          background: rgba(180, 100, 255, 0.3) !important;
+          color: #c896ff !important;
+          box-shadow: 0 0 10px rgba(180, 100, 255, 0.4) !important;
+        }
+
+        /* Sparkle effect on hover for available slots */
+        .availability-event.available::before {
+          content: '✨';
+          position: absolute;
+          top: 5px;
+          right: 8px;
+          font-size: 14px;
+          opacity: 0.8;
+          animation: sparkle 2s ease-in-out infinite;
+        }
+
+        @keyframes sparkle {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Calendar container glow */
+        .availability-cal {
+          border: 1px solid rgba(0, 245, 255, 0.2) !important;
+          border-radius: 12px !important;
+          box-shadow: 0 0 40px rgba(0, 245, 255, 0.1), 0 0 80px rgba(20, 184, 166, 0.05) !important;
+        }
+
+        /* Scrollbar styling */
+        .availability-page ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .availability-page ::-webkit-scrollbar-track {
+          background: rgba(0, 20, 40, 0.5);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, #00f5ff, #14b8a6);
+          border-radius: 5px;
+        }
+        .availability-page ::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, #00ffff, #20d0b8);
+        }
+
+        /* ============================================ */
+        /* CALENDAR HEADER BAR STYLES */
+        /* ============================================ */
+        .calendar-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 20px;
+          background: linear-gradient(180deg, rgba(0, 20, 40, 0.95), rgba(10, 30, 50, 0.9));
+          border-bottom: 2px solid rgba(0, 245, 255, 0.3);
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+
+        .calendar-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .calendar-header-center {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .calendar-header-right {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .calendar-title {
+          font-size: 20px;
+          font-weight: 800;
+          color: #00f5ff;
+          text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+          margin: 0;
+        }
+
+        .calendar-date-display {
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.8);
+          padding: 6px 12px;
+          background: rgba(0, 245, 255, 0.1);
+          border-radius: 8px;
+          border: 1px solid rgba(0, 245, 255, 0.2);
+        }
+
+        .nav-btn {
+          padding: 8px 16px;
+          background: linear-gradient(135deg, rgba(0, 200, 150, 0.3), rgba(0, 150, 200, 0.3));
+          border: 2px solid rgba(0, 245, 255, 0.4);
+          border-radius: 8px;
+          color: #00f5ff;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 14px;
+        }
+
+        .nav-btn:hover {
+          background: linear-gradient(135deg, rgba(0, 200, 150, 0.5), rgba(0, 150, 200, 0.5));
+          border-color: #00f5ff;
+          transform: scale(1.05);
+          box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .nav-btn.active {
+          background: linear-gradient(135deg, rgba(0, 255, 150, 0.4), rgba(0, 200, 255, 0.4));
+          border-color: #00ff96;
+          box-shadow: 0 0 15px rgba(0, 255, 150, 0.4);
+        }
+
+        .today-btn {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.3), rgba(255, 100, 50, 0.3));
+          border-color: rgba(255, 180, 0, 0.5);
+          color: #ffcc00;
+        }
+
+        .today-btn:hover {
+          background: linear-gradient(135deg, rgba(255, 180, 0, 0.5), rgba(255, 100, 50, 0.5));
+          border-color: #ffcc00;
+          box-shadow: 0 0 20px rgba(255, 180, 0, 0.4);
+        }
+
+        .effects-btn {
+          background: linear-gradient(135deg, rgba(255, 0, 150, 0.3), rgba(150, 0, 255, 0.3));
+          border-color: rgba(255, 0, 150, 0.5);
+          color: #ff00ff;
+        }
+
+        .effects-btn:hover {
+          background: linear-gradient(135deg, rgba(255, 0, 150, 0.5), rgba(150, 0, 255, 0.5));
+          border-color: #ff00ff;
+          box-shadow: 0 0 20px rgba(255, 0, 150, 0.4);
+        }
+
+        .effects-btn.off {
+          background: rgba(100, 100, 100, 0.3);
+          border-color: rgba(150, 150, 150, 0.4);
+          color: rgba(200, 200, 200, 0.6);
+        }
+
+        /* Current time row highlighting */
+        .current-time-row {
+          position: relative;
+        }
+
+        .current-time-row::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, rgba(255, 100, 0, 0.15), rgba(255, 50, 100, 0.1), transparent);
+          pointer-events: none;
+          z-index: 1;
+        }
+
+        .current-time-indicator {
+          position: absolute;
+          left: 0;
+          width: 4px;
+          height: 100%;
+          background: linear-gradient(180deg, #ff6600, #ff0066);
+          box-shadow: 0 0 10px #ff6600, 0 0 20px #ff0066;
+          animation: timeIndicatorPulse 2s ease-in-out infinite;
+          z-index: 5;
+        }
+
+        @keyframes timeIndicatorPulse {
+          0%, 100% { box-shadow: 0 0 10px #ff6600, 0 0 20px #ff0066; }
+          50% { box-shadow: 0 0 20px #ff6600, 0 0 40px #ff0066, 0 0 60px #ff6600; }
+        }
+
+        .current-time-label {
+          position: absolute;
+          left: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: linear-gradient(135deg, #ff6600, #ff0066);
+          color: white;
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 700;
+          z-index: 6;
+          white-space: nowrap;
+        }
+
+        /* Today column highlight */
+        .today-column {
+          background: rgba(0, 255, 150, 0.08) !important;
+        }
+
+        .today-header {
+          background: linear-gradient(180deg, rgba(0, 255, 150, 0.3), rgba(0, 200, 100, 0.2)) !important;
+          color: #00ff96 !important;
+          position: relative;
+        }
+
+        .today-header::after {
+          content: 'TODAY';
+          position: absolute;
+          bottom: 2px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 8px;
+          background: #00ff96;
+          color: #000;
+          padding: 1px 6px;
+          border-radius: 4px;
+          font-weight: 800;
+        }
+      `}</style>
+
+      {/* ============================================ */}
+      {/* FLOATING PARTICLES - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      {showEffects && !selectedAppointmentId && !showCreateDialog && (
+        <div className="particles-container">
+          {particles.map(particle => (
+            <div
+              key={particle.id}
+              className={`particle ${particle.shape}`}
+              style={{
+                left: `${particle.x}%`,
+                width: `${particle.size}px`,
+                height: `${particle.size}px`,
+                backgroundColor: particle.color,
+                color: particle.color,
+                animationDuration: `${particle.duration}s`,
+                animationDelay: `${particle.delay}s`
+              }}
             />
-            <div className="mt-2 flex items-center justify-between">
-            {callStatus && (
-                <p className="text-sm text-gray-400">{callStatus}</p>
-              )}
-              {isCalling && callDuration > 0 && (
-                <p className="text-sm font-semibold text-teal-400">{formatDuration(callDuration)}</p>
-            )}
-            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* CONFETTI BURST - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      {showEffects && !selectedAppointmentId && !showCreateDialog && confetti.length > 0 && (
+        <div className="confetti-container">
+          {confetti.map(piece => (
+            <div
+              key={piece.id}
+              className="confetti-piece"
+              style={{
+                left: `${piece.x}%`,
+                backgroundColor: piece.color,
+                animationDelay: `${piece.delay}s`
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* WELCOME BANNER - FRONTEND ONLY (Added) */}
+      {/* ============================================ */}
+      {showWelcome && !selectedAppointmentId && !showCreateDialog && (
+        <div className="welcome-banner">
+          <div className="welcome-icon">✨</div>
+          <div>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', fontWeight: 800 }}>👋 WELCOME!</h3>
+            <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.9)', fontSize: '14px' }}>
+              Your appointment calendar is ready. You have {todayAppointmentsCount} appointment{todayAppointmentsCount !== 1 ? 's' : ''} today!
+            </p>
+          </div>
+          <button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button>
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* ORIGINAL CALENDAR - COMPLETELY UNCHANGED */}
+      {/* ============================================ */}
+      <div className="availability-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* ============================================ */}
+        {/* CALENDAR HEADER BAR - FRONTEND ONLY */}
+        {/* ============================================ */}
+        <div className="calendar-header" style={{ flexShrink: 0 }}>
+          <div className="calendar-header-left">
+            <h1 className="calendar-title">📅 Your Appointments</h1>
+            <span className="calendar-date-display">
+              {currentPhoenixTime.dateStr || currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+            <span style={{ fontSize: '12px', color: '#00ff88', marginLeft: '8px', padding: '4px 8px', background: 'rgba(0,255,136,0.2)', borderRadius: '6px' }}>
+              🕐 {currentPhoenixTime.formatted || '--:--'} PHX
+            </span>
           </div>
           
-          {/* Audio Device Selection */}
-          <div className="mb-4 grid grid-cols-2 gap-3">
-            {/* Microphone Selection */}
-            <div className="relative">
-              <label className="block text-xs text-teal-300/80 mb-1.5 font-medium">
-                Microphone
-                {micPermissionStatus === 'denied' && (
-                  <span className="ml-1 text-red-400">⚠️</span>
-                )}
-              </label>
-              {micPermissionStatus === 'denied' || (availableMicrophones.length === 0 && !micPermissionGranted) ? (
-                <button
-                  onClick={async () => {
-                    await loadAudioDevices(true)
-                  }}
-                  disabled={micPermissionStatus === 'checking' || isCalling}
-                  className="w-full bg-gradient-to-b from-[#164e4e] to-[#0f3a3a] border border-teal-500/30 rounded-lg px-3 py-2 text-sm text-teal-300 hover:border-teal-400 hover:from-[#1a5a5a] hover:to-[#134040] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {micPermissionStatus === 'checking' ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-teal-300"></div>
-                      Requesting...
-                    </span>
-                  ) : (
-                    'Grant Microphone Permission'
-                  )}
-                </button>
-              ) : (
-                <select
-                  value={selectedMicId}
-                  onChange={(e) => {
-                    setSelectedMicId(e.target.value)
-                    applyAudioDevices(activeCallRef.current)
-                  }}
-                  disabled={isCalling || micPermissionStatus === 'checking'}
-                  className="w-full bg-gradient-to-b from-[#164e4e] to-[#0f3a3a] border border-teal-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/30 disabled:opacity-50 disabled:cursor-not-allowed appearance-none cursor-pointer transition-all duration-200 hover:border-teal-400/60 hover:from-[#1a5a5a] hover:to-[#134040] shadow-sm"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236EE7B7' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 0.75rem center',
-                    backgroundSize: '1em 1em',
-                    paddingRight: '2.5rem'
-                  }}
-                >
-                  {availableMicrophones.length === 0 ? (
-                    <option value="default" className="bg-[#164e4e] text-white">No microphone found</option>
-                  ) : (
-                    availableMicrophones.map((mic) => (
-                      <option key={mic.deviceId} value={mic.deviceId} className="bg-[#164e4e] text-white py-1">
-                        {mic.label || `Microphone ${availableMicrophones.indexOf(mic) + 1}`}
-                      </option>
-                    ))
-                  )}
-                </select>
-              )}
-            </div>
-
-            {/* Speaker Selection */}
-            <div className="relative">
-              <label className="block text-xs text-teal-300/80 mb-1.5 font-medium">Speaker</label>
-              <select
-                value={selectedSpeakerId}
-                onChange={(e) => {
-                  setSelectedSpeakerId(e.target.value)
-                  applyAudioDevices(activeCallRef.current)
-                }}
-                disabled={isCalling}
-                className="w-full bg-gradient-to-b from-[#164e4e] to-[#0f3a3a] border border-teal-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/30 disabled:opacity-50 disabled:cursor-not-allowed appearance-none cursor-pointer transition-all duration-200 hover:border-teal-400/60 hover:from-[#1a5a5a] hover:to-[#134040] shadow-sm"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236EE7B7' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 0.75rem center',
-                  backgroundSize: '1em 1em',
-                  paddingRight: '2.5rem'
-                }}
-              >
-                {availableSpeakers.length === 0 ? (
-                  <option value="default" className="bg-[#164e4e] text-white">Default Speaker</option>
-                ) : (
-                  availableSpeakers.map((speaker) => (
-                    <option key={speaker.deviceId} value={speaker.deviceId} className="bg-[#164e4e] text-white py-1">
-                      {speaker.label || `Speaker ${availableSpeakers.indexOf(speaker) + 1}`}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, '*', 0, '#'].map((digit) => (
-              <button
-                key={digit}
-                onClick={() => handleDialPadInput(String(digit))}
-                disabled={isCalling}
-                className="bg-[#164e4e] hover:bg-[#1a5a5a] border border-[#1a5a5a] rounded-lg py-4 text-white font-semibold text-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {digit}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-3">
-            {isCalling ? (
-              <>
-            <button
-                  onClick={handleToggleMute}
-                  className={`flex-1 ${
-                    isMuted 
-                      ? 'bg-yellow-600 hover:bg-yellow-700' 
-                      : 'bg-gray-600 hover:bg-gray-700'
-                  } text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center`}
-                  title={isMuted ? 'Unmute' : 'Mute'}
-                >
-                  {isMuted ? '🔇' : '🔊'}
-                  <span className="ml-2">{isMuted ? 'Unmute' : 'Mute'}</span>
+          <div className="calendar-header-center">
+            <button className="nav-btn" onClick={() => navigateCalendar('prev')}>
+              ◀ Prev
             </button>
-              <button
-                onClick={handleEndCall}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center"
-              >
-                <Phone className="w-5 h-5 rotate-135" />
-                  <span className="ml-2">End</span>
-              </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={handleDialPadClear}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 rounded-lg font-medium transition-colors"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={handleMakeCall}
-                  disabled={!phoneNumber || !isDeviceReady || isCallLoading}
-                  className="flex-1 bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                  title={!isDeviceReady ? 'Device not ready. Please wait...' : isCallLoading ? 'Connecting...' : 'Make a call'}
-                >
-                  {isCallLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      <span>Connecting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Phone className="w-5 h-5" />
-                      <span className="ml-2">Call</span>
-                    </>
-                  )}
-                </button>
-              </>
-            )}
+            <button className="nav-btn today-btn" onClick={goToToday}>
+              📍 Today
+            </button>
+            <button className="nav-btn" onClick={() => navigateCalendar('next')}>
+              Next ▶
+            </button>
+          </div>
+
+          <div className="calendar-header-right">
+            <button 
+              className={`nav-btn ${calendarViewType === 'week' ? 'active' : ''}`}
+              onClick={() => setCalendarViewType('week')}
+            >
+              Week
+            </button>
+            <button 
+              className={`nav-btn ${calendarViewType === 'month' ? 'active' : ''}`}
+              onClick={() => setCalendarViewType('month')}
+            >
+              Month
+            </button>
+            <button 
+              className={`nav-btn ${viewType === 'list' ? 'active' : ''}`}
+              onClick={() => setViewType(viewType === 'calendar' ? 'list' : 'calendar')}
+            >
+              {viewType === 'calendar' ? '📋 List' : '📅 Calendar'}
+            </button>
+            <button 
+              className={`nav-btn effects-btn ${!showEffects ? 'off' : ''}`}
+              onClick={toggleEffects}
+            >
+              {showEffects ? '✨ Effects ON' : '✨ Effects OFF'}
+            </button>
           </div>
         </div>
 
-        {/* Create Video/Call Link Card */}
-        <div className="bg-[#0d2626] rounded-lg p-6 border border-[#1a3d3d]">
-          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <Video className="w-6 h-6 text-teal-400 mr-2" />
-            Create Video/Call Link
-          </h3>
-          {videoMeeting ? (
-            <div className="space-y-4">
-              <div className="bg-[#164e4e] rounded-lg p-4 border border-[#1a5a5a]">
-                <p className="text-white font-medium mb-2">Meeting Created Successfully!</p>
-                <a
-                  href={videoMeeting.join_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-teal-400 hover:text-teal-300 underline break-all"
-                >
-                  {videoMeeting.join_url}
-                </a>
-                {videoMeeting.password && (
-                  <p className="text-sm text-gray-400 mt-2">Password: {videoMeeting.password}</p>
-                )}
+        {/* Full Screen Calendar Container */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {viewType === 'calendar' ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+            {calendarViewType === 'week' ? (
+              <div ref={calendarScrollRef} style={{ flex: 1, overflow: 'auto' }}>
+                {/* Week Calendar Grid - Using availability page structure */}
+                <div className="availability-cal" style={{ display: 'flex', flexDirection: 'column', minHeight: 'max-content' }}>
+                  {/* Header Row */}
+                  <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10, background: '#081226' }}>
+                    <div className="availability-dayhead" style={{ background: '#081226' }}>TIME</div>
+                    {visibleDates.map((date, idx) => (
+                      <div 
+                        key={`header-${idx}`} 
+                        className={`availability-dayhead ${isToday(date) ? 'today-header' : ''}`}
+                        style={{ background: isToday(date) ? undefined : '#081226' }}
+                      >
+                        {date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} {date.getDate()}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Time Slots */}
+                  {timeSlots.map((time, timeIndex) => {
+                    const isCurrent = isCurrentTimeSlot(time)
+                    return (
+                      <div 
+                        key={`row-${timeIndex}`} 
+                        className={`availability-cal-row ${isCurrent ? 'current-time-row' : ''}`}
+                        ref={isCurrent ? currentTimeRowRef : null}
+                      >
+                        {isCurrent && <div className="current-time-indicator" />}
+                        <div className="availability-time" style={isCurrent ? { color: '#ff6600', fontWeight: 800 } : {}}>
+                          {formatTime(time)}
+                          {isCurrent && <span style={{ marginLeft: 4, fontSize: 10 }}>◀ NOW</span>}
+                        </div>
+                        {visibleDates.map((date, dayIndex) => {
+                          const appointment = getAppointmentForSlot(date, time)
+                          const isAvailable = !appointment
+                          const isTodayCol = isToday(date)
+                        
+                          return (
+                            <div
+                              key={`cell-${dayIndex}-${timeIndex}`}
+                              className={`availability-cell ${isTodayCol ? 'today-column' : ''}`}
+                              onMouseEnter={() => playHoverSound()}
+                              onClick={() => {
+                                playClickSound()
+                                if (isAvailable) {
+                                  setSelectedSlotDate(date)
+                                  setSelectedSlotTime(time)
+                                  setShowCreateDialog(true)
+                                } else {
+                                  setSelectedAppointmentId(appointment.id)
+                                }
+                              }}
+                            >
+                              {isAvailable ? (
+                                <div className="availability-event available">
+                                  <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', color: 'white' }}>Available</div>
+                                  <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
+                                </div>
+                              ) : (
+                                <div className={`availability-event blocked ${appointment.visit_type || 'video'}`} style={{ position: 'relative' }}>
+                                  {appointment.status === 'completed' && (
+                                    <span style={{ position: 'absolute', top: 1, left: 3, fontSize: '10px', color: '#4ade80', filter: 'drop-shadow(0 0 3px rgba(74,222,128,0.5))', zIndex: 2, lineHeight: 1 }} title="Completed">✓</span>
+                                  )}
+                                  {appointment.chart_locked && (
+                                    <span style={{ position: 'absolute', top: 12, left: 2, fontSize: '9px', color: '#fbbf24', filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))', zIndex: 2, lineHeight: 1 }} title="Chart locked">🔒</span>
+                                  )}
+                                  <div className="appointment-name">
+                                    {appointment.patients?.first_name} {appointment.patients?.last_name}
+                                  </div>
+                                <span className={`appointment-type-badge ${appointment.visit_type || 'video'}`}>
+                                  {appointment.visit_type === 'instant' ? '⚡ INSTANT' :
+                                   appointment.visit_type === 'video' ? 'VIDEO' :
+                                   appointment.visit_type === 'phone' ? 'PHONE' :
+                                   appointment.visit_type === 'async' ? 'ASYNC' : 'VISIT'}
+                                </span>
+                                {(() => {
+                                  const reason = getAppointmentReason(appointment)
+                                  if (!reason) return null
+                                  const words = reason.trim().split(/\s+/)
+                                  const shortReason = words.slice(0, 2).join(' ')
+                                  return (
+                                    <div className="appointment-reason">
+                                      {shortReason}
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                  })}
+                </div>
+                <div className="availability-hint" style={{ marginTop: '8px' }}>
+                  Tip: Click a slot to schedule or view appointment details.
+                </div>
               </div>
-              <button
-                onClick={() => {
-                  setVideoMeeting(null)
-                  handleGenerateVideoLink()
-                }}
-                className="w-full bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] py-3 rounded-lg font-bold transition-colors"
-              >
-                Generate New Link
-              </button>
+            ) : calendarViewType === 'month' ? (
+              /* Month View - Using availability page structure */
+              <div>
+                <div className="availability-month">
+                  {visibleDates.map((date, index) => {
+                    const dayAppointments = appointments.filter(apt => {
+                      if (!apt.requested_date_time) return false
+                      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                      const doctorTimezone = 'America/Phoenix'
+                      const aptDate = convertToTimezone(apt.requested_date_time, doctorTimezone)
+                      const aptDateStr = getDateString(aptDate, doctorTimezone)
+                      const calendarDateStr = getDateString(date, doctorTimezone)
+                      return aptDateStr === calendarDateStr
+                    })
+                    
+                    return (
+                      <div
+                        key={index}
+                        className="availability-mcell"
+                        data-day={date.getDate()}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="availability-d">{date.getDate()}</div>
+                        {dayAppointments.map((apt) => (
+                          <span
+                            key={apt.id}
+                            className={`availability-tag ${
+                              apt.visit_type === 'video' ? 'g' :
+                              apt.visit_type === 'phone' ? 'a' :
+                              apt.visit_type === 'async' ? 'h' :
+                              apt.visit_type === 'instant' ? 'instant' : 'b'
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedAppointmentId(apt.id)
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            title={`${apt.patients?.first_name} ${apt.patients?.last_name} - ${getAppointmentActualTime(apt)}`}
+                          >
+                            {apt.patients?.first_name} {apt.patients?.last_name?.charAt(0)}. • {apt.visit_type || 'Visit'}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="availability-hint" style={{ marginTop: '8px' }}>
+                  Tip: Click a day to view or schedule appointments.
+                </div>
+              </div>
+            ) : (
+              <div className="availability-hint">3-Month view (to be implemented)</div>
+            )}
             </div>
           ) : (
-            <button
-              onClick={handleGenerateVideoLink}
-              disabled={!selectedPatient}
-              className="w-full bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Generate
-            </button>
+            /* List View - Using availability page structure */
+            <div className="availability-card">
+              <table className="availability-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Patient</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Date & Time</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Type</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Reason</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', background: '#0a1732', color: '#cfe1ff' }}>Contact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {appointments.length > 0 ? (
+                    appointments.map((apt) => {
+                      // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
+                      const doctorTimezone = 'America/Phoenix'
+                      const aptDate = apt.requested_date_time 
+                        ? convertToTimezone(apt.requested_date_time, doctorTimezone)
+                        : null
+                      
+                      return (
+                        <tr
+                          key={apt.id}
+                          style={{ borderBottom: '1px solid var(--line)', cursor: 'pointer' }}
+                          onClick={() => setSelectedAppointmentId(apt.id)}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#0d1628' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                        >
+                          <td style={{ padding: '8px 10px', color: '#e6f4ff' }}>
+                            <div style={{ fontWeight: 'bold' }}>
+                              {apt.patients?.first_name || ''} {apt.patients?.last_name || ''}
+                            </div>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9' }}>
+                            {aptDate ? (
+                              <>
+                                {aptDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' • '}
+                                {aptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                              </>
+                            ) : '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <span 
+                              style={{
+                                fontSize: '11px',
+                                padding: '4px 8px',
+                                borderRadius: '8px',
+                                fontWeight: 'bold',
+                                background: apt.visit_type === 'video' ? 'rgba(0, 230, 255, 0.12)' :
+                                           apt.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.12)' :
+                                           apt.visit_type === 'async' ? 'rgba(176, 122, 255, 0.12)' :
+                                           apt.visit_type === 'instant' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255,255,255,0.08)',
+                                color: apt.visit_type === 'video' ? '#00e6ff' :
+                                       apt.visit_type === 'phone' ? '#00c26e' :
+                                       apt.visit_type === 'async' ? '#b07aff' :
+                                       apt.visit_type === 'instant' ? '#f59e0b' : '#f0d7dc'
+                              }}
+                            >
+                              {apt.visit_type === 'instant' ? '⚡ Instant' :
+                               apt.visit_type === 'video' ? 'Video' :
+                               apt.visit_type === 'phone' ? 'Phone' :
+                               apt.visit_type === 'async' ? 'Async' : 'Visit'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
+                            {getAppointmentReason(apt) || '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#98b1c9', fontSize: '14px' }}>
+                            <div>{apt.patients?.email || '—'}</div>
+                            <div style={{ fontSize: '12px' }}>{apt.patients?.phone || ''}</div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#98b1c9' }}>
+                        No appointments found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        {/* History Card */}
-        <div className="bg-[#0d2626] rounded-lg p-6 border border-[#1a3d3d] lg:col-span-3">
-          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-            <Clock className="w-6 h-6 text-teal-400 mr-2" />
-            Communication History
-          </h3>
-          <div className="space-y-3 max-h-[600px] overflow-y-auto">
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-teal-400"></div>
-                <p className="text-gray-400 mt-4">Loading history...</p>
+        {/* Notification - Styled to match availability page theme */}
+        {notification && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              maxWidth: '400px',
+              borderRadius: '12px',
+              padding: '16px',
+              zIndex: 9999,
+              boxShadow: '0 12px 60px rgba(0,0,0,.45)',
+              background: notification.type === 'success' ? '#0e2a1c' : '#2a1417',
+              border: notification.type === 'success' ? '1px solid #1e5a3a' : '1px solid #5a2a32',
+              color: notification.type === 'success' ? '#cde7da' : '#f0d7dc'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
+              <div>
+                {notification.type === 'success' ? (
+                  <svg style={{ width: '20px', height: '20px', color: '#19d67f' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg style={{ width: '20px', height: '20px', color: '#E53935' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                )}
               </div>
-            ) : history.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-400">No communication history yet</p>
-                <p className="text-gray-500 text-sm mt-2">Start by sending an SMS or making a call</p>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: '14px', fontWeight: '600' }}>{notification.message}</p>
               </div>
-            ) : (
-              history.map((item) => {
-                const patientName = item.users 
-                  ? `${item.users.first_name} ${item.users.last_name}`
-                  : item.to_number || 'Unknown'
-                
-                const getTypeIcon = () => {
-                  switch (item.type) {
-                    case 'call':
-                      return <PhoneCall className="w-4 h-4 text-blue-400" />
-                    case 'sms':
-                      return <MessageSquare className="w-4 h-4 text-green-400" />
-                    case 'video':
-                      return <Video className="w-4 h-4 text-purple-400" />
-                    case 'email':
-                      return <MessageSquare className="w-4 h-4 text-orange-400" />
-                    default:
-                      return <MessageSquare className="w-4 h-4 text-gray-400" />
-                  }
-                }
-
-                const getTypeLabel = () => {
-                  switch (item.type) {
-                    case 'call':
-                      return item.direction === 'outbound' ? 'Outbound Call' : 'Inbound Call'
-                    case 'sms':
-                      return item.direction === 'outbound' ? 'Sent SMS' : 'Received SMS'
-                    case 'video':
-                      return 'Video Call'
-                    case 'email':
-                      return item.direction === 'outbound' ? 'Sent Email' : 'Received Email'
-                    default:
-                      return item.type
-                  }
-                }
-
-                const getStatusColor = () => {
-                  if (item.status === 'connected' || item.status === 'sent' || item.status === 'delivered') {
-                    return 'text-green-400'
-                  }
-                  if (item.status === 'completed' || item.status === 'initiated') {
-                    return 'text-blue-400'
-                  }
-                  if (item.status === 'failed' || item.status === 'error') {
-                    return 'text-red-400'
-                  }
-                  return 'text-yellow-400'
-                }
-
-                const getStatusLabel = () => {
-                  switch (item.status) {
-                    case 'initiated':
-                      return 'Initiated'
-                    case 'connected':
-                      return 'Connected'
-                    case 'completed':
-                      return 'Completed'
-                    case 'ended':
-                      return 'Ended'
-                    case 'failed':
-                      return 'Failed'
-                    case 'error':
-                      return 'Error'
-                    default:
-                      return item.status || 'Unknown'
-                  }
-                }
-
-                return (
-                <div
-                  key={item.id}
-                    className="p-4 bg-[#164e4e] rounded-lg border border-[#1a5a5a] hover:border-teal-500/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className="mt-1">
-                          {getTypeIcon()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="text-white font-medium text-sm">
-                              {getTypeLabel()}
-                            </p>
-                            {item.status && (
-                              <span className={`text-xs ${getStatusColor()}`}>
-                                • {getStatusLabel()}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-gray-300 text-sm">
-                            {patientName}
-                            {item.to_number && !item.users && (
-                              <span className="text-gray-500"> ({item.to_number})</span>
-                            )}
-                          </p>
-                          {item.message && (
-                            <p className="text-gray-400 text-xs mt-2 line-clamp-2">
-                              {item.message}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                            <span>{formatHistoryDate(item.created_at)}</span>
-                            {item.duration && (item.type === 'call' || item.type === 'video') && (
-                              <span>Duration: {Math.floor(item.duration / 60)}:{(item.duration % 60).toString().padStart(2, '0')}</span>
-                            )}
-                            {item.type === 'call' && (
-                              <>
-                                {item.recording_url ? (
-                                  <div className="flex items-center gap-2 bg-[#1a5a5a] rounded-md px-2 py-1">
-                                    <audio
-                                      ref={(el) => {
-                                        if (el) audioRefs.current[item.id] = el
-                                      }}
-                                      src={item.recording_url}
-                                      onEnded={() => setPlayingRecordingId(null)}
-                                      onPlay={() => setPlayingRecordingId(item.id)}
-                                      onPause={() => setPlayingRecordingId(null)}
-                                      onError={(e) => {
-                                        console.error('Audio playback error:', e)
-                                        setDialog({
-                                          isOpen: true,
-                                          title: 'Playback Error',
-                                          message: 'Unable to play recording. You can try downloading it instead.',
-                                          type: 'error'
-                                        })
-                                      }}
-                                      preload="metadata"
-                                      crossOrigin="anonymous"
-                                    />
-                                    <button
-                                      onClick={() => {
-                                        const audio = audioRefs.current[item.id]
-                                        if (audio) {
-                                          if (playingRecordingId === item.id) {
-                                            audio.pause()
-                                            setPlayingRecordingId(null)
-                                          } else {
-                                            // Pause any other playing audio
-                                            Object.keys(audioRefs.current).forEach((id) => {
-                                              if (id !== item.id && audioRefs.current[id]) {
-                                                audioRefs.current[id]?.pause()
-                                              }
-                                            })
-                                            audio.play().catch((err) => {
-                                              console.error('Error playing audio:', err)
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'Playback Error',
-                                                message: 'Unable to play recording. You can try downloading it instead.',
-                                                type: 'error'
-                                              })
-                                            })
-                                            setPlayingRecordingId(item.id)
-                                          }
-                                        }
-                                      }}
-                                      className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                                        playingRecordingId === item.id
-                                          ? 'text-teal-300 bg-teal-900/30'
-                                          : 'text-teal-400 hover:text-teal-300 hover:bg-teal-900/20'
-                                      }`}
-                                      title={playingRecordingId === item.id ? 'Pause recording' : 'Play recording'}
-                                    >
-                                      {playingRecordingId === item.id ? (
-                                        <>
-                                          <Pause className="w-4 h-4" />
-                                          <span className="text-xs font-medium">Pause</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Play className="w-4 h-4" />
-                                          <span className="text-xs font-medium">Play</span>
-                                        </>
-                                      )}
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        const link = document.createElement('a')
-                                        link.href = item.recording_url!
-                                        link.download = `call-recording-${item.id}.mp3`
-                                        link.target = '_blank'
-                                        document.body.appendChild(link)
-                                        link.click()
-                                        document.body.removeChild(link)
-                                      }}
-                                      className="flex items-center gap-1 px-2 py-1 rounded text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
-                                      title="Download recording"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                      <span className="text-xs font-medium">Download</span>
-                                    </button>
-                                  </div>
-                                ) : item.twilio_sid ? (
-                                  (() => {
-                                    // Check if we have a cached recording URL
-                                    const cachedUrl = recordingUrlCache.current[item.twilio_sid]
-                                    const isCurrentlyFetching = fetchingRecordings.current.has(item.twilio_sid)
-                                    
-                                    // If we have a cached URL, show play button
-                                    if (cachedUrl) {
-                                      return (
-                                        <div className="flex items-center gap-2 bg-[#1a5a5a] rounded-md px-2 py-1">
-                                          <audio
-                                            ref={(el) => {
-                                              if (el) audioRefs.current[item.id] = el
-                                            }}
-                                            src={cachedUrl}
-                                            onEnded={() => setPlayingRecordingId(null)}
-                                            onPlay={() => setPlayingRecordingId(item.id)}
-                                            onPause={() => setPlayingRecordingId(null)}
-                                            onError={(e) => {
-                                              console.error('Audio playback error:', e)
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'Playback Error',
-                                                message: 'Unable to play recording. You can try downloading it instead.',
-                                                type: 'error'
-                                              })
-                                            }}
-                                            preload="metadata"
-                                            crossOrigin="anonymous"
-                                          />
-                                          <button
-                                            onClick={() => {
-                                              const audio = audioRefs.current[item.id]
-                                              if (audio) {
-                                                if (playingRecordingId === item.id) {
-                                                  audio.pause()
-                                                  setPlayingRecordingId(null)
-                                                } else {
-                                                  // Pause any other playing audio
-                                                  Object.keys(audioRefs.current).forEach((id) => {
-                                                    if (id !== item.id && audioRefs.current[id]) {
-                                                      audioRefs.current[id]?.pause()
-                                                    }
-                                                  })
-                                                  audio.play().catch((err) => {
-                                                    console.error('Error playing audio:', err)
-                                                    setDialog({
-                                                      isOpen: true,
-                                                      title: 'Playback Error',
-                                                      message: 'Unable to play recording. You can try downloading it instead.',
-                                                      type: 'error'
-                                                    })
-                                                  })
-                                                  setPlayingRecordingId(item.id)
-                                                }
-                                              }
-                                            }}
-                                            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                                              playingRecordingId === item.id
-                                                ? 'text-teal-300 bg-teal-900/30'
-                                                : 'text-teal-400 hover:text-teal-300 hover:bg-teal-900/20'
-                                            }`}
-                                            title={playingRecordingId === item.id ? 'Pause recording' : 'Play recording'}
-                                          >
-                                            {playingRecordingId === item.id ? (
-                                              <>
-                                                <Pause className="w-4 h-4" />
-                                                <span className="text-xs font-medium">Pause</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Play className="w-4 h-4" />
-                                                <span className="text-xs font-medium">Play</span>
-                                              </>
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const link = document.createElement('a')
-                                              link.href = cachedUrl
-                                              link.download = `call-recording-${item.id}.mp3`
-                                              link.target = '_blank'
-                                              document.body.appendChild(link)
-                                              link.click()
-                                              document.body.removeChild(link)
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 rounded text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
-                                            title="Download recording"
-                                          >
-                                            <Download className="w-4 h-4" />
-                                            <span className="text-xs font-medium">Download</span>
-                                          </button>
-                                        </div>
-                                      )
-                                    }
-                                    
-                                    // If currently fetching, show loading state
-                                    if (isCurrentlyFetching) {
-                                      return (
-                                        <div className="flex items-center gap-1 text-gray-400 text-xs">
-                                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400"></div>
-                                          <span>Fetching...</span>
-                                        </div>
-                                      )
-                                    }
-                                    
-                                    // Otherwise, show fetch button
-                                    return (
-                                      <button
-                                        onClick={async () => {
-                                          // Prevent multiple simultaneous fetches
-                                          if (fetchingRecordings.current.has(item.twilio_sid!)) {
-                                            return
-                                          }
-                                          
-                                          fetchingRecordings.current.add(item.twilio_sid!)
-                                          
-                                          try {
-                                            const { data: { session } } = await supabase.auth.getSession()
-                                            const accessToken = session?.access_token
-                                            
-                                            const response = await fetch(`/api/communication/recordings?callSid=${item.twilio_sid}`, {
-                                              method: 'GET',
-                                              headers: {
-                                                'Content-Type': 'application/json',
-                                                'Authorization': accessToken ? `Bearer ${accessToken}` : '',
-                                              },
-                                              credentials: 'include'
-                                            })
-
-                                            const data = await response.json()
-                                            
-                                            if (data.success && data.recordingUrl) {
-                                              // Cache the recording URL
-                                              recordingUrlCache.current[item.twilio_sid!] = data.recordingUrl
-                                              
-                                              // Update the history item with the recording URL
-                                              setHistory(prev => prev.map(h => 
-                                                h.id === item.id 
-                                                  ? { ...h, recording_url: data.recordingUrl }
-                                                  : h
-                                              ))
-                                              
-                                              // Refresh history to persist in database
-                                              fetchHistory()
-                                            } else {
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'No Recording',
-                                                message: data.error || 'Recording not available yet. It may still be processing.',
-                                                type: 'warning'
-                                              })
-                                            }
-                                          } catch (error: any) {
-                                            console.error('Error fetching recording:', error)
-                                            setDialog({
-                                              isOpen: true,
-                                              title: 'Error',
-                                              message: 'Failed to fetch recording. Please try again.',
-                                              type: 'error'
-                                            })
-                                          } finally {
-                                            fetchingRecordings.current.delete(item.twilio_sid!)
-                                          }
-                                        }}
-                                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-                                        title="Fetch recording from Twilio"
-                                        disabled={isCurrentlyFetching}
-                                      >
-                                        <PhoneCall className="w-3 h-3" />
-                                        <span>Fetch Recording</span>
-                                      </button>
-                                    )
-                                  })()
-                                ) : (
-                                  <span className="text-xs text-gray-500 italic">
-                                    Recording processing...
-                                  </span>
-                                )}
-                              </>
-                            )}
-                            {item.type === 'video' && (
-                              <>
-                                {item.recording_url ? (
-                                  <div className="flex items-center gap-2 bg-[#1a5a5a] rounded-md px-2 py-1">
-                                    <video
-                                      ref={(el) => {
-                                        if (el) audioRefs.current[item.id] = el as any
-                                      }}
-                                      src={item.recording_url}
-                                      onEnded={() => setPlayingRecordingId(null)}
-                                      onPlay={() => setPlayingRecordingId(item.id)}
-                                      onPause={() => setPlayingRecordingId(null)}
-                                      onError={(e) => {
-                                        console.error('Video playback error:', e)
-                                        setDialog({
-                                          isOpen: true,
-                                          title: 'Playback Error',
-                                          message: 'Unable to play recording. You can try downloading it instead.',
-                                          type: 'error'
-                                        })
-                                      }}
-                                      preload="metadata"
-                                      crossOrigin="anonymous"
-                                      className="hidden"
-                                    />
-                                    <button
-                                      onClick={() => {
-                                        const video = audioRefs.current[item.id] as HTMLVideoElement
-                                        if (video) {
-                                          if (playingRecordingId === item.id) {
-                                            video.pause()
-                                            setPlayingRecordingId(null)
-                                          } else {
-                                            // Pause any other playing media
-                                            Object.keys(audioRefs.current).forEach((id) => {
-                                              if (id !== item.id && audioRefs.current[id]) {
-                                                const media = audioRefs.current[id]
-                                                if (media) {
-                                                  media.pause()
-                                                }
-                                              }
-                                            })
-                                            video.play().catch((err) => {
-                                              console.error('Error playing video:', err)
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'Playback Error',
-                                                message: 'Unable to play recording. You can try downloading it instead.',
-                                                type: 'error'
-                                              })
-                                            })
-                                            setPlayingRecordingId(item.id)
-                                            // Open video in new tab as fallback
-                                            window.open(item.recording_url, '_blank')
-                                          }
-                                        }
-                                      }}
-                                      className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                                        playingRecordingId === item.id
-                                          ? 'text-teal-300 bg-teal-900/30'
-                                          : 'text-teal-400 hover:text-teal-300 hover:bg-teal-900/20'
-                                      }`}
-                                      title={playingRecordingId === item.id ? 'Pause recording' : 'Play recording'}
-                                    >
-                                      {playingRecordingId === item.id ? (
-                                        <>
-                                          <Pause className="w-4 h-4" />
-                                          <span className="text-xs font-medium">Pause</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Play className="w-4 h-4" />
-                                          <span className="text-xs font-medium">Play</span>
-                                        </>
-                                      )}
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        const link = document.createElement('a')
-                                        link.href = item.recording_url!
-                                        link.download = `video-recording-${item.id}.mp4`
-                                        link.target = '_blank'
-                                        document.body.appendChild(link)
-                                        link.click()
-                                        document.body.removeChild(link)
-                                      }}
-                                      className="flex items-center gap-1 px-2 py-1 rounded text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
-                                      title="Download recording"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                      <span className="text-xs font-medium">Download</span>
-                                    </button>
-                                  </div>
-                                ) : item.meeting_id ? (
-                                  (() => {
-                                    // Check if we have a cached recording URL
-                                    const cachedUrl = recordingUrlCache.current[item.meeting_id]
-                                    const isCurrentlyFetching = fetchingRecordings.current.has(item.meeting_id)
-                                    
-                                    // If we have a cached URL, show play button
-                                    if (cachedUrl) {
-                                      return (
-                                        <div className="flex items-center gap-2 bg-[#1a5a5a] rounded-md px-2 py-1">
-                                          <video
-                                            ref={(el) => {
-                                              if (el) audioRefs.current[item.id] = el as any
-                                            }}
-                                            src={cachedUrl}
-                                            onEnded={() => setPlayingRecordingId(null)}
-                                            onPlay={() => setPlayingRecordingId(item.id)}
-                                            onPause={() => setPlayingRecordingId(null)}
-                                            onError={(e) => {
-                                              console.error('Video playback error:', e)
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'Playback Error',
-                                                message: 'Unable to play recording. You can try downloading it instead.',
-                                                type: 'error'
-                                              })
-                                            }}
-                                            preload="metadata"
-                                            crossOrigin="anonymous"
-                                            className="hidden"
-                                          />
-                                          <button
-                                            onClick={() => {
-                                              const video = audioRefs.current[item.id] as HTMLVideoElement
-                                              if (video) {
-                                                if (playingRecordingId === item.id) {
-                                                  video.pause()
-                                                  setPlayingRecordingId(null)
-                                                } else {
-                                                  // Pause any other playing media
-                                                  Object.keys(audioRefs.current).forEach((id) => {
-                                                    if (id !== item.id && audioRefs.current[id]) {
-                                                      const media = audioRefs.current[id]
-                                                      if (media) {
-                                                        media.pause()
-                                                      }
-                                                    }
-                                                  })
-                                                  video.play().catch((err) => {
-                                                    console.error('Error playing video:', err)
-                                                    setDialog({
-                                                      isOpen: true,
-                                                      title: 'Playback Error',
-                                                      message: 'Unable to play recording. You can try downloading it instead.',
-                                                      type: 'error'
-                                                    })
-                                                  })
-                                                  setPlayingRecordingId(item.id)
-                                                  // Open video in new tab as fallback
-                                                  window.open(cachedUrl, '_blank')
-                                                }
-                                              }
-                                            }}
-                                            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                                              playingRecordingId === item.id
-                                                ? 'text-teal-300 bg-teal-900/30'
-                                                : 'text-teal-400 hover:text-teal-300 hover:bg-teal-900/20'
-                                            }`}
-                                            title={playingRecordingId === item.id ? 'Pause recording' : 'Play recording'}
-                                          >
-                                            {playingRecordingId === item.id ? (
-                                              <>
-                                                <Pause className="w-4 h-4" />
-                                                <span className="text-xs font-medium">Pause</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Play className="w-4 h-4" />
-                                                <span className="text-xs font-medium">Play</span>
-                                              </>
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const link = document.createElement('a')
-                                              link.href = cachedUrl
-                                              link.download = `video-recording-${item.id}.mp4`
-                                              link.target = '_blank'
-                                              document.body.appendChild(link)
-                                              link.click()
-                                              document.body.removeChild(link)
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 rounded text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 transition-colors"
-                                            title="Download recording"
-                                          >
-                                            <Download className="w-4 h-4" />
-                                            <span className="text-xs font-medium">Download</span>
-                                          </button>
-                                        </div>
-                                      )
-                                    }
-                                    
-                                    // If currently fetching, show loading state
-                                    if (isCurrentlyFetching) {
-                                      return (
-                                        <div className="flex items-center gap-1 text-gray-400 text-xs">
-                                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400"></div>
-                                          <span>Fetching...</span>
-                                        </div>
-                                      )
-                                    }
-                                    
-                                    // Otherwise, show fetch button
-                                    return (
-                                      <button
-                                        onClick={async () => {
-                                          // Prevent multiple simultaneous fetches
-                                          if (fetchingRecordings.current.has(item.meeting_id!)) {
-                                            return
-                                          }
-                                          
-                                          fetchingRecordings.current.add(item.meeting_id!)
-                                          
-                                          try {
-                                            const { data: { session } } = await supabase.auth.getSession()
-                                            const accessToken = session?.access_token
-                                            
-                                            const response = await fetch(`/api/communication/recordings?meetingId=${item.meeting_id}`, {
-                                              method: 'GET',
-                                              headers: {
-                                                'Content-Type': 'application/json',
-                                                'Authorization': accessToken ? `Bearer ${accessToken}` : '',
-                                              },
-                                              credentials: 'include'
-                                            })
-
-                                            const data = await response.json()
-                                            
-                                            if (data.success && data.recordingUrl) {
-                                              // Cache the recording URL
-                                              recordingUrlCache.current[item.meeting_id!] = data.recordingUrl
-                                              
-                                              // Update the history item with the recording URL
-                                              setHistory(prev => prev.map(h => 
-                                                h.id === item.id 
-                                                  ? { ...h, recording_url: data.recordingUrl }
-                                                  : h
-                                              ))
-                                              
-                                              // Refresh history to persist in database
-                                              fetchHistory()
-                                              
-                                              setDialog({
-                                                isOpen: true,
-                                                title: 'Recording Available',
-                                                message: 'Recording has been successfully retrieved and is now available for playback.',
-                                                type: 'success'
-                                              })
-                                            } else {
-                                              // Handle specific error codes
-                                              let errorTitle = 'No Recording'
-                                              let errorMessage = data.error || 'Recording not available yet.'
-                                              
-                                              if (data.code === 3301 || errorMessage.includes('Recording is not available')) {
-                                                errorTitle = 'Recording Processing'
-                                                errorMessage = 'Recording is not available yet. This could mean:\n\n' +
-                                                  '• The meeting has not ended yet\n' +
-                                                  '• Recording is still being processed (can take 5-30 minutes after meeting ends)\n' +
-                                                  '• Recording was not enabled for this meeting\n\n' +
-                                                  'Please wait a few minutes and try again.'
-                                              } else if (errorMessage.includes('still in progress')) {
-                                                errorTitle = 'Meeting In Progress'
-                                                errorMessage = errorMessage
-                                              }
-                                              
-                                              setDialog({
-                                                isOpen: true,
-                                                title: errorTitle,
-                                                message: errorMessage,
-                                                type: 'warning'
-                                              })
-                                            }
-                                          } catch (error: any) {
-                                            console.error('Error fetching recording:', error)
-                                            setDialog({
-                                              isOpen: true,
-                                              title: 'Error',
-                                              message: 'Failed to fetch recording. Please try again.',
-                                              type: 'error'
-                                            })
-                                          } finally {
-                                            fetchingRecordings.current.delete(item.meeting_id!)
-                                          }
-                                        }}
-                                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors text-xs"
-                                        title="Fetch recording from Zoom"
-                                        disabled={isCurrentlyFetching}
-                                      >
-                                        <Video className="w-3 h-3" />
-                                        <span>Fetch Recording</span>
-                                      </button>
-                                    )
-                                  })()
-                                ) : (
-                                  <span className="text-xs text-gray-500 italic">
-                                    Recording processing...
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                  </div>
-                </div>
-                    </div>
-                  </div>
-                )
-              })
-            )}
+              <button
+                onClick={() => setNotification(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  color: 'inherit',
+                  opacity: 0.7
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7' }}
+              >
+                <svg style={{ width: '16px', height: '16px' }} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Custom Dialog */}
-      <Dialog
-        isOpen={dialog.isOpen}
-        onClose={() => setDialog({ ...dialog, isOpen: false })}
-        title={dialog.title}
-        message={dialog.message}
-        type={dialog.type}
-      />
-    </div>
+        {/* Appointment Detail Modal */}
+        <AppointmentDetailModal 
+          appointmentId={selectedAppointmentId}
+          isOpen={!!selectedAppointmentId}
+          appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+          currentDate={currentDate}
+          onClose={() => setSelectedAppointmentId(null)}
+          onStatusChange={() => {
+            // Trigger refresh immediately without blocking (skip loading state for faster update)
+            if (currentDoctorId) {
+              fetchAppointments(currentDoctorId, true) // Skip loading state for instant refresh
+            }
+          }}
+          onAppointmentSwitch={(appointmentId) => {
+            setSelectedAppointmentId(appointmentId)
+          }}
+          onFollowUp={(patientData, date, time) => {
+            setFollowUpPatientData(patientData)
+            setSelectedSlotDate(date)
+            setSelectedSlotTime(time)
+            setShowCreateDialog(true)
+            setSelectedAppointmentId(null) // Close appointment detail modal
+          }}
+          onSmsSent={(message) => {
+            setNotification({
+              type: 'success',
+              message: message
+            })
+            setTimeout(() => setNotification(null), 5000)
+          }}
+        />
+
+        {/* Create Appointment Dialog */}
+        {currentDoctorId && selectedSlotDate && selectedSlotTime && (
+          <CreateAppointmentDialog
+            isOpen={showCreateDialog}
+            appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+            onClose={() => {
+              setShowCreateDialog(false)
+              setSelectedSlotDate(null)
+              setSelectedSlotTime(null)
+              setFollowUpPatientData(null)
+            }}
+            onSuccess={async () => {
+              if (currentDoctorId) {
+                await fetchAppointments(currentDoctorId)
+              }
+              setFollowUpPatientData(null)
+            }}
+            doctorId={currentDoctorId}
+            selectedDate={selectedSlotDate}
+            selectedTime={selectedSlotTime}
+            patientData={followUpPatientData}
+          />
+        )}
+
+        {/* Instant Visit Queue Modal */}
+        {activeInstantVisit && (
+          <InstantVisitQueueModal
+            isOpen={isQueueModalOpen}
+            patient={{
+              id: activeInstantVisit.patient_id || '',
+              appointmentId: activeInstantVisit.id,
+              name: `${activeInstantVisit.patients?.first_name || ''} ${activeInstantVisit.patients?.last_name || ''}`.trim() || 'Unknown Patient',
+              email: activeInstantVisit.patients?.email || '',
+              phone: activeInstantVisit.patients?.phone || '',
+              reason: getAppointmentReason(activeInstantVisit),
+              visitType: (activeInstantVisit.visit_type === 'video' ? 'video' : 'phone') as 'video' | 'phone',
+              position: instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1,
+              totalInQueue: instantVisitQueue.length,
+              estimatedWait: (instantVisitQueue.findIndex(apt => apt.id === activeInstantVisit.id) + 1) * 5,
+              paidAt: activeInstantVisit.created_at ? new Date(activeInstantVisit.created_at) : new Date()
+            }}
+            onClose={() => setIsQueueModalOpen(false)}
+            onStartCall={handleStartCall}
+            onComplete={handleCompleteInstantVisit}
+            onCancel={handleCancelInstantVisit}
+          />
+        )}
+      </div>
+    </>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

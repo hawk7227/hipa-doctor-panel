@@ -1,6 +1,7 @@
 import React from 'react'
 import { Calendar } from 'lucide-react'
 import type { Referral, FollowUpData } from '../hooks/useReferralsFollowUp'
+import ChartFileUpload from '../../ChartFileUpload'
 
 interface ReferralsFollowUpSectionProps {
   referrals: Referral[]
@@ -24,6 +25,8 @@ interface ReferralsFollowUpSectionProps {
   onCreateReferral: () => Promise<void>
   onScheduleFollowUp: () => Promise<void>
   error?: string | null
+  patientId?: string
+  appointmentId?: string
 }
 
 export default function ReferralsFollowUpSection({
@@ -41,7 +44,9 @@ export default function ReferralsFollowUpSection({
   sectionProps,
   onCreateReferral,
   onScheduleFollowUp,
-  error
+  error,
+  patientId,
+  appointmentId
 }: ReferralsFollowUpSectionProps) {
   return (
     <div {...sectionProps}>
@@ -194,8 +199,15 @@ export default function ReferralsFollowUpSection({
             </div>
           )}
         </div>
+
+        {/* File Uploads */}
+        {patientId && appointmentId && (
+          <ChartFileUpload patientId={patientId} appointmentId={appointmentId} section="referrals" />
+        )}
       </div>
     </div>
   )
 }
+
+
 

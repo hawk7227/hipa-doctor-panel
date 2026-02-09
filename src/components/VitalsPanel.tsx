@@ -146,7 +146,7 @@ export default function VitalsPanel({
   
   const handleAdd = async () => {
     // At least one vital must be entered
-    if (!formData.systolic_bp && !formData.heart_rate && !formData.temperature) {
+    if (!formData.systolic_bp && !formData.heart_rate && !formData.temperature && !formData.weight && !formData.height && !formData.oxygen_saturation && !formData.respiratory_rate) {
       setError('Please enter at least one vital sign')
       return
     }
@@ -167,6 +167,10 @@ export default function VitalsPanel({
       if (formData.diastolic_bp) insertData.diastolic_bp = parseInt(formData.diastolic_bp)
       if (formData.heart_rate) insertData.heart_rate = parseInt(formData.heart_rate)
       if (formData.temperature) insertData.temperature = parseFloat(formData.temperature)
+      if (formData.weight) insertData.weight = parseFloat(formData.weight)
+      if (formData.height) insertData.height = parseFloat(formData.height)
+      if (formData.oxygen_saturation) insertData.oxygen_saturation = parseInt(formData.oxygen_saturation)
+      if (formData.respiratory_rate) insertData.respiratory_rate = parseInt(formData.respiratory_rate)
       if (appointmentId) insertData.appointment_id = appointmentId
       
       const { data, error: insertError } = await supabase
@@ -212,6 +216,10 @@ export default function VitalsPanel({
       if (formData.diastolic_bp) updateData.diastolic_bp = parseInt(formData.diastolic_bp)
       if (formData.heart_rate) updateData.heart_rate = parseInt(formData.heart_rate)
       if (formData.temperature) updateData.temperature = parseFloat(formData.temperature)
+      if (formData.weight) updateData.weight = parseFloat(formData.weight)
+      if (formData.height) updateData.height = parseFloat(formData.height)
+      if (formData.oxygen_saturation) updateData.oxygen_saturation = parseInt(formData.oxygen_saturation)
+      if (formData.respiratory_rate) updateData.respiratory_rate = parseInt(formData.respiratory_rate)
       
       const { error: updateError } = await supabase
         .from('vitals')
@@ -592,6 +600,56 @@ export default function VitalsPanel({
               </p>
             </div>
             
+            {/* Weight */}
+            <div className="p-3 bg-[#0a1628] rounded-lg text-center border border-[#1b2b4d]">
+              <TrendingUp className="h-5 w-5 text-green-400 mx-auto mb-1" />
+              <p className="text-xs text-gray-400 mb-1">Weight</p>
+              <p className="text-white font-semibold">
+                {latestVital.weight ? `${latestVital.weight} lbs` : 'N/A'}
+              </p>
+              {latestVital.height && latestVital.weight ? (
+                <p className="text-xs mt-1 text-cyan-400">
+                  BMI: {((latestVital.weight / (latestVital.height * latestVital.height)) * 703).toFixed(1)}
+                </p>
+              ) : (
+                <p className="text-xs mt-1 text-gray-500">{latestVital.height ? `${latestVital.height} in` : 'No height'}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2 */}
+          <div className="grid grid-cols-4 gap-3 mt-3">
+            {/* Height */}
+            <div className="p-3 bg-[#0a1628] rounded-lg text-center border border-[#1b2b4d]">
+              <p className="text-xs text-gray-400 mb-1">Height</p>
+              <p className="text-white font-semibold">
+                {latestVital.height ? `${Math.floor(latestVital.height / 12)}'${Math.round(latestVital.height % 12)}"` : 'N/A'}
+              </p>
+              <p className="text-xs mt-1 text-gray-500">{latestVital.height ? `${latestVital.height} in` : ''}</p>
+            </div>
+
+            {/* O2 Saturation */}
+            <div className="p-3 bg-[#0a1628] rounded-lg text-center border border-[#1b2b4d]">
+              <p className="text-xs text-gray-400 mb-1">O2 Sat</p>
+              <p className="text-white font-semibold">
+                {latestVital.oxygen_saturation ? `${latestVital.oxygen_saturation}%` : 'N/A'}
+              </p>
+              <p className={`text-xs mt-1 ${latestVital.oxygen_saturation && latestVital.oxygen_saturation >= 95 ? 'text-green-400' : latestVital.oxygen_saturation && latestVital.oxygen_saturation >= 90 ? 'text-yellow-400' : 'text-gray-500'}`}>
+                {latestVital.oxygen_saturation ? (latestVital.oxygen_saturation >= 95 ? 'Normal' : latestVital.oxygen_saturation >= 90 ? 'Low' : 'Critical') : ''}
+              </p>
+            </div>
+
+            {/* Respiratory Rate */}
+            <div className="p-3 bg-[#0a1628] rounded-lg text-center border border-[#1b2b4d]">
+              <p className="text-xs text-gray-400 mb-1">Resp Rate</p>
+              <p className="text-white font-semibold">
+                {latestVital.respiratory_rate ? `${latestVital.respiratory_rate}/min` : 'N/A'}
+              </p>
+              <p className={`text-xs mt-1 ${latestVital.respiratory_rate && latestVital.respiratory_rate >= 12 && latestVital.respiratory_rate <= 20 ? 'text-green-400' : latestVital.respiratory_rate ? 'text-yellow-400' : 'text-gray-500'}`}>
+                {latestVital.respiratory_rate ? (latestVital.respiratory_rate >= 12 && latestVital.respiratory_rate <= 20 ? 'Normal' : 'Abnormal') : ''}
+              </p>
+            </div>
+
             {/* Total Readings */}
             <div className="p-3 bg-[#0a1628] rounded-lg text-center border border-[#1b2b4d]">
               <TrendingUp className="h-5 w-5 text-cyan-400 mx-auto mb-1" />
@@ -699,6 +757,59 @@ export default function VitalsPanel({
                 value={formData.temperature}
                 onChange={(e) => setFormData({ ...formData, temperature: e.target.value })}
                 placeholder="98.6"
+                className="w-full px-3 py-2 bg-[#0a1628] border border-[#1b2b4d] rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Height, Weight, O2 Sat, Respiratory Rate */}
+          <div className="grid grid-cols-4 gap-3 mt-3">
+            {/* Height */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Height (in)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={formData.height}
+                onChange={(e) => setFormData({ ...formData, height: e.target.value })}
+                placeholder="64"
+                className="w-full px-3 py-2 bg-[#0a1628] border border-[#1b2b4d] rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            
+            {/* Weight */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Weight (lbs)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={formData.weight}
+                onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                placeholder="150"
+                className="w-full px-3 py-2 bg-[#0a1628] border border-[#1b2b4d] rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            
+            {/* O2 Saturation */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">O2 Sat (%)</label>
+              <input
+                type="number"
+                value={formData.oxygen_saturation}
+                onChange={(e) => setFormData({ ...formData, oxygen_saturation: e.target.value })}
+                placeholder="98"
+                className="w-full px-3 py-2 bg-[#0a1628] border border-[#1b2b4d] rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            
+            {/* Respiratory Rate */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Resp Rate (/min)</label>
+              <input
+                type="number"
+                value={formData.respiratory_rate}
+                onChange={(e) => setFormData({ ...formData, respiratory_rate: e.target.value })}
+                placeholder="16"
                 className="w-full px-3 py-2 bg-[#0a1628] border border-[#1b2b4d] rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -886,5 +997,8 @@ export default function VitalsPanel({
     </div>
   )
 }
+
+
+
 
 

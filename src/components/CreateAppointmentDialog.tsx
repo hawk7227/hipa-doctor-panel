@@ -393,6 +393,90 @@ export default function CreateAppointmentDialog({
     // This handler just prepares the form
   }
 
+  // Save new patient to database WITHOUT creating an appointment
+  const handleSavePatientOnly = async () => {
+    if (!formData.firstName || !formData.lastName) {
+      alert('Please fill in patient first name and last name')
+      return
+    }
+
+    setCreating(true)
+
+    try {
+      // Check if patient already exists by email or phone
+      let existingPatient = null
+      if (formData.email) {
+        const { data } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('email', formData.email)
+          .maybeSingle()
+        existingPatient = data
+      }
+      if (!existingPatient && formData.phone) {
+        const { data } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('phone', formData.phone)
+          .maybeSingle()
+        existingPatient = data
+      }
+
+      if (existingPatient) {
+        alert('A patient with this email or phone already exists. Please use "Select Patient" to find them.')
+        setCreating(false)
+        return
+      }
+
+      // Create the patient record
+      const { data: newPatient, error: patientError } = await supabase
+        .from('patients')
+        .insert({
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          date_of_birth: formData.dob || null,
+          location: formData.location || null,
+          doctor_id: doctorId,
+          created_at: new Date().toISOString()
+        })
+        .select('id, first_name, last_name, email, phone')
+        .single()
+
+      if (patientError) {
+        console.error('Error creating patient:', patientError)
+        throw new Error(patientError.message || 'Failed to create patient')
+      }
+
+      console.log('✅ Patient created (no appointment):', newPatient.id, newPatient.first_name, newPatient.last_name)
+
+      // Reset form
+      setFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        dob: '',
+        location: '',
+        visitType: 'video',
+        serviceType: 'consultation',
+        notes: ''
+      })
+      setSelectedPatient(null)
+      setPatientMode('select')
+      setSearchTerm('')
+
+      alert(`Patient ${newPatient.first_name} ${newPatient.last_name} saved successfully! You can now find them in patient search.`)
+      onClose()
+    } catch (error: any) {
+      console.error('Error saving patient:', error)
+      alert(error.message || 'Failed to save patient')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!editingAppointmentId) {
       alert('No appointment selected to delete')
@@ -1064,6 +1148,16 @@ export default function CreateAppointmentDialog({
             >
               Cancel
             </button>
+            {patientMode === 'create' && (
+              <button
+                type="button"
+                disabled={creating || !formData.firstName || !formData.lastName}
+                onClick={handleSavePatientOnly}
+                className="flex-1 px-3 sm:px-4 py-2.5 sm:py-2 text-sm sm:text-base bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Saving...' : '💾 Save Patient Only'}
+              </button>
+            )}
             <button
               type="submit"
               disabled={creating}
@@ -1079,5 +1173,7 @@ export default function CreateAppointmentDialog({
     </>
   )
 }
+
+
 
 
