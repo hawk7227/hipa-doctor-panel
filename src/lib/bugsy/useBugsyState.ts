@@ -49,7 +49,7 @@ const getInitialContext = (): InterviewContext => ({ user_id: '', user_name: '',
 const getInitialRecording = (): RecordingData => ({ video_url: null, duration_seconds: 0, file_size_bytes: 0 });
 const getInitialTranscript = (): TranscriptData => ({ full_text: '', segments: [], keywords_found: [] });
 const getInitialAnalysis = (): AnalysisResult => ({ problem_identified: '', elements_involved: [], components_identified: [], files_identified: [], api_endpoints_identified: [], pattern_matches: [], similar_bugs: [] });
-const getInitialGaps = (): GapTracking => ({ problem_statement: 'unknown', expected_behavior: false, error_message: 'unknown', frequency: 'unknown', worked_before: 'unknown', steps_clear: false });
+const getInitialGaps = (): GapTracking => ({ problem_statement: 'unknown', expected_behavior: 'unknown', error_message: 'unknown', frequency: 'unknown', worked_before: 'unknown', steps_clear: 'unknown' });
 const getInitialAnswers = (): DoctorAnswers => ({ expected_behavior: [], error_message: null, frequency: null, worked_before: null, additional_notes: '', corrections: [], reflection_confirmed: false });
 const getInitialConfidence = (): ConfidenceData => ({ score: 0, breakdown: { problem_clarity: 0, location_clarity: 0, steps_clarity: 0, expected_clarity: 0, context_clarity: 0, pattern_bonus: 0, total: 0 }, minimum_required: BUGSY_CONFIG.MINIMUM_CONFIDENCE_TO_SUBMIT, ready_to_submit: false });
 
