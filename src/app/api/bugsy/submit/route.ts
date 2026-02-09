@@ -150,8 +150,7 @@ export async function POST(request: NextRequest) {
       page_name: report.page_name || '',
       browser_info: typeof report.browser_info === 'string' ? report.browser_info : JSON.stringify(report.browser_info || ''),
       screen_size: report.screen_size || null,
-      session_id: report.bugsy_interview_data?.context?.session_id || null,
-
+      session_id: null,
       // Status
       status: 'new',
       priority: priority || 'medium',
