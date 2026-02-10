@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,3 +103,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
