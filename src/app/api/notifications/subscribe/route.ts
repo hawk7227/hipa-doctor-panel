@@ -1,6 +1,6 @@
 // ============================================================================
 // PUSH SUBSCRIPTION API — Register/unregister push subscriptions
-// Route: /api/notifications/subscribe/route.ts
+// Deploy to: src/app/api/notifications/subscribe/route.ts
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
   try {
     const { subscription, user_id, user_role, user_name } = await request.json();
 
+    console.log('[SUBSCRIBE] Incoming:', { user_id, user_role, user_name, endpoint: subscription?.endpoint?.slice(0, 50) });
+
     if (!subscription || !subscription.endpoint || !user_id) {
       return NextResponse.json(
         { success: false, error: 'subscription and user_id required' },
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
       .from('push_subscriptions')
       .upsert(
         {
-          user_id,
+          user_id: String(user_id),
           user_role: user_role || 'provider',
           user_name: user_name || 'Unknown',
           endpoint: subscription.endpoint,
@@ -45,13 +47,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('Subscription save error:', error);
+      console.error('[SUBSCRIBE] Supabase error:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    console.log('[SUBSCRIBE] Success:', data?.id);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('Subscription error:', error);
+    console.error('[SUBSCRIBE] Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
@@ -71,7 +74,7 @@ export async function DELETE(request: NextRequest) {
       .eq('endpoint', endpoint);
 
     if (error) {
-      console.error('Unsubscribe error:', error);
+      console.error('[UNSUBSCRIBE] Error:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
