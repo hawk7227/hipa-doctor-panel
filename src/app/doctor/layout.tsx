@@ -4,12 +4,11 @@ import { ReactNode, useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
-import { signOutAndRedirect } from '@/lib/auth'
+import { signOutAndRedirect, getCurrentUser } from '@/lib/auth'
 import { Menu, X, Bug } from 'lucide-react'
 import { BugsyWidget } from '@/components/bugsy'
 import LiveSessionAlert from '@/components/LiveSessionAlert'
 import NotificationBell from '@/components/NotificationBell'
-import { supabase } from '@/lib/supabase'
 
 interface DoctorLayoutProps {
   children: ReactNode
@@ -18,27 +17,31 @@ interface DoctorLayoutProps {
 export default function DoctorLayout({ children }: DoctorLayoutProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [doctorId, setDoctorId] = useState<string>('')
-  const [doctorName, setDoctorName] = useState<string>('')
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [doctorName, setDoctorName] = useState<string>('Doctor')
   
   const isActive = (path: string) => pathname === path
-
-  // Get doctor info for notifications
-  useEffect(() => {
-    const getDoctorInfo = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        setDoctorId(session.user.id)
-        setDoctorName(session.user.user_metadata?.full_name || session.user.email || 'Doctor')
-      }
-    }
-    getDoctorInfo()
-  }, [])
 
   // Close sidebar when route changes on mobile
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
+
+  // Fetch doctor info for NotificationBell
+  useEffect(() => {
+    const fetchDoctor = async () => {
+      try {
+        const authUser = await getCurrentUser()
+        if (authUser?.doctor) {
+          setDoctorId(authUser.doctor.id)
+          setDoctorName(`Dr. ${authUser.doctor.first_name || ''} ${authUser.doctor.last_name || ''}`.trim())
+        }
+      } catch (error) {
+        console.log('Error fetching doctor for notifications:', error)
+      }
+    }
+    fetchDoctor()
+  }, [])
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
@@ -56,18 +59,13 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
     <AuthWrapper>
       <div className="min-h-screen bg-gray-900 flex">
         {/* Mobile Menu Button */}
-        <div className="lg:hidden fixed top-4 left-4 right-4 z-[60] flex items-center justify-between">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 bg-[#0d2626] text-white rounded-lg border border-[#1a3d3d] hover:bg-[#164e4e] transition-colors"
-            aria-label="Toggle menu"
-          >
-            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-          {doctorId && (
-            <NotificationBell userId={doctorId} userRole="provider" userName={doctorName} />
-          )}
-        </div>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="lg:hidden fixed top-4 left-4 z-[60] p-2 bg-[#0d2626] text-white rounded-lg border border-[#1a3d3d] hover:bg-[#164e4e] transition-colors"
+          aria-label="Toggle menu"
+        >
+          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
 
         {/* Backdrop overlay for mobile */}
         {sidebarOpen && (
@@ -85,20 +83,13 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
         >
           <div className="h-full flex flex-col p-6">
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center">
-                  <div className="w-6 h-6 bg-white rounded-full"></div>
-                </div>
-                <div>
-                  <h1 className="text-lg font-bold text-white">Medazon Health</h1>
-                  <p className="text-xs text-teal-400">Doctor Panel</p>
-                </div>
+            <div className="flex items-center space-x-3 mb-8">
+              <div className="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center">
+                <div className="w-6 h-6 bg-white rounded-full"></div>
               </div>
-              <div className="hidden lg:block">
-                {doctorId && (
-                  <NotificationBell userId={doctorId} userRole="provider" userName={doctorName} />
-                )}
+              <div>
+                <h1 className="text-lg font-bold text-white">Medazon Health</h1>
+                <p className="text-xs text-teal-400">Doctor Panel</p>
               </div>
             </div>
             
@@ -221,6 +212,12 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
             
             {/* Footer */}
             <div className="mt-4 border border-[#1a3d3d] rounded-lg p-2">
+              {/* Push Notification Bell */}
+              {doctorId && (
+                <div className="px-4 py-2 mb-2">
+                  <NotificationBell userId={doctorId} userRole="provider" userName={doctorName} />
+                </div>
+              )}
               <button
                 onClick={signOutAndRedirect}
                 className="block px-4 py-3 text-gray-300 hover:bg-[#164e4e] w-full text-left rounded-lg border border-[#1a3d3d] transition-colors"
@@ -249,5 +246,6 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
     </AuthWrapper>
   )
 }
+
 
 
