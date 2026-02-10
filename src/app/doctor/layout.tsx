@@ -4,8 +4,11 @@ import { ReactNode, useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
-import { signOutAndRedirect } from '@/lib/auth'
-import { Menu, X } from 'lucide-react'
+import { signOutAndRedirect, getCurrentUser } from '@/lib/auth'
+import { Menu, X, Bug } from 'lucide-react'
+import { BugsyWidget } from '@/components/bugsy'
+import LiveSessionAlert from '@/components/LiveSessionAlert'
+import NotificationBell from '@/components/NotificationBell'
 
 interface DoctorLayoutProps {
   children: ReactNode
@@ -14,6 +17,8 @@ interface DoctorLayoutProps {
 export default function DoctorLayout({ children }: DoctorLayoutProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [doctorName, setDoctorName] = useState<string>('Doctor')
   
   const isActive = (path: string) => pathname === path
 
@@ -21,6 +26,22 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
+
+  // Fetch doctor info for NotificationBell
+  useEffect(() => {
+    const fetchDoctor = async () => {
+      try {
+        const authUser = await getCurrentUser()
+        if (authUser?.doctor) {
+          setDoctorId(authUser.doctor.id)
+          setDoctorName(`Dr. ${authUser.doctor.first_name || ''} ${authUser.doctor.last_name || ''}`.trim())
+        }
+      } catch (error) {
+        console.log('Error fetching doctor for notifications:', error)
+      }
+    }
+    fetchDoctor()
+  }, [])
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
@@ -182,11 +203,33 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
                 >
                   Availability
                 </Link>
+
+                {/* Bug Reports Section */}
+                <div className="mt-4 pt-4 border-t border-[#1a3d3d]">
+                  <Link 
+                    href="/doctor/bug-reports" 
+                    className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-colors ${
+                      isActive('/doctor/bug-reports') 
+                        ? 'bg-[#164e4e] text-white font-medium' 
+                        : 'text-gray-300 hover:bg-[#164e4e]'
+                    }`}
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <Bug className="w-4 h-4" />
+                    My Bug Reports
+                  </Link>
+                </div>
               </div>
             </nav>
             
             {/* Footer */}
             <div className="mt-4 border border-[#1a3d3d] rounded-lg p-2">
+              {/* Push Notification Bell */}
+              {doctorId && (
+                <div className="px-4 py-2 mb-2">
+                  <NotificationBell userId={doctorId} userRole="provider" userName={doctorName} />
+                </div>
+              )}
               <button
                 onClick={signOutAndRedirect}
                 className="block px-4 py-3 text-gray-300 hover:bg-[#164e4e] w-full text-left rounded-lg border border-[#1a3d3d] transition-colors"
@@ -205,10 +248,26 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
             </div>
           </div>
         </main>
+
+        {/* Bugsy AI Widget - New AI-powered bug reporting */}
+        <BugsyWidget />
+
+        {/* Live Session Alert - Shows when admin requests a session */}
+        <LiveSessionAlert />
       </div>
     </AuthWrapper>
   )
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

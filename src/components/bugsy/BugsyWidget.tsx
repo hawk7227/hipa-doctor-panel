@@ -284,3 +284,4 @@ export default function BugsyWidget({ position = 'bottom-right' }: BugsyWidgetPr
     </>
   );
 }
+
