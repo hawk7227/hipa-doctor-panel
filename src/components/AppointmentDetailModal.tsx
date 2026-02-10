@@ -1103,25 +1103,10 @@ export default function AppointmentDetailModal({
                 </div>
               )}
               <MakeCallFaxPanel
-                phoneNumber={communication.callPhoneNumber || appointment?.patients?.phone || ''}
-                providerId={currentUser?.id}
-                patientId={appointment?.patient_id}
-                appointmentId={appointmentId}
-                onPhoneNumberChange={communication.handleCallPhoneNumberChange}
-                onMakeCall={async (phoneNumber) => {
-                  communication.handleCallPhoneNumberChange(phoneNumber)
-                  await communication.handleMakeCall()
-                }}
-                onEndCall={async () => {
-                  await communication.handleEndCall()
-                }}
-                onToggleMute={communication.handleToggleMute}
-                isCallInProgress={communication.isCalling}
-                isMuted={communication.isMuted}
-                callDuration={communication.callDuration}
-                isDeviceReady={communication.isDeviceReady}
-                externalError={error && error.includes('call') ? error : undefined}
-              />
+  phoneNumber={communication.callPhoneNumber || appointment?.patients?.phone || ''}
+  patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || ''}
+  patientId={appointment?.patient_id}
+/>
             </div>
           )
 
@@ -1683,6 +1668,27 @@ export default function AppointmentDetailModal({
     </>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
