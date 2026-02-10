@@ -129,19 +129,19 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  Patients
+                  + New Patient
                 </Link>
-
+                
                 <Link 
-                  href="/doctor/new-patient" 
+                  href="/doctor/records" 
                   className={`block px-4 py-3 rounded-lg transition-colors ${
-                    isActive('/doctor/new-patient') 
+                    isActive('/doctor/records') 
                       ? 'bg-[#164e4e] text-white font-medium' 
                       : 'text-gray-300 hover:bg-[#164e4e]'
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
-                  + New Patient
+                  Medical Records
                 </Link>
                 
                 <Link 
