@@ -131,11 +131,21 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
                 >
                   Patients
                 </Link>
+
+                <Link 
+                  href="/doctor/new-patient" 
+                  className={`block px-4 py-3 rounded-lg transition-colors ${
+                    isActive('/doctor/new-patient') 
+                      ? 'bg-[#164e4e] text-white font-medium' 
+                      : 'text-gray-300 hover:bg-[#164e4e]'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  + New Patient
+                </Link>
                 
                 <Link 
                   href="/doctor/records" 
-                  className={`block px-4 py-3 rounded-lg transition-colors ${
-                    isActive('/doctor/records') 
                       ? 'bg-[#164e4e] text-white font-medium' 
                       : 'text-gray-300 hover:bg-[#164e4e]'
                   }`}
