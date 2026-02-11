@@ -68,6 +68,8 @@ interface AppointmentDetailModalProps {
   isOpen: boolean
   onClose: () => void
   onStatusChange: () => void
+  doctorId?: string
+  doctorName?: string
   onSmsSent?: (message: string) => void
   appointments?: CalendarAppointment[]
   currentDate?: Date
