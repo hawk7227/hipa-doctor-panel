@@ -1,0 +1,435 @@
+'use client'
+
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import './mobile-first.css'
+
+// ============================================
+// TYPES
+// ============================================
+interface Appointment {
+  id: string
+  patient_id: string
+  doctor_id: string
+  status: string
+  visit_type: 'video' | 'phone' | 'async' | 'instant' | null
+  requested_date_time: string | null
+  created_at: string
+  patients?: {
+    first_name?: string | null
+    last_name?: string | null
+    email?: string | null
+    phone?: string | null
+  } | null
+  reason?: string | null
+  chief_complaint?: string | null
+}
+
+// ============================================
+// MOBILE-FIRST APPOINTMENTS PAGE
+// ============================================
+export default function MobileAppointments() {
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [activeNav, setActiveNav] = useState('calendar')
+
+  // Get week dates for the strip
+  const weekDates = useMemo(() => {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const sunday = new Date(today)
+    sunday.setDate(today.getDate() - dayOfWeek)
+    
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(sunday)
+      date.setDate(sunday.getDate() + i)
+      return date
+    })
+  }, [])
+
+  // Filter appointments for selected date
+  const todaysAppointments = useMemo(() => {
+    return appointments.filter(apt => {
+      if (!apt.requested_date_time) return false
+      const aptDate = new Date(apt.requested_date_time)
+      return aptDate.toDateString() === selectedDate.toDateString()
+    }).sort((a, b) => {
+      if (!a.requested_date_time || !b.requested_date_time) return 0
+      return new Date(a.requested_date_time).getTime() - new Date(b.requested_date_time).getTime()
+    })
+  }, [appointments, selectedDate])
+
+  // Stats
+  const stats = useMemo(() => {
+    const today = new Date().toDateString()
+    const todayApts = appointments.filter(apt => {
+      if (!apt.requested_date_time) return false
+      return new Date(apt.requested_date_time).toDateString() === today
+    })
+    
+    return {
+      total: new Set(appointments.map(a => a.patient_id)).size,
+      today: todayApts.length,
+      pending: todayApts.filter(a => a.status === 'pending').length,
+      complete: todayApts.filter(a => a.status === 'completed').length,
+    }
+  }, [appointments])
+
+  // Queue count
+  const queueCount = useMemo(() => {
+    return appointments.filter(a => a.visit_type === 'instant' && a.status === 'pending').length
+  }, [appointments])
+
+  // Fetch appointments
+  useEffect(() => {
+    async function fetchAppointments() {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const { data, error: fetchError } = await supabase
+          .from('appointments')
+          .select(`
+            *,
+            patients (first_name, last_name, email, phone)
+          `)
+          .order('requested_date_time', { ascending: true })
+        
+        if (fetchError) throw fetchError
+        setAppointments(data || [])
+      } catch (err) {
+        console.error('Error fetching appointments:', err)
+        setError('Failed to load appointments')
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchAppointments()
+  }, [])
+
+  // Format time
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: false 
+    })
+  }
+
+  // Format date for header
+  const formatMonth = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
+  // Check if date is today
+  const isToday = (date: Date) => {
+    return date.toDateString() === new Date().toDateString()
+  }
+
+  // Check if date is selected
+  const isSelected = (date: Date) => {
+    return date.toDateString() === selectedDate.toDateString()
+  }
+
+  // Check if date has appointments
+  const hasAppointments = (date: Date) => {
+    return appointments.some(apt => {
+      if (!apt.requested_date_time) return false
+      return new Date(apt.requested_date_time).toDateString() === date.toDateString()
+    })
+  }
+
+  // Get status badge class
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case 'confirmed':
+      case 'accepted':
+        return 'confirmed'
+      case 'pending':
+        return 'pending'
+      case 'cancelled':
+        return 'cancelled'
+      default:
+        return 'pending'
+    }
+  }
+
+  // Get mode icon
+  const getModeIcon = (visitType: string | null) => {
+    switch (visitType) {
+      case 'video':
+        return '📹'
+      case 'phone':
+        return '📞'
+      case 'instant':
+        return '⚡'
+      case 'async':
+        return '📋'
+      default:
+        return '📅'
+    }
+  }
+
+  // Get reason
+  const getReason = (apt: Appointment) => {
+    return apt.reason || apt.chief_complaint || 'General Visit'
+  }
+
+  // Navigate month
+  const navigateMonth = (direction: number) => {
+    const newDate = new Date(selectedDate)
+    newDate.setMonth(newDate.getMonth() + direction)
+    setSelectedDate(newDate)
+  }
+
+  if (loading) {
+    return (
+      <div className="mobile-page">
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          height: '100vh',
+          color: 'var(--text-secondary)'
+        }}>
+          Loading appointments...
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="mobile-page">
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          height: '100vh',
+          padding: '20px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <div style={{ color: 'var(--danger-red)', marginBottom: '8px' }}>{error}</div>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '12px 24px',
+              background: 'var(--primary-blue)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mobile-page">
+      {/* Header */}
+      <header className="mobile-header">
+        <div className="mobile-header-row">
+          <div className="mobile-header-left">
+            <button className="mobile-back-btn">←</button>
+            <h1 className="mobile-header-title">Your Appointments</h1>
+          </div>
+          <div className="mobile-header-actions">
+            <button className="icon-btn">🔍</button>
+            <button className="icon-btn primary">+</button>
+          </div>
+        </div>
+      </header>
+
+      {/* Month Navigation */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        background: 'var(--bg-white)',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <h2 style={{ 
+          fontSize: '18px', 
+          fontWeight: 700, 
+          color: 'var(--text-primary)' 
+        }}>
+          {formatMonth(selectedDate)}
+        </h2>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button 
+            className="icon-btn" 
+            onClick={() => navigateMonth(-1)}
+            style={{ width: '32px', height: '32px' }}
+          >
+            ‹
+          </button>
+          <button 
+            className="icon-btn"
+            onClick={() => navigateMonth(1)}
+            style={{ width: '32px', height: '32px' }}
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      {/* Week Strip */}
+      <div className="week-strip">
+        {weekDates.map((date, index) => (
+          <button
+            key={index}
+            className={`day-chip ${isSelected(date) ? 'selected' : ''} ${isToday(date) ? 'today' : ''}`}
+            onClick={() => setSelectedDate(date)}
+          >
+            <div className="day-weekday">
+              {date.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
+            </div>
+            <div className="day-date">{date.getDate()}</div>
+            {hasAppointments(date) && <div className="day-dot" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats Row */}
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-value blue">{stats.total}</div>
+          <div className="stat-label">Patients</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.today}</div>
+          <div className="stat-label">Today</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value orange">{stats.pending}</div>
+          <div className="stat-label">Pending</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value green">{stats.complete}</div>
+          <div className="stat-label">Complete</div>
+        </div>
+      </div>
+
+      {/* Section Header */}
+      <div className="section-header">
+        <h3 className="section-title">Today's Appointments</h3>
+        <button className="section-link">View All →</button>
+      </div>
+
+      {/* Appointments Table */}
+      <div className="appointment-table">
+        <div className="table-header">
+          <span>TIME</span>
+          <span>PATIENT</span>
+          <span>STATUS</span>
+          <span>MODE</span>
+        </div>
+        
+        {todaysAppointments.length > 0 ? (
+          todaysAppointments.map(apt => (
+            <div key={apt.id} className="appointment-row">
+              <div className="apt-time">
+                {apt.requested_date_time ? formatTime(apt.requested_date_time) : '--:--'}
+              </div>
+              <div className="apt-patient">
+                <div className="apt-patient-name">
+                  {apt.patients?.first_name} {apt.patients?.last_name}
+                </div>
+                <div className="apt-patient-reason">{getReason(apt)}</div>
+              </div>
+              <div className="apt-status">
+                <span className={`status-badge ${getStatusClass(apt.status)}`}>
+                  {apt.status === 'accepted' ? 'Confirmed' : 
+                   apt.status.charAt(0).toUpperCase() + apt.status.slice(1)}
+                </span>
+              </div>
+              <div className="mode-indicator">
+                <span className="mode-icon">{getModeIcon(apt.visit_type)}</span>
+                <span>{apt.visit_type || 'Visit'}</span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ 
+            padding: '40px 20px', 
+            textAlign: 'center', 
+            color: 'var(--text-muted)' 
+          }}>
+            No appointments for this day
+          </div>
+        )}
+      </div>
+
+      {/* Queue Alert */}
+      {queueCount > 0 && (
+        <div className="queue-alert">
+          <div className="queue-alert-left">
+            <span className="queue-alert-icon">⚡</span>
+            <div>
+              <div className="queue-alert-text">{queueCount} Patient{queueCount > 1 ? 's' : ''} in Queue</div>
+              <div className="queue-alert-sub">Waiting for instant visit</div>
+            </div>
+          </div>
+          <button className="queue-alert-btn">Start</button>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="action-buttons">
+        <button className="action-btn primary">+ New Visit</button>
+        <button className="action-btn outline">📅 Calendar</button>
+        <button className="action-btn outline">👥 Patients</button>
+      </div>
+
+      {/* Bottom Navigation */}
+      <nav className="bottom-nav">
+        <div 
+          className={`nav-item ${activeNav === 'home' ? 'active' : ''}`}
+          onClick={() => setActiveNav('home')}
+        >
+          <span className="nav-icon">🏠</span>
+          <span className="nav-label">Home</span>
+        </div>
+        <div 
+          className={`nav-item ${activeNav === 'calendar' ? 'active' : ''}`}
+          onClick={() => setActiveNav('calendar')}
+        >
+          <span className="nav-icon">📅</span>
+          <span className="nav-label">Calendar</span>
+        </div>
+        <div 
+          className={`nav-item ${activeNav === 'patients' ? 'active' : ''}`}
+          onClick={() => setActiveNav('patients')}
+        >
+          <span className="nav-icon">👥</span>
+          <span className="nav-label">Patients</span>
+        </div>
+        <div 
+          className={`nav-item ${activeNav === 'records' ? 'active' : ''}`}
+          onClick={() => setActiveNav('records')}
+        >
+          <span className="nav-icon">📁</span>
+          <span className="nav-label">Records</span>
+        </div>
+        <div 
+          className={`nav-item ${activeNav === 'profile' ? 'active' : ''}`}
+          onClick={() => setActiveNav('profile')}
+        >
+          <span className="nav-icon">👤</span>
+          <span className="nav-label">Profile</span>
+        </div>
+      </nav>
+    </div>
+  )
+}

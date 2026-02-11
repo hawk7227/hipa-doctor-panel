@@ -1,0 +1,311 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import './mobile-first.css'
+
+// ============================================
+// TYPES
+// ============================================
+interface Patient {
+  id: string
+  first_name: string
+  last_name: string
+  date_of_birth: string
+  gender: string
+  mrn: string
+  email: string
+  phone: string
+}
+
+interface Vital {
+  blood_pressure: string
+  heart_rate: number
+  temperature: number
+  spo2: number
+}
+
+interface Allergy {
+  id: string
+  name: string
+  severity: 'mild' | 'moderate' | 'severe'
+  reaction: string
+}
+
+interface Medication {
+  id: string
+  name: string
+  dosage: string
+  frequency: string
+  refills: number
+}
+
+// ============================================
+// MOBILE-FIRST PATIENT CHART
+// ============================================
+export default function MobilePatientChart({ patientId }: { patientId?: string }) {
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('overview')
+
+  // Mock data for demo
+  const vitals: Vital = {
+    blood_pressure: '120/80',
+    heart_rate: 72,
+    temperature: 98.6,
+    spo2: 98
+  }
+
+  const allergies: Allergy[] = [
+    { id: '1', name: 'Penicillin', severity: 'severe', reaction: 'Anaphylaxis' },
+    { id: '2', name: 'Sulfa', severity: 'moderate', reaction: 'Rash' }
+  ]
+
+  const medications: Medication[] = [
+    { id: '1', name: 'Nitrofurantoin 100mg', dosage: 'BID x 5 days', frequency: '2x daily', refills: 0 },
+    { id: '2', name: 'Ibuprofen 400mg', dosage: 'PRN pain', frequency: 'As needed', refills: 2 },
+    { id: '3', name: 'Vitamin D 1000IU', dosage: 'Daily', frequency: '1x daily', refills: 5 }
+  ]
+
+  useEffect(() => {
+    // Simulating patient data fetch
+    setLoading(false)
+    setPatient({
+      id: patientId || '1',
+      first_name: 'Maria',
+      last_name: 'Garcia',
+      date_of_birth: '1991-03-15',
+      gender: 'F',
+      mrn: '12345',
+      email: 'maria.garcia@email.com',
+      phone: '(555) 123-4567'
+    })
+  }, [patientId])
+
+  const calculateAge = (dob: string) => {
+    const birthDate = new Date(dob)
+    const today = new Date()
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const monthDiff = today.getMonth() - birthDate.getMonth()
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  const formatDOB = (dob: string) => {
+    return new Date(dob).toLocaleDateString('en-US', { 
+      month: '2-digit', 
+      day: '2-digit', 
+      year: 'numeric' 
+    })
+  }
+
+  if (loading) {
+    return (
+      <div className="mobile-page">
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          height: '100vh',
+          color: 'var(--text-secondary)'
+        }}>
+          Loading patient chart...
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !patient) {
+    return (
+      <div className="mobile-page">
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          height: '100vh',
+          padding: '20px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+          <div style={{ color: 'var(--danger-red)' }}>{error || 'Patient not found'}</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mobile-page">
+      {/* Header */}
+      <header className="mobile-header">
+        <div className="mobile-header-row">
+          <div className="mobile-header-left">
+            <button className="mobile-back-btn">←</button>
+            <h1 className="mobile-header-title">Patient Chart</h1>
+          </div>
+          <div className="mobile-header-actions">
+            <button className="icon-btn">📄</button>
+            <button className="icon-btn">⋮</button>
+          </div>
+        </div>
+      </header>
+
+      {/* Patient Info Card */}
+      <div className="patient-card">
+        <div className="patient-avatar">
+          {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
+        </div>
+        <div className="patient-info">
+          <div className="patient-name">{patient.first_name} {patient.last_name}</div>
+          <div className="patient-meta">
+            {calculateAge(patient.date_of_birth)} {patient.gender} • DOB: {formatDOB(patient.date_of_birth)} • MRN: {patient.mrn}
+          </div>
+        </div>
+        {allergies.length > 0 && (
+          <span className="allergy-badge">⚠️ ALLERGY</span>
+        )}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="quick-actions">
+        <button className="quick-action-btn">📞 Call</button>
+        <button className="quick-action-btn">💬 SMS</button>
+        <button className="quick-action-btn active">📹 Video</button>
+        <button className="quick-action-btn">📝 Note</button>
+      </div>
+
+      {/* Tabs */}
+      <div className="tabs">
+        {['Overview', 'Vitals', 'Meds', 'Notes', 'History'].map(tab => (
+          <button
+            key={tab}
+            className={`tab-btn ${activeTab === tab.toLowerCase() ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.toLowerCase())}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Vitals Grid */}
+          <div className="vitals-grid">
+            <div className="vital-card">
+              <div className="vital-label">Blood Pressure</div>
+              <div className="vital-value">{vitals.blood_pressure}</div>
+            </div>
+            <div className="vital-card">
+              <div className="vital-label">Heart Rate</div>
+              <div className="vital-value">{vitals.heart_rate} <span style={{ fontSize: '14px' }}>bpm</span></div>
+            </div>
+            <div className="vital-card">
+              <div className="vital-label">Temperature</div>
+              <div className="vital-value teal">{vitals.temperature}°F</div>
+            </div>
+            <div className="vital-card">
+              <div className="vital-label">SPO2</div>
+              <div className="vital-value green">{vitals.spo2}%</div>
+            </div>
+          </div>
+
+          {/* Allergies Section */}
+          <div className="list-section">
+            <div className="list-section-title">Allergies</div>
+            <div className="list-card">
+              {allergies.map(allergy => (
+                <div key={allergy.id} className="list-item">
+                  <div 
+                    className="list-item-icon warning"
+                    style={{ 
+                      background: allergy.severity === 'severe' 
+                        ? 'rgba(239, 68, 68, 0.15)' 
+                        : 'rgba(251, 191, 36, 0.15)' 
+                    }}
+                  >
+                    ⚠️
+                  </div>
+                  <div className="list-item-content">
+                    <div className="list-item-title">{allergy.name}</div>
+                    <div className="list-item-subtitle">
+                      {allergy.severity.charAt(0).toUpperCase() + allergy.severity.slice(1)} - {allergy.reaction}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Active Medications */}
+          <div className="list-section">
+            <div className="list-section-title">Active Medications</div>
+            <div className="list-card">
+              {medications.map(med => (
+                <div key={med.id} className="list-item">
+                  <div className="list-item-icon pill">💊</div>
+                  <div className="list-item-content">
+                    <div className="list-item-title">{med.name}</div>
+                    <div className="list-item-subtitle">{med.dosage} • {med.refills} refills</div>
+                  </div>
+                  <button className="list-item-action">Refill</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'vitals' && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Vitals history view
+        </div>
+      )}
+
+      {activeTab === 'meds' && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Medications management view
+        </div>
+      )}
+
+      {activeTab === 'notes' && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Clinical notes view
+        </div>
+      )}
+
+      {activeTab === 'history' && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Visit history view
+        </div>
+      )}
+
+      {/* Bottom Navigation */}
+      <nav className="bottom-nav">
+        <div className="nav-item">
+          <span className="nav-icon">🏠</span>
+          <span className="nav-label">Home</span>
+        </div>
+        <div className="nav-item">
+          <span className="nav-icon">📅</span>
+          <span className="nav-label">Calendar</span>
+        </div>
+        <div className="nav-item active">
+          <span className="nav-icon">👥</span>
+          <span className="nav-label">Patients</span>
+        </div>
+        <div className="nav-item">
+          <span className="nav-icon">📁</span>
+          <span className="nav-label">Records</span>
+        </div>
+        <div className="nav-item">
+          <span className="nav-icon">👤</span>
+          <span className="nav-label">Profile</span>
+        </div>
+      </nav>
+    </div>
+  )
+}

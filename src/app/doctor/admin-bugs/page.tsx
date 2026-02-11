@@ -59,7 +59,7 @@ const STATUS_CONFIG = {
   new: { label: 'New', color: 'bg-blue-500', textColor: 'text-blue-400', icon: Clock },
   investigating: { label: 'Investigating', color: 'bg-yellow-500', textColor: 'text-yellow-400', icon: Search },
   fixed: { label: 'Fixed', color: 'bg-green-500', textColor: 'text-green-400', icon: CheckCircle },
-  wont_fix: { label: "Won't Fix", color: 'bg-[#111820]0', textColor: 'text-[#7B8CA3]', icon: AlertCircle },
+  wont_fix: { label: "Won't Fix", color: 'bg-gray-500', textColor: 'text-gray-400', icon: AlertCircle },
 }
 
 const ADMIN_PASSWORD = 'sk'
@@ -321,27 +321,27 @@ export default function AdminBugReportsPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#0B0F14] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="bg-[#151D28] border border-[#1E2A3A] rounded-xl p-8">
+          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl p-8">
             <div className="flex items-center justify-center gap-3 mb-6">
               <div className="p-3 bg-red-500/20 rounded-full">
                 <Lock className="w-8 h-8 text-red-400" />
               </div>
             </div>
-            <h1 className="text-2xl font-bold text-[#E8ECF1] text-center mb-2">Admin Access</h1>
-            <p className="text-[#7B8CA3] text-center mb-6">Enter admin password to view bug reports</p>
+            <h1 className="text-2xl font-bold text-white text-center mb-2">Admin Access</h1>
+            <p className="text-gray-400 text-center mb-6">Enter admin password to view bug reports</p>
             <form onSubmit={handlePasswordSubmit}>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
-                className="w-full px-4 py-3 bg-[#0a1f1f] border border-[#1E2A3A] rounded-lg text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-[#00D4AA] mb-4"
+                className="w-full px-4 py-3 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-teal-500 mb-4"
                 autoFocus
               />
               {passwordError && <p className="text-red-400 text-sm mb-4">{passwordError}</p>}
-              <button type="submit" className="w-full py-3 bg-[#00D4AA] hover:bg-[#00B894] text-[#E8ECF1] rounded-lg font-medium transition-colors">
+              <button type="submit" className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors">
                 Access Bug Reports
               </button>
             </form>
@@ -354,7 +354,7 @@ export default function AdminBugReportsPage() {
   const unreadCount = bugReports.filter(r => !r.admin_read).length
 
   return (
-    <div className="min-h-screen bg-[#0B0F14] p-4 lg:p-6">
+    <div className="min-h-screen bg-gray-900 p-4 lg:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -363,11 +363,11 @@ export default function AdminBugReportsPage() {
               <Bug className="w-6 h-6 text-red-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-[#E8ECF1]">Bug Reports Admin</h1>
-              <p className="text-sm text-[#7B8CA3]">
+              <h1 className="text-2xl font-bold text-white">Bug Reports Admin</h1>
+              <p className="text-sm text-gray-400">
                 {bugReports.length} total reports
                 {unreadCount > 0 && (
-                  <span className="ml-2 px-2 py-0.5 bg-red-500 text-[#E8ECF1] text-xs rounded-full">
+                  <span className="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
                     {unreadCount} unread
                   </span>
                 )}
@@ -378,7 +378,7 @@ export default function AdminBugReportsPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-[#151D28] border border-[#1E2A3A] rounded-lg text-[#E8ECF1] text-sm focus:outline-none focus:border-[#00D4AA]"
+              className="px-3 py-2 bg-[#0d2626] border border-[#1a3d3d] rounded-lg text-white text-sm focus:outline-none focus:border-teal-500"
             >
               <option value="all">All Status</option>
               <option value="new">New</option>
@@ -389,7 +389,7 @@ export default function AdminBugReportsPage() {
             <button
               onClick={fetchBugReports}
               disabled={loading}
-              className="p-2 bg-[#151D28] border border-[#1E2A3A] rounded-lg text-[#7B8CA3] hover:text-[#E8ECF1] hover:border-[#00D4AA] transition-colors disabled:opacity-50"
+              className="p-2 bg-[#0d2626] border border-[#1a3d3d] rounded-lg text-gray-400 hover:text-white hover:border-teal-500 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={'w-5 h-5 ' + (loading ? 'animate-spin' : '')} />
             </button>
@@ -410,16 +410,16 @@ export default function AdminBugReportsPage() {
         {/* Loading State */}
         {loading && bugReports.length === 0 && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 text-[#00D4AA] animate-spin" />
+            <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
           </div>
         )}
 
         {/* Empty State */}
         {!loading && bugReports.length === 0 && (
           <div className="text-center py-12">
-            <Bug className="w-16 h-16 text-[#4A5568] mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-[#E8ECF1] mb-2">No Bug Reports</h3>
-            <p className="text-[#7B8CA3]">No bug reports have been submitted yet.</p>
+            <Bug className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">No Bug Reports</h3>
+            <p className="text-gray-400">No bug reports have been submitted yet.</p>
           </div>
         )}
 
@@ -436,7 +436,7 @@ export default function AdminBugReportsPage() {
             return (
               <div
                 key={report.id}
-                className={'bg-[#151D28] border rounded-xl overflow-hidden transition-all ' + (!report.admin_read ? 'border-blue-500/50' : 'border-[#1E2A3A]')}
+                className={'bg-[#0d2626] border rounded-xl overflow-hidden transition-all ' + (!report.admin_read ? 'border-blue-500/50' : 'border-[#1a3d3d]')}
               >
                 {/* Collapsed Header */}
                 <div
@@ -449,12 +449,12 @@ export default function AdminBugReportsPage() {
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ' + statusConfig.color + ' text-[#E8ECF1]'}>
+                        <span className={'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ' + statusConfig.color + ' text-white'}>
                           <StatusIcon className="w-3 h-3" />
                           {statusConfig.label}
                         </span>
-                        <span className="text-sm text-[#00D4AA]">{doctorName}</span>
-                        <span className="text-xs text-[#7B8CA3]">{formatDate(report.created_at)}</span>
+                        <span className="text-sm text-teal-400">{doctorName}</span>
+                        <span className="text-xs text-gray-500">{formatDate(report.created_at)}</span>
                         {report.admin_response_video_url && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400">
                             <Video className="w-3 h-3" />
@@ -462,23 +462,23 @@ export default function AdminBugReportsPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-[#E8ECF1] font-medium line-clamp-1">
+                      <p className="text-white font-medium line-clamp-1">
                         {report.description || 'No description provided'}
                       </p>
-                      <p className="text-sm text-[#7B8CA3] mt-1">
+                      <p className="text-sm text-gray-500 mt-1">
                         <code className="px-1 py-0.5 bg-[#0a1f1f] rounded text-xs">{report.page_url}</code>
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       {report.attachments?.length > 0 && (
-                        <span className="text-xs text-[#7B8CA3]">
+                        <span className="text-xs text-gray-500">
                           {report.attachments.length} file{report.attachments.length !== 1 ? 's' : ''}
                         </span>
                       )}
                       {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-[#7B8CA3]" />
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
                       ) : (
-                        <ChevronDown className="w-5 h-5 text-[#7B8CA3]" />
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
                       )}
                     </div>
                   </div>
@@ -486,34 +486,34 @@ export default function AdminBugReportsPage() {
 
                 {/* Expanded Content */}
                 {isExpanded && (
-                  <div className="border-t border-[#1E2A3A] p-4 space-y-4">
+                  <div className="border-t border-[#1a3d3d] p-4 space-y-4">
                     {/* AI Summary */}
                     {report.ai_summary && (
-                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                        <h4 className="text-sm font-medium text-[#7B8CA3] mb-2">🤖 AI Summary</h4>
-                        <p className="text-[#E8ECF1] whitespace-pre-wrap">{report.ai_summary}</p>
+                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2">🤖 AI Summary</h4>
+                        <p className="text-gray-200 whitespace-pre-wrap">{report.ai_summary}</p>
                       </div>
                     )}
 
                     {/* Description */}
-                    <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                      <h4 className="text-sm font-medium text-[#7B8CA3] mb-2">Description</h4>
-                      <p className="text-[#E8ECF1] whitespace-pre-wrap">
+                    <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                      <h4 className="text-sm font-medium text-gray-400 mb-2">Description</h4>
+                      <p className="text-gray-200 whitespace-pre-wrap">
                         {report.description || 'No description provided'}
                       </p>
                     </div>
 
                     {/* Location Info */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                        <h4 className="text-sm font-medium text-[#7B8CA3] mb-2 flex items-center gap-2">
+                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                           <Globe className="w-4 h-4" />
                           Page URL
                         </h4>
-                        <code className="text-sm text-[#00D4AA] break-all">{report.page_url}</code>
+                        <code className="text-sm text-teal-400 break-all">{report.page_url}</code>
                       </div>
-                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                        <h4 className="text-sm font-medium text-[#7B8CA3] mb-2 flex items-center gap-2">
+                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                           <Github className="w-4 h-4" />
                           Source File
                         </h4>
@@ -530,19 +530,19 @@ export default function AdminBugReportsPage() {
                     </div>
 
                     {/* Browser Info */}
-                    <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                      <h4 className="text-sm font-medium text-[#7B8CA3] mb-2 flex items-center gap-2">
+                    <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                      <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                         <Monitor className="w-4 h-4" />
                         Browser Info
                       </h4>
-                      <p className="text-sm text-[#E8ECF1] break-all">{report.browser_info}</p>
+                      <p className="text-sm text-gray-300 break-all">{report.browser_info}</p>
                     </div>
 
                     {/* Attachments */}
                     {report.attachments && report.attachments.length > 0 && (
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-medium text-[#7B8CA3]">Attachments</h4>
+                          <h4 className="text-sm font-medium text-gray-400">Attachments</h4>
                           {hasVideoAttachments(report) && !report.transcript && (
                             <button
                               onClick={() => handleTranscribe(report.id)}
@@ -570,23 +570,23 @@ export default function AdminBugReportsPage() {
                               href={attachment.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-3 p-3 bg-[#0a1f1f] hover:bg-[#1E2A3A] border border-[#1E2A3A] rounded-lg transition-colors"
+                              className="flex items-center gap-3 p-3 bg-[#0a1f1f] hover:bg-[#1a3d3d] border border-[#1a3d3d] rounded-lg transition-colors"
                             >
                               {attachment.type === 'video' ? (
                                 <Video className="w-8 h-8 text-blue-400" />
                               ) : attachment.type === 'screenshot' ? (
                                 <Image className="w-8 h-8 text-green-400" />
                               ) : (
-                                <FileText className="w-8 h-8 text-[#7B8CA3]" />
+                                <FileText className="w-8 h-8 text-gray-400" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm text-[#E8ECF1] truncate">{attachment.name}</p>
-                                <p className="text-xs text-[#7B8CA3]">
+                                <p className="text-sm text-white truncate">{attachment.name}</p>
+                                <p className="text-xs text-gray-500">
                                   {formatFileSize(attachment.size)}
                                   {attachment.duration_seconds && (' • ' + formatDuration(attachment.duration_seconds))}
                                 </p>
                               </div>
-                              <ExternalLink className="w-4 h-4 text-[#7B8CA3]" />
+                              <ExternalLink className="w-4 h-4 text-gray-500" />
                             </a>
                           ))}
                         </div>
@@ -595,12 +595,12 @@ export default function AdminBugReportsPage() {
 
                     {/* Transcript */}
                     {report.transcript && (
-                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1E2A3A]">
-                        <h4 className="text-sm font-medium text-[#7B8CA3] mb-2 flex items-center gap-2">
+                      <div className="p-4 bg-[#0a1f1f] rounded-lg border border-[#1a3d3d]">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
                           <Mic className="w-4 h-4" />
                           Audio Transcript
                         </h4>
-                        <p className="text-sm text-[#E8ECF1] whitespace-pre-wrap">{report.transcript}</p>
+                        <p className="text-sm text-gray-300 whitespace-pre-wrap">{report.transcript}</p>
                       </div>
                     )}
 
@@ -628,17 +628,17 @@ export default function AdminBugReportsPage() {
                     )}
 
                     {/* Admin Controls */}
-                    <div className="border-t border-[#1E2A3A] pt-4 space-y-4">
-                      <h4 className="text-sm font-medium text-[#E8ECF1]">Admin Controls</h4>
+                    <div className="border-t border-[#1a3d3d] pt-4 space-y-4">
+                      <h4 className="text-sm font-medium text-white">Admin Controls</h4>
                       
                       {/* Status Update */}
                       <div className="flex items-center gap-3">
-                        <label className="text-sm text-[#7B8CA3]">Status:</label>
+                        <label className="text-sm text-gray-400">Status:</label>
                         <select
                           value={report.status}
                           onChange={(e) => handleStatusChange(report.id, e.target.value)}
                           disabled={updatingStatus === report.id}
-                          className="px-3 py-1.5 bg-[#0a1f1f] border border-[#1E2A3A] rounded-lg text-[#E8ECF1] text-sm focus:outline-none focus:border-[#00D4AA] disabled:opacity-50"
+                          className="px-3 py-1.5 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white text-sm focus:outline-none focus:border-teal-500 disabled:opacity-50"
                         >
                           <option value="new">New</option>
                           <option value="investigating">Investigating</option>
@@ -646,23 +646,23 @@ export default function AdminBugReportsPage() {
                           <option value="wont_fix">Won't Fix</option>
                         </select>
                         {updatingStatus === report.id && (
-                          <Loader2 className="w-4 h-4 text-[#00D4AA] animate-spin" />
+                          <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />
                         )}
                       </div>
 
                       {/* Admin Notes */}
                       <div>
-                        <label className="text-sm text-[#7B8CA3] block mb-2">Admin Notes (visible to doctor):</label>
+                        <label className="text-sm text-gray-400 block mb-2">Admin Notes (visible to doctor):</label>
                         <textarea
                           value={adminNotes[report.id] || ''}
                           onChange={(e) => setAdminNotes(prev => ({ ...prev, [report.id]: e.target.value }))}
                           placeholder="Add notes for the doctor..."
-                          className="w-full h-24 px-3 py-2 bg-[#0a1f1f] border border-[#1E2A3A] rounded-lg text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-[#00D4AA] resize-none"
+                          className="w-full h-24 px-3 py-2 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-teal-500 resize-none"
                         />
                         <button
                           onClick={() => handleSaveNotes(report.id)}
                           disabled={savingNotes === report.id}
-                          className="mt-2 px-4 py-2 bg-[#00D4AA] hover:bg-[#00B894] disabled:bg-[#00D4AA]/50 text-[#E8ECF1] text-sm rounded-lg transition-colors flex items-center gap-2"
+                          className="mt-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-600/50 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                         >
                           {savingNotes === report.id ? (
                             <>
@@ -685,7 +685,7 @@ export default function AdminBugReportsPage() {
                       ) : !report.admin_response_video_url && (
                         <button
                           onClick={() => setRecordingForReport(report.id)}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-[#E8ECF1] text-sm rounded-lg transition-colors flex items-center gap-2"
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                         >
                           <Camera className="w-4 h-4" />
                           Record Response Video
@@ -699,7 +699,7 @@ export default function AdminBugReportsPage() {
                           <button
                             onClick={() => handleRequestLiveSession(report.id)}
                             disabled={requestingSession === report.id}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-[#E8ECF1] text-sm rounded-lg transition-colors flex items-center gap-2"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                           >
                             {requestingSession === report.id ? (
                               <>
@@ -720,7 +720,7 @@ export default function AdminBugReportsPage() {
                                 href={report.live_session_room_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-[#E8ECF1] text-sm rounded-lg transition-colors flex items-center gap-2"
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                               >
                                 <Video className="w-4 h-4" />
                                 Join Session
@@ -730,7 +730,7 @@ export default function AdminBugReportsPage() {
                             <button
                               onClick={() => handleEndSession(report.id)}
                               disabled={endingSession === report.id}
-                              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 text-[#E8ECF1] text-sm rounded-lg transition-colors flex items-center gap-2"
+                              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                             >
                               {endingSession === report.id ? (
                                 <>

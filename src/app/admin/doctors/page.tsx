@@ -146,13 +146,13 @@ export default function AdminDoctorsPage() {
   // Show password form if not authenticated
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#111820] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div>
             <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
               Admin Access
             </h2>
-            <p className="mt-2 text-center text-sm text-[#4A5568]">
+            <p className="mt-2 text-center text-sm text-gray-600">
               Enter admin password to continue
             </p>
           </div>
@@ -166,7 +166,7 @@ export default function AdminDoctorsPage() {
                 name="password"
                 type="password"
                 required
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-[#1E2A3A] placeholder-[#4A5568] text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Enter admin password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -180,7 +180,7 @@ export default function AdminDoctorsPage() {
             <div>
               <button
                 type="submit"
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-[#E8ECF1] bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 Access Admin Panel
               </button>
@@ -192,16 +192,16 @@ export default function AdminDoctorsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#111820] py-8">
+    <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Doctor Management</h1>
-          <p className="mt-2 text-[#4A5568]">Review and approve doctor applications</p>
+          <p className="mt-2 text-gray-600">Review and approve doctor applications</p>
         </div>
 
         {/* Filter Tabs */}
         <div className="mb-6">
-          <div className="border-b border-[#1E2A3A]">
+          <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
               {[
                 { key: 'pending', label: 'Pending Approval', count: doctors.filter(d => !d.is_approved).length },
@@ -214,7 +214,7 @@ export default function AdminDoctorsPage() {
                   className={`py-2 px-1 border-b-2 font-medium text-sm ${
                     filter === tab.key
                       ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-[#7B8CA3] hover:text-gray-700 hover:border-[#1E2A3A]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   {tab.label} ({tab.count})
@@ -244,18 +244,18 @@ export default function AdminDoctorsPage() {
           <div className="grid gap-6">
             {doctors.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-[#7B8CA3]">No doctors found</p>
+                <p className="text-gray-500">No doctors found</p>
               </div>
             ) : (
               doctors.map((doctor) => (
-                <div key={doctor.id} className="bg-[#151D28] shadow rounded-lg p-6">
+                <div key={doctor.id} className="bg-white shadow rounded-lg p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">
                         Dr. {doctor.first_name} {doctor.last_name}
                       </h3>
-                      <p className="text-sm text-[#4A5568]">{doctor.email}</p>
-                      <p className="text-sm text-[#4A5568]">{doctor.specialty}</p>
+                      <p className="text-sm text-gray-600">{doctor.email}</p>
+                      <p className="text-sm text-gray-600">{doctor.specialty}</p>
                     </div>
                     <div className="text-right">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -265,7 +265,7 @@ export default function AdminDoctorsPage() {
                       }`}>
                         {doctor.is_approved ? 'Approved' : 'Pending'}
                       </span>
-                      <p className="text-xs text-[#7B8CA3] mt-1">
+                      <p className="text-xs text-gray-500 mt-1">
                         Submitted: {formatDate(doctor.submitted_at)}
                       </p>
                     </div>
@@ -331,7 +331,7 @@ export default function AdminDoctorsPage() {
                     <div className="flex space-x-3">
                       <button
                         onClick={() => handleApprove(doctor.id)}
-                        className="px-4 py-2 bg-green-600 text-[#E8ECF1] text-sm font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                        className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                       >
                         Approve
                       </button>
@@ -342,7 +342,7 @@ export default function AdminDoctorsPage() {
                             handleReject(doctor.id, reason)
                           }
                         }}
-                        className="px-4 py-2 bg-red-600 text-[#E8ECF1] text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                       >
                         Reject
                       </button>

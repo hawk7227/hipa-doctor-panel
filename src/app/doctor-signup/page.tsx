@@ -158,25 +158,25 @@ export default function DoctorSignupPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
-          <div className="mx-auto h-16 w-16 flex items-center justify-center rounded-full bg-[#00D4AA] shadow-lg">
-            <svg className="h-8 w-8 text-[#E8ECF1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mx-auto h-16 w-16 flex items-center justify-center rounded-full bg-blue-600 shadow-lg">
+            <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-[#E8ECF1]">
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
             Doctor Registration
           </h2>
-          <p className="mt-2 text-sm text-[#7B8CA3]">
+          <p className="mt-2 text-sm text-gray-700">
             Join our medical platform and start helping patients
           </p>
         </div>
 
-        <div className="bg-[#151D28] shadow-xl rounded-xl p-8 border border-[#1E2A3A]">
+        <div className="bg-white shadow-xl rounded-xl p-8 border border-gray-200">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Personal Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="firstName" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+                <label htmlFor="firstName" className="block text-sm font-semibold text-gray-800 mb-2">
                   First Name *
                 </label>
                 <input
@@ -184,14 +184,14 @@ export default function DoctorSignupPage() {
                   name="firstName"
                   type="text"
                   required
-                  className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                   value={formData.firstName}
                   onChange={handleInputChange}
                   placeholder="Enter your first name"
                 />
               </div>
               <div>
-                <label htmlFor="lastName" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+                <label htmlFor="lastName" className="block text-sm font-semibold text-gray-800 mb-2">
                   Last Name *
                 </label>
                 <input
@@ -199,7 +199,7 @@ export default function DoctorSignupPage() {
                   name="lastName"
                   type="text"
                   required
-                  className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                   value={formData.lastName}
                   onChange={handleInputChange}
                   placeholder="Enter your last name"
@@ -208,7 +208,7 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="email" className="block text-sm font-semibold text-gray-800 mb-2">
                 Email Address *
               </label>
               <input
@@ -216,7 +216,7 @@ export default function DoctorSignupPage() {
                 name="email"
                 type="email"
                 required
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.email}
                 onChange={handleInputChange}
                 placeholder="Enter your email address"
@@ -224,14 +224,14 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="phone" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="phone" className="block text-sm font-semibold text-gray-800 mb-2">
                 Phone Number
               </label>
               <input
                 id="phone"
                 name="phone"
                 type="tel"
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.phone}
                 onChange={handleInputChange}
                 placeholder="Enter your phone number"
@@ -241,14 +241,14 @@ export default function DoctorSignupPage() {
             {/* Professional Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="specialty" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+                <label htmlFor="specialty" className="block text-sm font-semibold text-gray-800 mb-2">
                   Medical Specialty *
                 </label>
                 <select
                   id="specialty"
                   name="specialty"
                   required
-                  className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] bg-[#151D28]"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 bg-white"
                   value={formData.specialty}
                   onChange={handleInputChange}
                 >
@@ -267,7 +267,7 @@ export default function DoctorSignupPage() {
                 </select>
               </div>
               <div>
-                <label htmlFor="licenseNumber" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+                <label htmlFor="licenseNumber" className="block text-sm font-semibold text-gray-800 mb-2">
                   Medical License Number *
                 </label>
                 <input
@@ -275,7 +275,7 @@ export default function DoctorSignupPage() {
                   name="licenseNumber"
                   type="text"
                   required
-                  className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                   value={formData.licenseNumber}
                   onChange={handleInputChange}
                   placeholder="Enter your license number"
@@ -284,7 +284,7 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="experienceYears" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="experienceYears" className="block text-sm font-semibold text-gray-800 mb-2">
                 Years of Experience
               </label>
               <input
@@ -292,7 +292,7 @@ export default function DoctorSignupPage() {
                 name="experienceYears"
                 type="number"
                 min="0"
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.experienceYears}
                 onChange={handleInputChange}
                 placeholder="Enter years of experience"
@@ -300,14 +300,14 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="education" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="education" className="block text-sm font-semibold text-gray-800 mb-2">
                 Education & Qualifications
               </label>
               <textarea
                 id="education"
                 name="education"
                 rows={3}
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568] resize-none"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500 resize-none"
                 value={formData.education}
                 onChange={handleInputChange}
                 placeholder="e.g., MD from Harvard Medical School, Fellowship in Urology at Mayo Clinic"
@@ -315,14 +315,14 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="bio" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="bio" className="block text-sm font-semibold text-gray-800 mb-2">
                 Professional Bio
               </label>
               <textarea
                 id="bio"
                 name="bio"
                 rows={4}
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568] resize-none"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500 resize-none"
                 value={formData.bio}
                 onChange={handleInputChange}
                 placeholder="Tell patients about your expertise and approach to care..."
@@ -330,14 +330,14 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="languages" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="languages" className="block text-sm font-semibold text-gray-800 mb-2">
                 Languages Spoken
               </label>
               <input
                 id="languages"
                 name="languages"
                 type="text"
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.languages}
                 onChange={handleInputChange}
                 placeholder="English, Spanish, French (comma-separated)"
@@ -345,14 +345,14 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="insuranceAccepted" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="insuranceAccepted" className="block text-sm font-semibold text-gray-800 mb-2">
                 Insurance Accepted
               </label>
               <input
                 id="insuranceAccepted"
                 name="insuranceAccepted"
                 type="text"
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.insuranceAccepted}
                 onChange={handleInputChange}
                 placeholder="Blue Cross, Aetna, UnitedHealth (comma-separated)"
@@ -360,7 +360,7 @@ export default function DoctorSignupPage() {
             </div>
 
             <div>
-              <label htmlFor="consultationFee" className="block text-sm font-semibold text-[#E8ECF1] mb-2">
+              <label htmlFor="consultationFee" className="block text-sm font-semibold text-gray-800 mb-2">
                 Consultation Fee (USD)
               </label>
               <input
@@ -369,7 +369,7 @@ export default function DoctorSignupPage() {
                 type="number"
                 min="0"
                 step="0.01"
-                className="w-full px-4 py-3 border-2 border-[#1E2A3A] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00D4AA] focus:border-[#00D4AA] transition-colors text-[#E8ECF1] placeholder-[#4A5568]"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                 value={formData.consultationFee}
                 onChange={handleInputChange}
                 placeholder="150.00"
@@ -388,18 +388,18 @@ export default function DoctorSignupPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-6 border-t border-[#1E2A3A]">
+            <div className="flex items-center justify-between pt-6 border-t border-gray-200">
               <button
                 type="button"
                 onClick={() => router.push('/login')}
-                className="text-sm font-medium text-[#00D4AA] hover:text-[#00D4AA] transition-colors"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
               >
                 Already have an account? Login
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="px-8 py-3 border border-transparent text-sm font-semibold rounded-lg text-[#E8ECF1] bg-[#00D4AA] hover:bg-[#00B894] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00D4AA] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                className="px-8 py-3 border border-transparent text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
               >
                 {loading ? (
                   <div className="flex items-center">
@@ -415,7 +415,7 @@ export default function DoctorSignupPage() {
         </div>
 
         <div className="mt-8 text-center">
-          <p className="text-sm font-medium text-[#7B8CA3] bg-[#151D28] px-4 py-3 rounded-lg border border-blue-200">
+          <p className="text-sm font-medium text-gray-700 bg-blue-50 px-4 py-3 rounded-lg border border-blue-200">
             * Required fields. Your application will be reviewed by our admin team before approval.
           </p>
         </div>
