@@ -557,14 +557,14 @@ export default function CommunicationPage() {
 
   // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-b from-[#071515] to-[#0a1e1e] text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-gradient-to-b from-[#0B0F14] to-[#111820] text-[#E8ECF1] overflow-hidden">
 
       {/* ── Top Bar ── */}
-      <div className="flex-shrink-0 border-b border-[#1a3d3d]/60 bg-[#0a1a1a]/80 backdrop-blur-sm">
+      <div className="flex-shrink-0 border-b border-[#1E2A3A] bg-[#111820]/90 backdrop-blur-sm">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-3">
-            <Link href="/doctor" className="p-1.5 rounded-lg hover:bg-[#164e4e]/50 transition-colors">
-              <ArrowLeft className="w-4 h-4 text-gray-400" />
+            <Link href="/doctor" className="p-1.5 rounded-lg hover:bg-[#1E2A3A]/50 transition-colors">
+              <ArrowLeft className="w-4 h-4 text-[#7B8CA3]" />
             </Link>
             {/* Patient Search — EHR-standard unified search */}
             <PatientSearchBar
@@ -577,7 +577,7 @@ export default function CommunicationPage() {
             />
           </div>
 
-          <h1 className="text-base font-semibold text-white tracking-tight">Communication Center</h1>
+          <h1 className="text-base font-semibold text-[#E8ECF1] tracking-tight">Communication Center</h1>
         </div>
       </div>
 
@@ -585,19 +585,19 @@ export default function CommunicationPage() {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── Left Panel: Dial Pad / SMS ── */}
-        <div className="w-[380px] flex-shrink-0 border-r border-[#1a3d3d]/40 flex flex-col bg-[#091818]/50">
+        <div className="w-[380px] flex-shrink-0 border-r border-[#1E2A3A] flex flex-col bg-[#111820]/50">
 
           {/* Tab Switcher */}
-          <div className="flex border-b border-[#1a3d3d]/40">
+          <div className="flex border-b border-[#1E2A3A]">
             <button
               onClick={() => setActiveTab('call')}
-              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'call' ? 'text-teal-400 border-b-2 border-teal-400 bg-teal-400/5' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'call' ? 'text-[#00D4AA] border-b-2 border-[#00D4AA] bg-[#00D4AA]/5' : 'text-[#7B8CA3] hover:text-[#E8ECF1]'}`}
             >
               <Phone className="w-4 h-4" />Call
             </button>
             <button
               onClick={() => setActiveTab('sms')}
-              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'sms' ? 'text-teal-400 border-b-2 border-teal-400 bg-teal-400/5' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'sms' ? 'text-[#00D4AA] border-b-2 border-[#00D4AA] bg-[#00D4AA]/5' : 'text-[#7B8CA3] hover:text-[#E8ECF1]'}`}
             >
               <MessageSquare className="w-4 h-4" />SMS
             </button>
@@ -616,17 +616,17 @@ export default function CommunicationPage() {
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="+1 (480) 555-1234"
                     disabled={isCalling}
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-4 py-3 text-white text-lg font-mono tracking-wide focus:outline-none focus:border-teal-500 disabled:opacity-50 placeholder-gray-600"
+                    className="w-full bg-[#151D28] border border-[#1E2A3A] rounded-lg px-4 py-3 text-[#E8ECF1] text-lg font-mono tracking-wide focus:outline-none focus:border-[#00D4AA] disabled:opacity-50 placeholder-[#4A5568]"
                   />
                   <div className="flex items-center justify-between mt-1.5 px-1">
-                    <p className={`text-xs ${isDeviceReady ? 'text-teal-500' : 'text-gray-500'}`}>
+                    <p className={`text-xs ${isDeviceReady ? 'text-[#00D4AA]' : 'text-[#7B8CA3]'}`}>
                       {isCalling && callDuration > 0 ? (
-                        <span className="text-teal-400 font-mono font-bold text-sm">{formatDuration(callDuration)}</span>
+                        <span className="text-[#00D4AA] font-mono font-bold text-sm">{formatDuration(callDuration)}</span>
                       ) : callStatus}
                     </p>
                     {isDeviceReady && !isCalling && (
-                      <span className="flex items-center gap-1 text-xs text-teal-600">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                      <span className="flex items-center gap-1 text-xs text-[#00D4AA]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#00D4AA] animate-pulse" />
                         Ready
                       </span>
                     )}
@@ -636,12 +636,12 @@ export default function CommunicationPage() {
                 {/* Audio Devices */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Mic</label>
+                    <label className="block text-[10px] text-[#7B8CA3] mb-1 uppercase tracking-wider">Mic</label>
                     <select
                       value={selectedMic}
                       onChange={(e) => { setSelectedMic(e.target.value); applyAudioDevices() }}
                       disabled={isCalling}
-                      className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[#151D28] border border-[#1E2A3A] rounded px-2 py-1.5 text-xs text-[#E8ECF1] focus:outline-none focus:border-[#00D4AA] disabled:opacity-50"
                     >
                       {mics.length === 0 ? <option>No mic found</option> : mics.map(m => (
                         <option key={m.deviceId} value={m.deviceId}>{m.label || 'Microphone'}</option>
@@ -649,12 +649,12 @@ export default function CommunicationPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Speaker</label>
+                    <label className="block text-[10px] text-[#7B8CA3] mb-1 uppercase tracking-wider">Speaker</label>
                     <select
                       value={selectedSpeaker}
                       onChange={(e) => { setSelectedSpeaker(e.target.value); applyAudioDevices() }}
                       disabled={isCalling}
-                      className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[#151D28] border border-[#1E2A3A] rounded px-2 py-1.5 text-xs text-[#E8ECF1] focus:outline-none focus:border-[#00D4AA] disabled:opacity-50"
                     >
                       {speakers.length === 0 ? <option>Default</option> : speakers.map(s => (
                         <option key={s.deviceId} value={s.deviceId}>{s.label || 'Speaker'}</option>
@@ -670,7 +670,7 @@ export default function CommunicationPage() {
                       key={d}
                       onClick={() => handleDialPad(d)}
                       disabled={isCalling}
-                      className="bg-[#0d2626] hover:bg-[#164e4e] border border-[#1a3d3d] rounded-lg py-3.5 text-white font-semibold text-lg transition-all active:scale-95 disabled:opacity-40"
+                      className="bg-[#151D28] hover:bg-[#1E2A3A] border border-[#1E2A3A] rounded-lg py-3.5 text-[#E8ECF1] font-semibold text-lg transition-all active:scale-95 disabled:opacity-40"
                     >
                       {d}
                     </button>
@@ -683,14 +683,14 @@ export default function CommunicationPage() {
                     <>
                       <button
                         onClick={handleToggleMute}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors ${isMuted ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#1a3d3d] hover:bg-[#225454]'} text-white`}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors ${isMuted ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#1E2A3A] hover:bg-[#2A3A4F]'} text-[#E8ECF1]`}
                       >
                         {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                         {isMuted ? 'Unmute' : 'Mute'}
                       </button>
                       <button
                         onClick={handleEndCall}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-red-600 hover:bg-red-700 text-white transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-red-600 hover:bg-red-700 text-[#E8ECF1] transition-colors"
                       >
                         <PhoneOff className="w-4 h-4" />End
                       </button>
@@ -699,14 +699,14 @@ export default function CommunicationPage() {
                     <>
                       <button
                         onClick={() => { setPhoneNumber(''); }}
-                        className="px-4 py-3 rounded-lg font-medium bg-[#1a3d3d] hover:bg-[#225454] text-gray-300 transition-colors"
+                        className="px-4 py-3 rounded-lg font-medium bg-[#1E2A3A] hover:bg-[#2A3A4F] text-[#E8ECF1] transition-colors"
                       >
                         Clear
                       </button>
                       <button
                         onClick={handleMakeCall}
                         disabled={!phoneNumber.trim() || !isDeviceReady || isCallLoading}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-[#00D4AA] hover:bg-[#00B894] text-[#E8ECF1] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {isCallLoading ? (
                           <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Connecting...</>
@@ -722,30 +722,30 @@ export default function CommunicationPage() {
               /* ── SMS TAB ── */
               <div className="space-y-4">
                 <div>
-                  <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">To</label>
+                  <label className="block text-[10px] text-[#7B8CA3] mb-1 uppercase tracking-wider">To</label>
                   <input
                     type="tel"
                     value={smsTo}
                     onChange={(e) => setSmsTo(e.target.value)}
                     placeholder="+14805551234"
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+                    className="w-full bg-[#151D28] border border-[#1E2A3A] rounded-lg px-3 py-2.5 text-[#E8ECF1] text-sm focus:outline-none focus:border-[#00D4AA] placeholder-[#4A5568]"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Message</label>
+                  <label className="block text-[10px] text-[#7B8CA3] mb-1 uppercase tracking-wider">Message</label>
                   <textarea
                     value={smsMessage}
                     onChange={(e) => setSmsMessage(e.target.value)}
                     placeholder="Type your message..."
                     rows={8}
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500 resize-none placeholder-gray-600"
+                    className="w-full bg-[#151D28] border border-[#1E2A3A] rounded-lg px-3 py-2.5 text-[#E8ECF1] text-sm focus:outline-none focus:border-[#00D4AA] resize-none placeholder-[#4A5568]"
                   />
-                  <p className="text-right text-[10px] text-gray-600 mt-1">{smsMessage.length}/1600</p>
+                  <p className="text-right text-[10px] text-[#4A5568] mt-1">{smsMessage.length}/1600</p>
                 </div>
                 <button
                   onClick={handleSendSMS}
                   disabled={isSendingSMS || !smsTo.trim() || !smsMessage.trim()}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-[#00D4AA] hover:bg-[#00B894] text-[#E8ECF1] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isSendingSMS ? (
                     <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Sending...</>
@@ -762,12 +762,12 @@ export default function CommunicationPage() {
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* History Header */}
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-[#1a3d3d]/40 bg-[#091818]/30">
+          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-[#1E2A3A] bg-[#111820]/30">
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-teal-500" />
-              <h2 className="text-sm font-semibold text-white">
+              <Clock className="w-4 h-4 text-[#00D4AA]" />
+              <h2 className="text-sm font-semibold text-[#E8ECF1]">
                 History
-                {selectedPatient && <span className="text-gray-500 font-normal ml-1">— {selectedPatient.first_name} {selectedPatient.last_name}</span>}
+                {selectedPatient && <span className="text-[#7B8CA3] font-normal ml-1">— {selectedPatient.first_name} {selectedPatient.last_name}</span>}
               </h2>
             </div>
             <div className="flex items-center gap-2">
@@ -776,13 +776,13 @@ export default function CommunicationPage() {
                 <button
                   key={f}
                   onClick={() => setHistoryFilter(f)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${historyFilter === f ? 'bg-teal-600/20 text-teal-400' : 'text-gray-500 hover:text-gray-300'}`}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${historyFilter === f ? 'bg-[#00D4AA]/20 text-[#00D4AA]' : 'text-[#7B8CA3] hover:text-[#E8ECF1]'}`}
                 >
                   {f === 'all' ? 'All' : f === 'call' ? 'Calls' : 'SMS'}
                 </button>
               ))}
-              <button onClick={fetchHistory} className="p-1.5 rounded hover:bg-[#164e4e]/50 transition-colors" title="Refresh">
-                <RefreshCw className={`w-3.5 h-3.5 text-gray-500 ${loadingHistory ? 'animate-spin' : ''}`} />
+              <button onClick={fetchHistory} className="p-1.5 rounded hover:bg-[#1E2A3A]/50 transition-colors" title="Refresh">
+                <RefreshCw className={`w-3.5 h-3.5 text-[#7B8CA3] ${loadingHistory ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
@@ -791,16 +791,16 @@ export default function CommunicationPage() {
           <div className="flex-1 overflow-y-auto">
             {loadingHistory ? (
               <div className="flex items-center justify-center py-16">
-                <div className="animate-spin rounded-full h-6 w-6 border-2 border-teal-400/30 border-t-teal-400" />
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-[#00D4AA]/30 border-t-[#00D4AA]" />
               </div>
             ) : filteredHistory.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-600">
+              <div className="flex flex-col items-center justify-center py-16 text-[#4A5568]">
                 <Clock className="w-8 h-8 mb-2 opacity-40" />
                 <p className="text-sm">No communication history</p>
                 <p className="text-xs mt-1">Send an SMS or make a call to get started</p>
               </div>
             ) : (
-              <div className="divide-y divide-[#1a3d3d]/30">
+              <div className="divide-y divide-[#1E2A3A]">
                 {filteredHistory.map(item => {
                   const name = item.patients ? `${item.patients.first_name} ${item.patients.last_name}` : item.to_number || 'Unknown'
                   const isCall = item.type === 'call'
@@ -808,7 +808,7 @@ export default function CommunicationPage() {
                   const recUrl = item.recording_url || recordingCache.current[item.twilio_sid || item.meeting_id || '']
 
                   return (
-                    <div key={item.id} className="px-4 py-3 hover:bg-[#0d2020]/50 transition-colors group">
+                    <div key={item.id} className="px-4 py-3 hover:bg-[#151D28]/50 transition-colors group">
                       <div className="flex items-start gap-3">
                         {/* Icon */}
                         <div className={`mt-0.5 p-1.5 rounded-lg ${isCall ? 'bg-blue-500/10' : isSMS ? 'bg-green-500/10' : 'bg-purple-500/10'}`}>
@@ -818,28 +818,28 @@ export default function CommunicationPage() {
                         {/* Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm text-white font-medium truncate">{name}</p>
+                            <p className="text-sm text-[#E8ECF1] font-medium truncate">{name}</p>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                               item.status === 'completed' || item.status === 'delivered' || item.status === 'sent' ? 'bg-green-500/10 text-green-400' :
                               item.status === 'connected' ? 'bg-blue-500/10 text-blue-400' :
                               item.status === 'failed' || item.status === 'error' ? 'bg-red-500/10 text-red-400' :
-                              'bg-gray-500/10 text-gray-400'
+                              'bg-gray-500/10 text-[#7B8CA3]'
                             }`}>
                               {item.status || 'unknown'}
                             </span>
-                            <span className="text-[10px] text-gray-600">{item.direction === 'outbound' ? '↗' : '↙'}</span>
+                            <span className="text-[10px] text-[#4A5568]">{item.direction === 'outbound' ? '↗' : '↙'}</span>
                           </div>
 
                           {/* SMS message preview */}
                           {item.message && (
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.message}</p>
+                            <p className="text-xs text-[#7B8CA3] mt-0.5 line-clamp-1">{item.message}</p>
                           )}
 
                           {/* Meta row */}
                           <div className="flex items-center gap-3 mt-1.5">
-                            <span className="text-[10px] text-gray-600">{formatDate(item.created_at)}</span>
+                            <span className="text-[10px] text-[#4A5568]">{formatDate(item.created_at)}</span>
                             {item.duration && isCall && (
-                              <span className="text-[10px] text-gray-600">{formatDuration(item.duration)}</span>
+                              <span className="text-[10px] text-[#4A5568]">{formatDuration(item.duration)}</span>
                             )}
 
                             {/* Recording Controls */}
@@ -858,7 +858,7 @@ export default function CommunicationPage() {
                                     />
                                     <button
                                       onClick={() => togglePlayback(item.id)}
-                                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${playingId === item.id ? 'text-teal-300 bg-teal-900/30' : 'text-teal-500 hover:text-teal-400 hover:bg-teal-900/20'}`}
+                                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${playingId === item.id ? 'text-[#00D4AA] bg-[#00D4AA]/15' : 'text-[#00D4AA] hover:text-[#00D4AA] hover:bg-[#00D4AA]/10'}`}
                                     >
                                       {playingId === item.id ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                                       {playingId === item.id ? 'Pause' : 'Play'}
@@ -882,7 +882,7 @@ export default function CommunicationPage() {
                             {item.to_number && !isCalling && (
                               <button
                                 onClick={() => { setPhoneNumber(item.to_number!); setActiveTab('call') }}
-                                className="opacity-0 group-hover:opacity-100 text-[10px] text-teal-600 hover:text-teal-400 transition-all"
+                                className="opacity-0 group-hover:opacity-100 text-[10px] text-[#00D4AA] hover:text-[#00D4AA] transition-all"
                               >
                                 Call back
                               </button>
