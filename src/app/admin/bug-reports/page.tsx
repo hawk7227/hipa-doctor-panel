@@ -720,6 +720,3 @@ export default function AdminBugReportsPage() {
 
 
 
-
-
-
