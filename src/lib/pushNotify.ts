@@ -1,9 +1,9 @@
 // ============================================================================
-// PUSH NOTIFICATION HELPER — Send push from server-side
-// Place in: /src/lib/pushNotify.ts
+// PUSH NOTIFICATION HELPER — Send push + in-app notifications from server-side
+// Deploy to: src/lib/pushNotify.ts (REPLACE existing)
 // ============================================================================
 
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -36,22 +36,67 @@ interface PushPayload {
   requireInteraction?: boolean;
 }
 
-// Send push to a specific user
+// ── Send push + in-app notification to a specific user ──
 export async function pushToUser(userId: string, payload: PushPayload): Promise<{ sent: number; failed: number }> {
   ensureVapid();
 
+  // Save to in_app_notifications table (triggers realtime for toast)
+  try {
+    await supabase.from('in_app_notifications').insert({
+      recipient_id: String(userId),
+      recipient_role: 'provider',
+      title: payload.title,
+      body: payload.body,
+      type: payload.type || 'general',
+      url: payload.url || '/',
+      read: false,
+    });
+  } catch (err) {
+    console.error('[pushNotify] Failed to save in-app notification:', err);
+  }
+
+  // Send browser push notification
   const { data: subscriptions } = await supabase
     .from('push_subscriptions')
     .select('*')
-    .eq('user_id', userId);
+    .eq('user_id', String(userId));
 
   return sendToSubscriptions(subscriptions || [], payload);
 }
 
-// Send push to all users with a specific role
+// ── Send push + in-app notification to all users with a specific role ──
 export async function pushToRole(role: string, payload: PushPayload): Promise<{ sent: number; failed: number }> {
   ensureVapid();
 
+  // Get all users with this role to save in-app notifs
+  const { data: roleUsers } = await supabase
+    .from('push_subscriptions')
+    .select('user_id')
+    .eq('user_role', role);
+
+  // Deduplicate user_ids
+  const uniqueUserIds = [...new Set((roleUsers || []).map(u => u.user_id))];
+
+  // Save in-app notification for each user
+  if (uniqueUserIds.length > 0) {
+    try {
+      await supabase.from('in_app_notifications').insert(
+        uniqueUserIds.map(uid => ({
+          recipient_id: String(uid),
+          recipient_role: role,
+          title: payload.title,
+          body: payload.body,
+          type: payload.type || 'general',
+          url: payload.url || '/',
+          read: false,
+        }))
+      );
+    } catch (err) {
+      console.error('[pushNotify] Failed to save in-app notifications:', err);
+    }
+  }
+
+  // Send browser push notifications
   const { data: subscriptions } = await supabase
     .from('push_subscriptions')
     .select('*')
@@ -60,12 +105,15 @@ export async function pushToRole(role: string, payload: PushPayload): Promise<{ 
   return sendToSubscriptions(subscriptions || [], payload);
 }
 
-// Internal: send to list of subscriptions
+// ── Internal: send to list of push subscriptions ──
 async function sendToSubscriptions(
   subscriptions: any[],
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
-  if (subscriptions.length === 0) return { sent: 0, failed: 0 };
+  if (subscriptions.length === 0) {
+    console.log('[pushNotify] No push subscriptions found');
+    return { sent: 0, failed: 0 };
+  }
 
   const message = JSON.stringify({
     title: payload.title,
@@ -97,11 +145,12 @@ async function sendToSubscriptions(
     }
   }
 
-  // Cleanup expired
+  // Cleanup expired subscriptions
   if (expired.length > 0) {
     await supabase.from('push_subscriptions').delete().in('id', expired);
   }
 
-  console.log(`Push: sent=${sent}, failed=${failed}, cleaned=${expired.length}`);
+  console.log(`[pushNotify] sent=${sent}, failed=${failed}, cleaned=${expired.length}`);
   return { sent, failed };
 }
+

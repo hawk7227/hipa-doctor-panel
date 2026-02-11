@@ -1,6 +1,6 @@
 // ============================================================================
 // MEDAZON HEALTH — Push Notification Service Worker
-// Place in: /public/sw.js
+// Deploy to: public/sw.js (REPLACE existing)
 // ============================================================================
 
 self.addEventListener('install', (event) => {
@@ -34,7 +34,7 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'medazon-notification',
     renotify: true,
     requireInteraction: data.requireInteraction || false,
-    vibrate: [200, 100, 200, 100, 200], // Fun vibration pattern
+    vibrate: [200, 100, 200, 100, 200],
     data: {
       url: data.url || '/',
       type: data.type || 'general',
@@ -42,8 +42,22 @@ self.addEventListener('push', (event) => {
     actions: data.actions || [],
   };
 
+  // Forward to open tabs so they can play sound + show in-app toast
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    Promise.all([
+      self.registration.showNotification(data.title, options),
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION',
+            title: data.title,
+            body: data.body,
+            notifType: data.type || 'general',
+            url: data.url || '/',
+          });
+        });
+      }),
+    ])
   );
 });
 
@@ -54,14 +68,15 @@ self.addEventListener('notificationclick', (event) => {
 
   const url = event.notification.data?.url || '/';
 
-  // Focus existing tab or open new one
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       // Try to focus an existing tab
       for (const client of clients) {
         if (client.url.includes(self.location.origin)) {
           client.focus();
-          client.navigate(url);
+          if (url !== '/') {
+            client.navigate(url);
+          }
           return;
         }
       }
@@ -70,3 +85,4 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
