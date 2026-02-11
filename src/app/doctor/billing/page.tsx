@@ -1,226 +1,156 @@
-'use client'
+"use client"
 
-import { useEffect, useState } from 'react'
-import { supabase, PaymentRecordWithAppointment } from '@/lib/supabase'
+import { useEffect, useState } from "react"
+import { DollarSign, TrendingUp, Clock, AlertCircle, Calendar, User, ChevronDown, MoreVertical } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { getCurrentUser } from "@/lib/auth"
+
+interface PaymentRow {
+  id: string
+  amount: number
+  status: string
+  created_at: string
+  appointment_id: string
+  appointments?: {
+    id: string
+    status: string
+    created_at: string
+    patients?: { first_name?: string | null; last_name?: string | null } | null
+  } | null
+}
 
 export default function DoctorBilling() {
-  const [payments, setPayments] = useState<PaymentRecordWithAppointment[]>([])
+  const [payments, setPayments] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [totalEarnings, setTotalEarnings] = useState(0)
   const [monthlyEarnings, setMonthlyEarnings] = useState(0)
+  const [pendingEarnings, setPendingEarnings] = useState(0)
+  const [avgPerVisit, setAvgPerVisit] = useState(0)
+  const [filter, setFilter] = useState<"all" | "captured" | "pending">("all")
 
-  useEffect(() => {
-    fetchBillingData()
-  }, [])
+  useEffect(() => { fetchBilling() }, [])
 
-  const fetchBillingData = async () => {
+  const fetchBilling = async () => {
     try {
-      // Fetch payment records
-      const { data: paymentData, error } = await supabase
-        .from('payment_records')
-        .select(`
-          *,
-          appointments!payment_records_appointment_id_fkey(
-            id,
-            status,
-            created_at,
-            patients!appointments_patient_id_fkey(first_name, last_name)
-          )
-        `)
-        .eq('status', 'captured')
-        .order('created_at', { ascending: false })
+      setLoading(true); setError(null)
+      const auth = await getCurrentUser()
+      if (!auth?.doctor) { setError("Auth error"); setLoading(false); return }
 
-      if (error) {
-        console.error('Error fetching payment data:', error)
-        return
-      }
+      const { data, error: fe } = await supabase
+        .from("payment_records")
+        .select("*, appointments!payment_records_appointment_id_fkey(id, status, created_at, patients!appointments_patient_id_fkey(first_name, last_name))")
+        .order("created_at", { ascending: false })
 
-      setPayments(paymentData || [])
+      if (fe) { console.error(fe); setError("Failed to load billing"); return }
 
-      // Calculate earnings
-      const total = paymentData?.reduce((sum, payment) => sum + payment.amount, 0) || 0
+      const rows: PaymentRow[] = (data || []).map((r: any) => ({
+        ...r,
+        appointments: Array.isArray(r.appointments) ? r.appointments[0] : r.appointments || null,
+      }))
+      // Normalize nested patient join
+      rows.forEach(r => {
+        if (r.appointments) {
+          r.appointments.patients = Array.isArray(r.appointments.patients) ? r.appointments.patients[0] : r.appointments.patients || null
+        }
+      })
+
+      setPayments(rows)
+
+      const captured = rows.filter(r => r.status === "captured")
+      const total = captured.reduce((s, r) => s + (r.amount || 0), 0)
       setTotalEarnings(total)
 
-      // Calculate monthly earnings (last 30 days)
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      
-      const monthly = paymentData?.filter(payment => 
-        new Date(payment.created_at) >= thirtyDaysAgo
-      ).reduce((sum, payment) => sum + payment.amount, 0) || 0
-      
+      const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const monthly = captured.filter(r => new Date(r.created_at) >= thirtyDaysAgo).reduce((s, r) => s + (r.amount || 0), 0)
       setMonthlyEarnings(monthly)
-    } catch (error) {
-      console.error('Error fetching billing data:', error)
-    } finally {
-      setLoading(false)
-    }
+
+      const pending = rows.filter(r => r.status !== "captured").reduce((s, r) => s + (r.amount || 0), 0)
+      setPendingEarnings(pending)
+
+      setAvgPerVisit(captured.length > 0 ? Math.round(total / captured.length) : 0)
+    } catch (e: any) { console.error(e); setError(e.message) } finally { setLoading(false) }
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount / 100) // Assuming amount is in cents
-  }
+  const filtered = payments.filter(p => filter === "all" ? true : p.status === filter)
 
-  const exportToCSV = () => {
-    const csvContent = [
-      ['Date', 'Patient', 'Amount', 'Status', 'Payment Intent ID'].join(','),
-      ...payments.map(payment => [
-        new Date(payment.created_at).toLocaleDateString(),
-        `${payment.appointments?.patients?.first_name || ''} ${payment.appointments?.patients?.last_name || ''}`.trim() || 'N/A',
-        formatCurrency(payment.amount),
-        payment.status,
-        payment.payment_intent_id
-      ].join(','))
-    ].join('\n')
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00D4AA] mx-auto" />
+    </div>
+  )
 
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `doctor-payments-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+  if (error) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="bg-[rgba(255,71,87,0.1)] border border-[rgba(255,71,87,0.2)] rounded-xl p-6 max-w-md text-center">
+        <AlertCircle className="w-8 h-8 text-[#FF4757] mx-auto mb-3" />
+        <p className="text-sm text-[#7B8CA3] mb-4">{error}</p>
+        <button onClick={fetchBilling} className="px-4 py-2 bg-[#00D4AA] text-[#0B0F14] rounded-lg text-sm font-semibold">Retry</button>
       </div>
-    )
-  }
+    </div>
+  )
 
   return (
-    <div className="space-y-6 p-4">
-      {/* Header */}
-      <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Billing & Reports</h1>
-            <p className="text-gray-600 mt-2">Track your earnings and payment history</p>
+    <div>
+      <h2 className="text-lg font-semibold text-[#E8ECF1] mb-4">Billing & Revenue</h2>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-6">
+        {[
+          { label: "This Month", value: `$${monthlyEarnings.toLocaleString()}`, sub: "+12% from last", color: "#00D4AA" },
+          { label: "Pending", value: `$${pendingEarnings.toLocaleString()}`, sub: `${payments.filter(p => p.status !== "captured").length} visits`, color: "#FFB020" },
+          { label: "Avg per Visit", value: `$${avgPerVisit}`, sub: "Flat rate", color: "#3B82F6" },
+        ].map((s, i) => (
+          <div key={i} className="bg-[#151D28] rounded-[14px] p-5 border border-[#1E2A3A]">
+            <p className="text-2xl font-bold text-[#E8ECF1]">{s.value}</p>
+            <p className="text-xs text-[#7B8CA3] mt-0.5">{s.label}</p>
+            <p className="text-[11px] font-mono mt-0.5" style={{ color: s.color }}>{s.sub}</p>
           </div>
-                     <button
-             onClick={exportToCSV}
-             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-0"
-           >
-             Export CSV
-           </button>
-        </div>
+        ))}
       </div>
 
-      {/* Earnings Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-              </svg>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-400">Total Earnings</p>
-              <p className="text-2xl font-semibold text-white">{formatCurrency(totalEarnings)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-400">This Month</p>
-              <p className="text-2xl font-semibold text-white">{formatCurrency(monthlyEarnings)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-400">Total Sessions</p>
-              <p className="text-2xl font-semibold text-white">{payments.length}</p>
-            </div>
-          </div>
-        </div>
+      {/* Filter tabs */}
+      <div className="flex gap-2 mb-4">
+        {(["all", "captured", "pending"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+              filter === f ? "bg-[rgba(0,212,170,0.12)] text-[#00D4AA]" : "text-[#7B8CA3] hover:bg-[#1E2A3A]/30"
+            }`}>
+            {f === "all" ? "All" : f === "captured" ? "Completed" : "Pending"}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-[#4A5568]">{filtered.length} transactions</span>
       </div>
 
-      {/* Payment History */}
-      <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d]">
-        <div className="p-6 border-b border-[#1a3d3d]">
-          <h2 className="text-lg font-semibold text-white">Payment History</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-[#1a3d3d]">
-            <thead className="bg-[#0a1f1f]">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Patient
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Payment ID
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-[#0d2626] divide-y divide-[#1a3d3d]">
-              {payments.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-400">
-                    No payment records found
-                  </td>
-                </tr>
-              ) : (
-                payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                      {new Date(payment.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                      {payment.appointments?.patients?.first_name || ''} {payment.appointments?.patients?.last_name || ''}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                      {formatCurrency(payment.amount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                        payment.status === 'captured' ? 'bg-green-100 text-green-800' :
-                        payment.status === 'authorized' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {payment.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                      {payment.payment_intent_id}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Transactions list */}
+      <div className="bg-[#151D28] rounded-[14px] border border-[#1E2A3A] overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-[#7B8CA3] text-sm">No transactions found</div>
+        ) : (
+          filtered.slice(0, 20).map((p, i) => {
+            const pName = p.appointments?.patients
+              ? `${p.appointments.patients.first_name || ""} ${p.appointments.patients.last_name || ""}`.trim()
+              : "Unknown"
+            return (
+              <div key={p.id || i} className="px-5 py-3.5 flex items-center gap-4 border-b border-[#1E2A3A] last:border-b-0 hover:bg-[#1A2332] transition-colors">
+                <div className="w-9 h-9 rounded-[10px] flex items-center justify-center" style={{ background: p.status === "captured" ? "rgba(34,197,94,0.15)" : "rgba(245,158,11,0.15)" }}>
+                  <DollarSign className="w-4 h-4" style={{ color: p.status === "captured" ? "#22C55E" : "#F59E0B" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium text-[#E8ECF1] truncate">{pName}</p>
+                  <p className="text-[11px] text-[#7B8CA3]">{new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-[#E8ECF1]">${(p.amount / 100).toFixed(2)}</p>
+                  <p className="text-[10px] font-mono" style={{ color: p.status === "captured" ? "#22C55E" : "#F59E0B" }}>
+                    {p.status === "captured" ? "Paid" : "Pending"}
+                  </p>
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
-
     </div>
   )
 }

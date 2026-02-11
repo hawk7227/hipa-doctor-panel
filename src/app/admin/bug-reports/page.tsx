@@ -54,14 +54,14 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; b
   new: { label: 'New', bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', icon: Inbox },
   investigating: { label: 'Investigating', bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', icon: Wrench },
   fixed: { label: 'Fixed', bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30', icon: CheckCircle },
-  wont_fix: { label: "Won't Fix", bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/30', icon: Ban },
+  wont_fix: { label: "Won't Fix", bg: 'bg-[#111820]0/20', text: 'text-[#7B8CA3]', border: 'border-gray-500/30', icon: Ban },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   critical: { label: 'Critical', bg: 'bg-red-500/20', text: 'text-red-400', dot: 'bg-red-500' },
   high: { label: 'High', bg: 'bg-orange-500/20', text: 'text-orange-400', dot: 'bg-orange-500' },
   medium: { label: 'Medium', bg: 'bg-yellow-500/20', text: 'text-yellow-400', dot: 'bg-yellow-500' },
-  low: { label: 'Low', bg: 'bg-gray-500/20', text: 'text-gray-400', dot: 'bg-gray-500' },
+  low: { label: 'Low', bg: 'bg-[#111820]0/20', text: 'text-[#7B8CA3]', dot: 'bg-[#111820]0' },
 };
 
 const ADMIN_PASSWORD = 'sk';
@@ -327,13 +327,13 @@ export default function AdminBugReportsPage() {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-red-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-500/30"><Lock className="w-8 h-8 text-red-400" /></div>
-            <h1 className="text-2xl font-bold text-white mb-1">Admin Access</h1>
-            <p className="text-gray-500 text-sm">Bug Reports Dashboard</p>
+            <h1 className="text-2xl font-bold text-[#E8ECF1] mb-1">Admin Access</h1>
+            <p className="text-[#7B8CA3] text-sm">Bug Reports Dashboard</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
-            <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" autoFocus className="w-full bg-[#12121a] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50" />
+            <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" autoFocus className="w-full bg-[#12121a] border border-white/10 rounded-xl px-4 py-3 text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-red-500/50" />
             {pwError && <p className="text-red-400 text-sm">{pwError}</p>}
-            <button type="submit" className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors">Enter</button>
+            <button type="submit" className="w-full py-3 bg-red-500 hover:bg-red-600 text-[#E8ECF1] font-bold rounded-xl transition-colors">Enter</button>
           </form>
         </div>
       </div>
@@ -344,21 +344,21 @@ export default function AdminBugReportsPage() {
   // DASHBOARD
   // ============================================================================
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-[#E8ECF1]">
       {/* Header */}
       <header className="border-b border-white/[0.06] bg-[#0a0a0f]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center border border-red-500/30"><Bug className="w-5 h-5 text-red-400" /></div>
             <div>
-              <h1 className="text-lg font-bold flex items-center gap-2">Bug Reports {stats.unread > 0 && <span className="px-2 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full animate-pulse">{stats.unread} new</span>}</h1>
-              <p className="text-xs text-gray-500">Admin Dashboard</p>
+              <h1 className="text-lg font-bold flex items-center gap-2">Bug Reports {stats.unread > 0 && <span className="px-2 py-0.5 text-xs font-bold bg-red-500 text-[#E8ECF1] rounded-full animate-pulse">{stats.unread} new</span>}</h1>
+              <p className="text-xs text-[#7B8CA3]">Admin Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <NotificationBell userId="admin" userRole="admin" userName="Admin" />
-            <button onClick={fetchReports} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
-            <button onClick={() => { sessionStorage.removeItem('admin_bugs_auth'); setIsAuthed(false); }} className="px-3 py-1.5 text-xs text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">Logout</button>
+            <button onClick={fetchReports} className="p-2 hover:bg-[#151D28]/5 rounded-lg text-[#7B8CA3] hover:text-[#E8ECF1] transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+            <button onClick={() => { sessionStorage.removeItem('admin_bugs_auth'); setIsAuthed(false); }} className="px-3 py-1.5 text-xs text-[#7B8CA3] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">Logout</button>
           </div>
         </div>
       </header>
@@ -367,7 +367,7 @@ export default function AdminBugReportsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           {[
-            { label: 'Total', value: stats.total, icon: BarChart3, color: 'text-gray-400' },
+            { label: 'Total', value: stats.total, icon: BarChart3, color: 'text-[#7B8CA3]' },
             { label: 'Unread', value: stats.unread, icon: Inbox, color: 'text-red-400' },
             { label: 'New', value: stats.new, icon: Clock, color: 'text-blue-400' },
             { label: 'Investigating', value: stats.investigating, icon: Wrench, color: 'text-yellow-400' },
@@ -375,7 +375,7 @@ export default function AdminBugReportsPage() {
           ].map(s => (
             <div key={s.label} className="bg-[#12121a] rounded-xl border border-white/[0.06] p-4">
               <div className="flex items-center justify-between mb-1"><s.icon className={`w-4 h-4 ${s.color}`} /><span className="text-2xl font-bold">{s.value}</span></div>
-              <span className="text-xs text-gray-500">{s.label}</span>
+              <span className="text-xs text-[#7B8CA3]">{s.label}</span>
             </div>
           ))}
         </div>
@@ -383,14 +383,14 @@ export default function AdminBugReportsPage() {
         {/* Filters + Save All */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search reports..." className="w-full bg-[#12121a] border border-white/[0.06] rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/30" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7B8CA3]" />
+            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search reports..." className="w-full bg-[#12121a] border border-white/[0.06] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-[#00D4AA]/30" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-[#12121a] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white appearance-none cursor-pointer">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-[#12121a] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-[#E8ECF1] appearance-none cursor-pointer">
             <option value="all">All Status</option>
             {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-          <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="bg-[#12121a] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white appearance-none cursor-pointer">
+          <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="bg-[#12121a] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-[#E8ECF1] appearance-none cursor-pointer">
             <option value="all">All Priority</option>
             {Object.entries(PRIORITY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
@@ -400,7 +400,7 @@ export default function AdminBugReportsPage() {
             <button
               onClick={saveAllChanges}
               disabled={isSavingAll}
-              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-white text-sm font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-green-500/20 transition-all hover:scale-[1.02] disabled:opacity-50"
+              className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-[#E8ECF1] text-sm font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-green-500/20 transition-all hover:scale-[1.02] disabled:opacity-50"
             >
               {isSavingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save All ({Object.keys(pendingChanges).length})
@@ -411,7 +411,7 @@ export default function AdminBugReportsPage() {
         {/* Save results toast */}
         {saveResults && (
           <div className="mb-4 p-4 rounded-xl border bg-[#12121a] border-white/[0.06]">
-            <p className="text-sm font-medium text-white mb-2">Saved {saveResults.filter(r => r.success).length}/{saveResults.length} reports:</p>
+            <p className="text-sm font-medium text-[#E8ECF1] mb-2">Saved {saveResults.filter(r => r.success).length}/{saveResults.length} reports:</p>
             <div className="space-y-1">
               {saveResults.map(r => (
                 <div key={r.id} className="flex items-center gap-2 text-xs">
@@ -427,11 +427,11 @@ export default function AdminBugReportsPage() {
         {error && <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{error}</div>}
 
         {/* Loading */}
-        {loading && <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 text-teal-400 animate-spin" /></div>}
+        {loading && <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 text-[#00D4AA] animate-spin" /></div>}
 
         {/* Empty */}
         {!loading && filtered.length === 0 && (
-          <div className="text-center py-20"><Bug className="w-12 h-12 text-gray-600 mx-auto mb-3" /><p className="text-gray-500">No bug reports found</p></div>
+          <div className="text-center py-20"><Bug className="w-12 h-12 text-[#4A5568] mx-auto mb-3" /><p className="text-[#7B8CA3]">No bug reports found</p></div>
         )}
 
         {/* Reports List */}
@@ -464,9 +464,9 @@ export default function AdminBugReportsPage() {
                           <sc.icon className="w-2.5 h-2.5" />{sc.label}
                         </div>
                         {pc && <div className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${pc.bg} ${pc.text}`}>{pc.label}</div>}
-                        <p className="text-sm text-white truncate">{report.description || 'No description'}</p>
+                        <p className="text-sm text-[#E8ECF1] truncate">{report.description || 'No description'}</p>
                       </div>
-                      <p className="text-[11px] text-gray-500 flex items-center gap-2">
+                      <p className="text-[11px] text-[#7B8CA3] flex items-center gap-2">
                         <User className="w-3 h-3" /> {docName}
                         <Globe className="w-3 h-3 ml-1" /> {report.page_name || report.page_url}
                         <span className="ml-auto">{ago(report.created_at)}</span>
@@ -478,7 +478,7 @@ export default function AdminBugReportsPage() {
                       value={displayStatus}
                       onChange={e => setInlineStatus(report.id, e.target.value)}
                       onClick={e => e.stopPropagation()}
-                      className={`bg-[#0a0a12] border rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer focus:outline-none focus:border-teal-500/50 min-w-[110px] ${hasChange && pending?.status ? 'border-green-500/50 text-green-400' : 'border-white/[0.08] text-gray-300'}`}
+                      className={`bg-[#0a0a12] border rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer focus:outline-none focus:border-[#00D4AA]/50 min-w-[110px] ${hasChange && pending?.status ? 'border-green-500/50 text-green-400' : 'border-white/[0.08] text-[#E8ECF1]'}`}
                     >
                       {Object.entries(STATUS_CONFIG).map(([k, v]) => (
                         <option key={k} value={k}>{v.label}</option>
@@ -492,13 +492,13 @@ export default function AdminBugReportsPage() {
                       value={pending?.notes ?? report.admin_notes ?? ''}
                       onChange={e => { e.stopPropagation(); setInlineNotes(report.id, e.target.value); }}
                       onClick={e => e.stopPropagation()}
-                      className={`bg-[#0a0a12] border rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-teal-500/50 w-[180px] hidden lg:block ${hasChange && pending?.notes !== undefined ? 'border-green-500/50' : 'border-white/[0.08]'}`}
+                      className={`bg-[#0a0a12] border rounded-lg px-2 py-1.5 text-xs text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-[#00D4AA]/50 w-[180px] hidden lg:block ${hasChange && pending?.notes !== undefined ? 'border-green-500/50' : 'border-white/[0.08]'}`}
                     />
 
                     {/* Expand arrow */}
                     <button
                       onClick={() => { setExpandedId(isExpanded ? null : report.id); if (!report.admin_read) markRead(report.id); }}
-                      className="p-1.5 hover:bg-white/5 rounded-lg text-gray-500 flex-shrink-0"
+                      className="p-1.5 hover:bg-[#151D28]/5 rounded-lg text-[#7B8CA3] flex-shrink-0"
                     >
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
@@ -521,7 +521,7 @@ export default function AdminBugReportsPage() {
                                 preload="metadata"
                               />
                               {report.recording_duration_seconds && (
-                                <div className="px-3 py-2 bg-[#12121a] text-xs text-gray-500 flex items-center gap-2">
+                                <div className="px-3 py-2 bg-[#12121a] text-xs text-[#7B8CA3] flex items-center gap-2">
                                   <Video className="w-3 h-3 text-blue-400" />
                                   {Math.floor(report.recording_duration_seconds / 60)}:{(report.recording_duration_seconds % 60).toString().padStart(2, '0')} recording
                                 </div>
@@ -532,28 +532,28 @@ export default function AdminBugReportsPage() {
                           {/* Transcript */}
                           {report.transcript && (
                             <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                              <div className="flex items-center gap-2 mb-2"><MessageSquare className="w-4 h-4 text-teal-400" /><span className="text-xs text-gray-500 uppercase tracking-wide">Doctor&apos;s Words</span></div>
-                              <p className="text-sm text-gray-300 leading-relaxed italic">&ldquo;{report.transcript}&rdquo;</p>
+                              <div className="flex items-center gap-2 mb-2"><MessageSquare className="w-4 h-4 text-[#00D4AA]" /><span className="text-xs text-[#7B8CA3] uppercase tracking-wide">Doctor&apos;s Words</span></div>
+                              <p className="text-sm text-[#E8ECF1] leading-relaxed italic">&ldquo;{report.transcript}&rdquo;</p>
                             </div>
                           )}
 
                           {/* Description */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                            <div className="flex items-center gap-2 mb-2"><FileText className="w-4 h-4 text-purple-400" /><span className="text-xs text-gray-500 uppercase tracking-wide">Description</span></div>
-                            <p className="text-sm text-gray-300">{report.description}</p>
+                            <div className="flex items-center gap-2 mb-2"><FileText className="w-4 h-4 text-purple-400" /><span className="text-xs text-[#7B8CA3] uppercase tracking-wide">Description</span></div>
+                            <p className="text-sm text-[#E8ECF1]">{report.description}</p>
                           </div>
 
                           {/* Click markers */}
                           {report.markers?.length > 0 && (
                             <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                              <div className="flex items-center gap-2 mb-2"><MousePointer2 className="w-4 h-4 text-yellow-400" /><span className="text-xs text-gray-500 uppercase tracking-wide">{report.markers.length} Screen Markers</span></div>
+                              <div className="flex items-center gap-2 mb-2"><MousePointer2 className="w-4 h-4 text-yellow-400" /><span className="text-xs text-[#7B8CA3] uppercase tracking-wide">{report.markers.length} Screen Markers</span></div>
                               <div className="space-y-1.5">
                                 {report.markers.map((m: any, i: number) => (
                                   <div key={i} className="flex items-center gap-2 text-xs">
                                     <span className="w-5 h-5 rounded-full bg-yellow-400 text-yellow-900 font-bold flex items-center justify-center text-[10px]">{m.number}</span>
-                                    <span className="text-gray-400">{m.element_tag}</span>
-                                    {m.element_text && <span className="text-gray-500 truncate max-w-[200px]">{m.element_text.slice(0, 40)}</span>}
-                                    <span className="text-gray-600 ml-auto">{(m.timestamp_ms / 1000).toFixed(1)}s</span>
+                                    <span className="text-[#7B8CA3]">{m.element_tag}</span>
+                                    {m.element_text && <span className="text-[#7B8CA3] truncate max-w-[200px]">{m.element_text.slice(0, 40)}</span>}
+                                    <span className="text-[#4A5568] ml-auto">{(m.timestamp_ms / 1000).toFixed(1)}s</span>
                                   </div>
                                 ))}
                               </div>
@@ -565,22 +565,22 @@ export default function AdminBugReportsPage() {
                         <div className="space-y-4">
                           {/* Meta info */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4 space-y-2 text-sm">
-                            <div className="flex justify-between"><span className="text-gray-500">Page</span><span className="text-white">{report.page_name || report.page_url}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">Browser</span><span className="text-white truncate max-w-[200px]">{report.browser_info || '—'}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">Submitted</span><span className="text-white">{fmt(report.created_at)}</span></div>
-                            {report.confidence_score != null && <div className="flex justify-between"><span className="text-gray-500">Confidence</span><span className="text-white">{report.confidence_score}%</span></div>}
+                            <div className="flex justify-between"><span className="text-[#7B8CA3]">Page</span><span className="text-[#E8ECF1]">{report.page_name || report.page_url}</span></div>
+                            <div className="flex justify-between"><span className="text-[#7B8CA3]">Browser</span><span className="text-[#E8ECF1] truncate max-w-[200px]">{report.browser_info || '—'}</span></div>
+                            <div className="flex justify-between"><span className="text-[#7B8CA3]">Submitted</span><span className="text-[#E8ECF1]">{fmt(report.created_at)}</span></div>
+                            {report.confidence_score != null && <div className="flex justify-between"><span className="text-[#7B8CA3]">Confidence</span><span className="text-[#E8ECF1]">{report.confidence_score}%</span></div>}
                           </div>
 
                           {/* Status changer */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                            <span className="text-xs text-gray-500 uppercase tracking-wide block mb-3">Status</span>
+                            <span className="text-xs text-[#7B8CA3] uppercase tracking-wide block mb-3">Status</span>
                             <div className="grid grid-cols-2 gap-2">
                               {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                                 <button
                                   key={key}
                                   onClick={() => updateStatus(report.id, key)}
                                   disabled={updatingId === report.id}
-                                  className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 border transition-all ${report.status === key ? `${cfg.bg} ${cfg.text} ${cfg.border}` : 'border-white/[0.06] text-gray-500 hover:border-white/10 hover:text-gray-300'}`}
+                                  className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 border transition-all ${report.status === key ? `${cfg.bg} ${cfg.text} ${cfg.border}` : 'border-white/[0.06] text-[#7B8CA3] hover:border-white/10 hover:text-[#E8ECF1]'}`}
                                 >
                                   <cfg.icon className="w-3.5 h-3.5" />{cfg.label}
                                 </button>
@@ -590,13 +590,13 @@ export default function AdminBugReportsPage() {
 
                           {/* Priority */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                            <span className="text-xs text-gray-500 uppercase tracking-wide block mb-3">Priority</span>
+                            <span className="text-xs text-[#7B8CA3] uppercase tracking-wide block mb-3">Priority</span>
                             <div className="grid grid-cols-2 gap-2">
                               {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => (
                                 <button
                                   key={key}
                                   onClick={() => updatePriority(report.id, key)}
-                                  className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 border transition-all ${report.priority === key ? `${cfg.bg} ${cfg.text} border-${key === 'critical' ? 'red' : key === 'high' ? 'orange' : key === 'medium' ? 'yellow' : 'gray'}-500/30` : 'border-white/[0.06] text-gray-500 hover:text-gray-300'}`}
+                                  className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2 border transition-all ${report.priority === key ? `${cfg.bg} ${cfg.text} border-${key === 'critical' ? 'red' : key === 'high' ? 'orange' : key === 'medium' ? 'yellow' : 'gray'}-500/30` : 'border-white/[0.06] text-[#7B8CA3] hover:text-[#E8ECF1]'}`}
                                 >
                                   <div className={`w-2 h-2 rounded-full ${cfg.dot}`} />{cfg.label}
                                 </button>
@@ -606,18 +606,18 @@ export default function AdminBugReportsPage() {
 
                           {/* Admin notes */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                            <span className="text-xs text-gray-500 uppercase tracking-wide block mb-3">Admin Notes</span>
+                            <span className="text-xs text-[#7B8CA3] uppercase tracking-wide block mb-3">Admin Notes</span>
                             <textarea
                               value={notes[report.id] ?? report.admin_notes ?? ''}
                               onChange={e => setNotes(p => ({ ...p, [report.id]: e.target.value }))}
                               placeholder="Add notes about this bug..."
-                              className="w-full bg-[#12121a] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-teal-500/30 resize-none"
+                              className="w-full bg-[#12121a] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-[#E8ECF1] placeholder-[#4A5568] focus:outline-none focus:border-[#00D4AA]/30 resize-none"
                               rows={3}
                             />
                             <button
                               onClick={() => saveNotesSingle(report.id)}
                               disabled={savingNotes === report.id}
-                              className="mt-2 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                              className="mt-2 px-4 py-2 bg-[#00D4AA] hover:bg-[#00D4AA] text-[#E8ECF1] text-xs font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
                             >
                               {savingNotes === report.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                               Save Notes
@@ -626,11 +626,11 @@ export default function AdminBugReportsPage() {
 
                           {/* Live Session */}
                           <div className="bg-[#0a0a12] rounded-xl border border-white/[0.06] p-4">
-                            <span className="text-xs text-gray-500 uppercase tracking-wide block mb-3">Live Support Session</span>
+                            <span className="text-xs text-[#7B8CA3] uppercase tracking-wide block mb-3">Live Support Session</span>
                             {(report as any).live_session_status === 'active' && (report as any).live_session_room_url ? (
                               <button
                                 onClick={() => joinLiveSession((report as any).live_session_room_url, report.id)}
-                                className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                                className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-[#E8ECF1] font-bold rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
                               >
                                 <Phone className="w-4 h-4" /> Join Active Session
                               </button>
@@ -650,7 +650,7 @@ export default function AdminBugReportsPage() {
                               <button
                                 onClick={() => requestLiveSession(report.id)}
                                 disabled={requestingSession === report.id}
-                                className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-blue-500/20 disabled:opacity-50"
+                                className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-[#E8ECF1] font-bold rounded-xl flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg shadow-blue-500/20 disabled:opacity-50"
                               >
                                 {requestingSession === report.id ? (
                                   <><Loader2 className="w-4 h-4 animate-spin" /> Creating session...</>
@@ -684,8 +684,8 @@ export default function AdminBugReportsPage() {
             <div className="flex items-center justify-between px-5 py-3 bg-[#12121a] border-b border-white/[0.06]">
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-white font-semibold text-sm">Live Support Session</span>
-                <span className="text-gray-500 text-xs">with doctor</span>
+                <span className="text-[#E8ECF1] font-semibold text-sm">Live Support Session</span>
+                <span className="text-[#7B8CA3] text-xs">with doctor</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -696,10 +696,10 @@ export default function AdminBugReportsPage() {
                 </button>
                 <button
                   onClick={() => { setActiveSessionUrl(null); setActiveSessionReportId(null); }}
-                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-[#151D28]/10 rounded-lg transition-colors"
                   title="Minimize (session continues)"
                 >
-                  <X className="w-4 h-4 text-gray-400" />
+                  <X className="w-4 h-4 text-[#7B8CA3]" />
                 </button>
               </div>
             </div>
