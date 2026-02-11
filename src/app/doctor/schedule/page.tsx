@@ -7,7 +7,7 @@ import { sendAppointmentStatusEmail } from '@/lib/email'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
 import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
-import '../availability/availability.css'
+// availability.css removed — only needed on availability page
 
 function convertToTimezone(dateString: string, timezone: string): Date {
   const date = new Date(dateString)

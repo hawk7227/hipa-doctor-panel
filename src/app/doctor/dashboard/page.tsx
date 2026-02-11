@@ -70,7 +70,7 @@ export default function DoctorDashboard() {
       // Fetch all appointments with patient join
       const { data: appts, error: ae } = await supabase
         .from("appointments")
-        .select("id, patient_id, requested_date_time, status, visit_type, service_type, chart_locked, created_at, patients!appointments_patient_id_fkey(first_name, last_name, mobile_phone)")
+        .select("id, patient_id, requested_date_time, status, visit_type, service_type, chart_locked, created_at, patients!appointments_patient_id_fkey(first_name, last_name, phone)")
         .eq("doctor_id", doc.id)
         .order("requested_date_time", { ascending: true })
 
