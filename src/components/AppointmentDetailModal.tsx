@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity, Mic, Phone, ExternalLink, Lock, Unlock } from 'lucide-react'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, Activity, Mic, Phone, ExternalLink, Lock, Unlock, Stethoscope } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
@@ -40,6 +40,9 @@ import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
 import AllergiesPanel from './AllergiesPanel'
 import VitalsPanel from './VitalsPanel'
 import MedicationsPanel from './MedicationsPanel'
+
+// DrChrono EHR Overlay
+import DrChronoOverlay from './DrChronoOverlay'
 
 // Utils
 import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/utils/timezone-utils'
@@ -95,6 +98,7 @@ const EHR_PANELS = [
   { id: 'allergies', label: 'Allergy', icon: AlertTriangle, color: '#ef4444', hoverBg: 'hover:bg-red-700' },
   { id: 'vitals', label: 'Vitals', icon: Activity, color: '#06b6d4', hoverBg: 'hover:bg-cyan-700' },
   { id: 'medications', label: 'Meds', icon: Pill, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
+  { id: 'drchrono', label: 'DrChrono', icon: Stethoscope, color: '#c084fc', hoverBg: 'hover:bg-purple-700' },
 ] as const
 
 export default function AppointmentDetailModal({ 
@@ -317,6 +321,7 @@ export default function AppointmentDetailModal({
   const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
   const [showVitalsPanel, setShowVitalsPanel] = useState(false)
   const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
+  const [showDrChronoOverlay, setShowDrChronoOverlay] = useState(false)
 
   // Map EHR toolbar panel ids to their state setters
   const handleToolbarPanelClick = useCallback((panelId: string) => {
@@ -328,6 +333,7 @@ export default function AppointmentDetailModal({
       case 'allergies': setShowAllergiesPanel(v => !v); break
       case 'vitals': setShowVitalsPanel(v => !v); break
       case 'medications': setShowMedicationsPanel(v => !v); break
+      case 'drchrono': setShowDrChronoOverlay(v => !v); break
     }
   }, [])
 
@@ -1666,9 +1672,103 @@ export default function AppointmentDetailModal({
       {appointment?.patient_id && (
         <MedicationsPanel isOpen={showMedicationsPanel} onClose={() => setShowMedicationsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
       )}
+
+      {/* DrChrono EHR Overlay */}
+      <DrChronoOverlay
+        isOpen={showDrChronoOverlay}
+        onClose={() => setShowDrChronoOverlay(false)}
+        patientName={appointment?.patients ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim() : undefined}
+      />
     </>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
