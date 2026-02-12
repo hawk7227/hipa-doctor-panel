@@ -22,6 +22,7 @@
     "@zoom/meetingsdk": "^5.0.4",
     "@zoomus/websdk": "^2.18.3",
     "axios": "^1.12.2",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.545.0",
     "next": "^16.0.7",
