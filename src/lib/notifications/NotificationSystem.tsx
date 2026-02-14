@@ -50,9 +50,13 @@ export interface NotificationSettings {
   soundEnabled: boolean
   soundVolume: number
   soundTheme: SoundTheme
+  soundRepeat: number // 1-5, how many times to play the sound
+  soundRepeatInterval: number // ms between repeats
   toastDuration: number
   toastPosition: ToastPosition
   pushEnabled: boolean
+  // Per-type urgent override — urgent notifications can repeat more
+  urgentRepeat: number // extra repeats for urgent/high priority
   // Per-type toggles
   enabledTypes: Record<NotificationType, boolean>
 }
@@ -291,9 +295,12 @@ const defaultSettings: NotificationSettings = {
   soundEnabled: true,
   soundVolume: 0.8,
   soundTheme: 'default',
+  soundRepeat: 1,
+  soundRepeatInterval: 1200,
   toastDuration: 5000,
   toastPosition: 'bottom-right',
   pushEnabled: false,
+  urgentRepeat: 3,
   enabledTypes: defaultEnabledTypes(),
 }
 
@@ -365,9 +372,26 @@ export function NotificationProvider({ children, doctorId }: { children: React.R
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setActiveToast(null), settings.toastDuration)
 
-    // Sound
+    // Sound (with repeat support)
     if (settings.soundEnabled && soundEngine.current) {
+      const isUrgent = n.priority === 'urgent' || n.priority === 'high'
+      const totalRepeats = isUrgent
+        ? Math.max(settings.soundRepeat, settings.urgentRepeat)
+        : settings.soundRepeat
+
+      // Play first immediately
       soundEngine.current.play(n.type, settings.soundVolume, settings.soundTheme)
+
+      // Schedule repeats
+      if (totalRepeats > 1) {
+        for (let i = 1; i < totalRepeats; i++) {
+          setTimeout(() => {
+            if (soundEngine.current) {
+              soundEngine.current.play(n.type, settings.soundVolume, settings.soundTheme)
+            }
+          }, i * settings.soundRepeatInterval)
+        }
+      }
     }
 
     // Browser push notification (when tab is not focused)
@@ -644,7 +668,16 @@ function NotificationSettingsPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => { soundEngine.current = new NotificationSoundEngine() }, [])
 
   const testSound = () => {
-    if (soundEngine.current) soundEngine.current.play('new_appointment', settings.soundVolume, settings.soundTheme)
+    if (!soundEngine.current) return
+    // Play with repeats to demo the full experience
+    soundEngine.current.play('new_appointment', settings.soundVolume, settings.soundTheme)
+    if (settings.soundRepeat > 1) {
+      for (let i = 1; i < settings.soundRepeat; i++) {
+        setTimeout(() => {
+          if (soundEngine.current) soundEngine.current.play('new_appointment', settings.soundVolume, settings.soundTheme)
+        }, i * settings.soundRepeatInterval)
+      }
+    }
   }
 
   return (
@@ -708,6 +741,91 @@ function NotificationSettingsPanel({ onBack }: { onBack: () => void }) {
             <button onClick={testSound} className="text-[10px] text-teal-400 hover:text-teal-300 font-bold mt-1" disabled={!settings.soundEnabled}>
               ▶ Test sound
             </button>
+          </div>
+
+          {/* Sound repeat */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-300 font-medium">Repeat</span>
+              <span className="text-[10px] text-gray-500 font-bold">{settings.soundRepeat}×</span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => updateSettings({ soundRepeat: n })}
+                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                    settings.soundRepeat === n
+                      ? 'bg-teal-500/15 border-teal-500/30 text-teal-400'
+                      : 'bg-[#0a1f1f] border-[#1a3d3d] text-gray-400 hover:text-gray-300'
+                  }`}
+                  disabled={!settings.soundEnabled}
+                >
+                  {n}×
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Repeat interval */}
+          {settings.soundRepeat > 1 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-300 font-medium">Repeat gap</span>
+                <span className="text-[10px] text-gray-500 font-bold">{(settings.soundRepeatInterval / 1000).toFixed(1)}s</span>
+              </div>
+              <input
+                type="range" min="500" max="3000" step="250"
+                value={settings.soundRepeatInterval}
+                onChange={(e) => updateSettings({ soundRepeatInterval: parseInt(e.target.value) })}
+                className="w-full h-1.5 bg-[#1a3d3d] rounded-full appearance-none cursor-pointer accent-teal-400"
+              />
+              <div className="flex justify-between text-[9px] text-gray-600">
+                <span>Fast (0.5s)</span><span>Slow (3s)</span>
+              </div>
+            </div>
+          )}
+
+          {/* Urgent repeat override */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-300 font-medium">Urgent/High repeat</span>
+              <span className="text-[10px] text-gray-500 font-bold">{settings.urgentRepeat}×</span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button
+                  key={n}
+                  onClick={() => updateSettings({ urgentRepeat: n })}
+                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                    settings.urgentRepeat === n
+                      ? 'bg-pink-500/15 border-pink-500/30 text-pink-400'
+                      : 'bg-[#0a1f1f] border-[#1a3d3d] text-gray-400 hover:text-gray-300'
+                  }`}
+                  disabled={!settings.soundEnabled}
+                >
+                  {n}×
+                </button>
+              ))}
+            </div>
+            <p className="text-[9px] text-gray-600">Instant visits &amp; cancellations use this repeat count</p>
+          </div>
+
+          {/* Toast duration */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-300 font-medium">Toast display time</span>
+              <span className="text-[10px] text-gray-500 font-bold">{settings.toastDuration / 1000}s</span>
+            </div>
+            <input
+              type="range" min="2000" max="15000" step="1000"
+              value={settings.toastDuration}
+              onChange={(e) => updateSettings({ toastDuration: parseInt(e.target.value) })}
+              className="w-full h-1.5 bg-[#1a3d3d] rounded-full appearance-none cursor-pointer accent-teal-400"
+            />
+            <div className="flex justify-between text-[9px] text-gray-600">
+              <span>Quick (2s)</span><span>Long (15s)</span>
+            </div>
           </div>
         </div>
 
