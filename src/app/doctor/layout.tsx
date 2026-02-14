@@ -9,6 +9,7 @@ import { signOutAndRedirect } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib/notifications'
 import SyncIndicator from '@/components/SyncIndicator'
+import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/KeyboardShortcutsModal'
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
@@ -41,6 +42,7 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [doctorId, setDoctorId] = useState<string | null>(null)
+  const { isOpen: shortcutsOpen, setIsOpen: setShortcutsOpen } = useKeyboardShortcutsHelp()
 
   const isActive = (path: string) => pathname === path
 
@@ -59,6 +61,29 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
 
   // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // Global keyboard navigation: G+D, G+A, G+P, G+S
+  useEffect(() => {
+    let gPressed = false
+    let gTimer: ReturnType<typeof setTimeout>
+    const handleKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      if (e.key === 'g' || e.key === 'G') {
+        if (!gPressed) { gPressed = true; gTimer = setTimeout(() => { gPressed = false }, 800) }
+        return
+      }
+      if (gPressed) {
+        gPressed = false
+        clearTimeout(gTimer)
+        const nav: Record<string, string> = { d: '/doctor/dashboard', a: '/doctor/appointments', p: '/doctor/patients', s: '/doctor/settings' }
+        const dest = nav[e.key.toLowerCase()]
+        if (dest) { e.preventDefault(); window.location.href = dest }
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
 
   // Lock body scroll when mobile menu open
   useEffect(() => {
@@ -233,6 +258,7 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
 
         {/* Global notification toast */}
         <NotificationToast />
+        <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       </div>
       </NotificationProvider>
     </AuthWrapper>

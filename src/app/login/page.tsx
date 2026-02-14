@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, signInWithPassword, sendOTP, verifyOTP } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
@@ -17,6 +17,8 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/doctor/appointments'
 
   // Check if user is already authenticated
   useEffect(() => {
@@ -28,7 +30,7 @@ export default function LoginPage() {
       const user = await getCurrentUser()
       if (user) {
         // User is already authenticated, redirect to appointments
-        router.push('/doctor/appointments')
+        router.push(redirectTo)
       }
     } catch (error) {
       console.error('Error checking auth status:', error)
@@ -72,7 +74,7 @@ export default function LoginPage() {
         logAudit({ action: 'LOGIN', resourceType: 'system', description: `Password login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
-          router.push('/doctor/appointments')
+          router.push(redirectTo)
         }, 1000)
       }
     } catch (error) {
@@ -152,7 +154,7 @@ export default function LoginPage() {
         logAudit({ action: 'LOGIN', resourceType: 'system', description: `OTP login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
-          router.push('/doctor/appointments')
+          router.push(redirectTo)
         }, 1000)
       }
     } catch (error) {
