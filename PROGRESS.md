@@ -16,12 +16,12 @@
 | — | Dashboard Buttons + Sidebar | ✅ COMPLETE | 4 files | 2 buttons, 2 cards, 2 sidebar links, 2 full pages |
 | A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
 | B | Calendar Enterprise Upgrade | ✅ COMPLETE | 15+ files | Full rebuild, notification system v2, extras, list view, keyboard/touch, print |
-| C | Calendar + Workspace Integration | 🟡 NEXT | | URL routing, workspace canvas, mobile stacked layout |
+| C | Calendar + Workspace Integration | 🟡 IN PROGRESS | 3 files | URL routing done. Workspace canvas deferred (needs react-grid-layout) |
 | D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
 | E | Port All Existing Panels | ⬜ NOT STARTED | | Wrap 25 panels in Panel Shell, React.memo, skeleton loaders |
-| F | Polish | ⬜ NOT STARTED | | 60fps animations, mobile gestures, accessibility, error boundaries |
+| F | Polish | 🟡 STARTED | 1 file | Error Boundary added. Animations, gestures, accessibility remaining |
 | G | Authentication & Roles | ⬜ NOT STARTED | | practice_staff table, assistant login, RBAC middleware, role context |
-| H | Enterprise Chart Management | ⬜ NOT STARTED | | 5-state lifecycle, cosign queue, PDF, /doctor/chart-management page |
+| H | Enterprise Chart Management | ✅ COMPLETE | 1 file | Live data, 5-state cards, overdue alerts, search, clickable navigation |
 | I | HIPAA Audit Logging | ⬜ NOT STARTED | | audit_logs table, middleware, Audit tab, Settings page |
 | J | Staff Management | ⬜ NOT STARTED | | /doctor/settings/staff page, assistant CRUD, activity viewer |
 
