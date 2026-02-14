@@ -6,7 +6,7 @@ import { supabase, Appointment } from '@/lib/supabase'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
 import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
-import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChipBorderStyle, getChipStatusIcon } from '@/components/calendar'
+import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChipBorderStyle, getChipStatusIcon, useExtras, ExtrasToggleButton, ConfettiOverlay, WelcomePopup } from '@/components/calendar'
 import type { HoverPreviewData } from '@/components/calendar'
 import { PROVIDER_TIMEZONE, CALENDAR_DEFAULTS } from '@/lib/constants'
 import {
@@ -157,6 +157,8 @@ export default function AppointmentsPage() {
   const [nowMinutes, setNowMinutes] = useState(getNowMinutes)
 
   const hoverPreview = useHoverPreview()
+  const extras = useExtras()
+  const [showWelcome, setShowWelcome] = useState(false)
   const today = useMemo(() => new Date(), [])
   const timeSlots = useMemo(() => getTimeSlots(), [])
 
@@ -291,6 +293,13 @@ export default function AppointmentsPage() {
     return () => clearInterval(interval)
   }, [])
 
+  // ── Welcome popup (if extras enabled) ──
+  useEffect(() => {
+    if (!loading && extras.state.welcomePopup) {
+      setShowWelcome(true)
+    }
+  }, [loading, extras.state.welcomePopup])
+
   // ── Scroll to current time on load ──
   useEffect(() => {
     if (!loading && gridRef.current) {
@@ -363,6 +372,62 @@ export default function AppointmentsPage() {
   }, [activeInstantVisit, currentDoctorId, fetchAppointments])
 
   // ═══════════════════════════════════════════════════════════
+  // DEV: DEMO APPOINTMENTS (shows all chart states)
+  // ═══════════════════════════════════════════════════════════
+
+  const loadDemoAppointments = useCallback(() => {
+    const todayStr = formatDateKey(new Date())
+    const makeTime = (hour: number, min: number) => `${todayStr}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:00`
+
+    const demos: CalendarAppointment[] = [
+      {
+        id: 'demo-1', doctor_id: '', patient_id: 'p1', status: 'pending',
+        scheduled_time: makeTime(8, 0), requested_date_time: makeTime(8, 0),
+        visit_type: 'video', chart_locked: false, chart_status: 'draft',
+        patients: { first_name: 'Sarah', last_name: 'Johnson', email: '', phone: '', chief_complaint: 'UTI symptoms - burning, frequency' },
+      },
+      {
+        id: 'demo-2', doctor_id: '', patient_id: 'p2', status: 'accepted',
+        scheduled_time: makeTime(9, 0), requested_date_time: makeTime(9, 0),
+        visit_type: 'video', chart_locked: false, chart_status: 'preliminary',
+        patients: { first_name: 'Marcus', last_name: 'Williams', email: '', phone: '', chief_complaint: 'ADHD follow-up evaluation' },
+      },
+      {
+        id: 'demo-3', doctor_id: '', patient_id: 'p3', status: 'completed',
+        scheduled_time: makeTime(10, 0), requested_date_time: makeTime(10, 0),
+        visit_type: 'phone', chart_locked: false, chart_status: 'signed',
+        patients: { first_name: 'Emily', last_name: 'Chen', email: '', phone: '', chief_complaint: 'STD screening results review' },
+      },
+      {
+        id: 'demo-4', doctor_id: '', patient_id: 'p4', status: 'completed',
+        scheduled_time: makeTime(11, 0), requested_date_time: makeTime(11, 0),
+        visit_type: 'video', chart_locked: true, chart_status: 'closed',
+        patients: { first_name: 'James', last_name: 'Rodriguez', email: '', phone: '', chief_complaint: 'Anxiety medication refill' },
+      },
+      {
+        id: 'demo-5', doctor_id: '', patient_id: 'p5', status: 'completed',
+        scheduled_time: makeTime(12, 0), requested_date_time: makeTime(12, 0),
+        visit_type: 'async', chart_locked: true, chart_status: 'amended',
+        patients: { first_name: 'Aisha', last_name: 'Patel', email: '', phone: '', chief_complaint: 'Skin rash assessment - amended dosage' },
+      },
+      {
+        id: 'demo-6', doctor_id: '', patient_id: 'p6', status: 'pending',
+        scheduled_time: makeTime(13, 30), requested_date_time: makeTime(13, 30),
+        visit_type: 'instant', chart_locked: false, chart_status: 'draft',
+        patients: { first_name: 'David', last_name: 'Kim', email: '', phone: '', chief_complaint: 'Urgent sore throat' },
+      },
+      {
+        id: 'demo-7', doctor_id: '', patient_id: 'p7', status: 'accepted',
+        scheduled_time: makeTime(14, 0), requested_date_time: makeTime(14, 0),
+        visit_type: 'video', chart_locked: false, chart_status: 'draft',
+        patients: { first_name: 'Lisa', last_name: 'Thompson', email: '', phone: '', chief_complaint: 'Blood pressure follow-up' },
+      },
+    ] as any
+
+    setAppointments(demos)
+  }, [])
+
+  // ═══════════════════════════════════════════════════════════
   // CURRENT TIME INDICATOR
   // ═══════════════════════════════════════════════════════════
 
@@ -417,6 +482,17 @@ export default function AppointmentsPage() {
             <h1 className="text-lg md:text-xl font-bold text-white truncate">Your Appointments</h1>
           </div>
           <div className="flex items-center space-x-1.5">
+            {/* Dev: Load demo appointments to see all chart states */}
+            {process.env.NODE_ENV === 'development' && (
+              <button
+                onClick={loadDemoAppointments}
+                className="px-2 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[10px] font-bold transition-colors"
+                title="Load demo appointments (dev only)"
+              >
+                Demo
+              </button>
+            )}
+            <ExtrasToggleButton extras={extras} />
             <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50" aria-label="Refresh" title="Refresh appointments">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
@@ -539,7 +615,7 @@ export default function AppointmentsPage() {
                 <div key={rowIdx} className={`flex ${isHour ? 'border-t border-[#1a3d3d]' : 'border-t border-[#1a3d3d]/20'}`} style={{ minHeight: '64px' }}>
                   <div className="w-14 md:w-16 flex-shrink-0 text-right pr-2 pt-1">
                     {isHour && (
-                      <span className={`text-[10px] font-medium ${isPast ? 'text-gray-600' : 'text-gray-400'}`}>{formatSlotTime(slot)}</span>
+                      <span className={`text-[10px] font-bold ${isPast ? 'text-gray-600' : 'text-gray-300'}`}>{formatSlotTime(slot)}</span>
                     )}
                   </div>
 
@@ -592,8 +668,7 @@ export default function AppointmentsPage() {
                           >
                             {(() => {
                               const si = getChipStatusIcon(deriveChartStatus(appointment))
-                              if (!si) return null
-                              return <span className="absolute top-1 right-1.5 text-[10px]" style={{ color: si.color }} title={si.title}>{si.icon}</span>
+                              return <span className="absolute top-1 right-1.5 text-[10px]" style={{ color: si.color, filter: `drop-shadow(0 0 3px ${si.color}50)` }} title={si.title}>{si.icon}</span>
                             })()}
                             <p className="text-xs font-bold text-white truncate leading-tight">
                               {appointment.patients?.first_name} {appointment.patients?.last_name?.charAt(0)}.
@@ -664,6 +739,10 @@ export default function AppointmentsPage() {
           patientData={followUpPatientData}
         />
       )}
+
+      {/* ═══ DELIGHTFUL EXTRAS ═══ */}
+      <ConfettiOverlay active={extras.state.confetti} />
+      <WelcomePopup show={showWelcome} doctorName="" onDismiss={() => setShowWelcome(false)} />
 
       {/* ═══ INSTANT VISIT QUEUE ═══ */}
       {activeInstantVisit && (

@@ -53,15 +53,19 @@ export function getChipBorderStyle(chartStatus: ChartStatus): React.CSSPropertie
 
 // ─── STATUS ICON (top-right corner of chip) ──────────────────
 // Returns the icon string + color for the top-right indicator
+// Every state gets an icon so the doctor always knows the chart state at a glance
 export function getChipStatusIcon(chartStatus: ChartStatus): {
   icon: string
   color: string
   title: string
-} | null {
+} {
   switch (chartStatus) {
     case CHART_STATUS.DRAFT:
-      // No icon for draft
-      return null
+      return {
+        icon: '🔓',
+        color: '#6b7280',
+        title: 'Draft — Unlocked',
+      }
 
     case CHART_STATUS.PRELIMINARY:
       return {
@@ -73,15 +77,15 @@ export function getChipStatusIcon(chartStatus: ChartStatus): {
     case CHART_STATUS.SIGNED:
       return {
         icon: '✓',
-        color: '#4ade80',
-        title: 'Signed',
+        color: '#22c55e',
+        title: 'Signed — Complete',
       }
 
     case CHART_STATUS.CLOSED:
       return {
         icon: '🔒',
         color: '#fbbf24',
-        title: 'Chart closed',
+        title: 'Chart locked',
       }
 
     case CHART_STATUS.AMENDED:
@@ -92,6 +96,10 @@ export function getChipStatusIcon(chartStatus: ChartStatus): {
       }
 
     default:
-      return null
+      return {
+        icon: '🔓',
+        color: '#6b7280',
+        title: 'Draft — Unlocked',
+      }
   }
 }
