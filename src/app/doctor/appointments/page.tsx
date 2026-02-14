@@ -210,7 +210,7 @@ export default function AppointmentsPage() {
         .select(`
           *,
           doctors!appointments_doctor_id_fkey(timezone),
-          patients!appointments_patient_id_fkey(first_name, last_name, email, phone, chief_complaint, date_of_birth, gender),
+          patients!appointments_patient_id_fkey(first_name, last_name, email, phone, chief_complaint),
           clinical_notes(id, note_type, content)
         `)
         .eq('doctor_id', doctorId)
@@ -218,9 +218,15 @@ export default function AppointmentsPage() {
         .order('requested_date_time', { ascending: true })
 
       if (fetchError) {
-        console.error('Error fetching appointments:', fetchError)
-        setError('Failed to load appointments')
-        return
+        // Some Supabase errors are empty objects {} — only fail on real errors
+        const hasMessage = fetchError.message || fetchError.code || fetchError.details
+        if (hasMessage) {
+          console.error('Error fetching appointments:', fetchError)
+          setError(`Failed to load appointments: ${fetchError.message || 'Unknown error'}`)
+          return
+        } else {
+          console.warn('Supabase returned empty error object, proceeding:', fetchError)
+        }
       }
 
       setAppointments((data || []) as any)
