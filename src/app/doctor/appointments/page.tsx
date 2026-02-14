@@ -10,6 +10,7 @@ import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChip
 import type { HoverPreviewData } from '@/components/calendar'
 import { PROVIDER_TIMEZONE, CALENDAR_DEFAULTS } from '@/lib/constants'
 import { useNotifications } from '@/lib/notifications'
+import { logAudit, AUDIT_ACTIONS, RESOURCE_TYPES } from '@/lib/audit'
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, ArrowLeft,
   Video, Phone, MessageSquare, Zap, List, Printer, Calendar

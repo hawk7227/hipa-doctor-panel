@@ -90,6 +90,13 @@ export const signOut = async () => {
 }
 
 export const signOutAndRedirect = async () => {
+  // Log before signing out (while we still have auth context)
+  try {
+    const { logAudit } = await import('@/lib/audit')
+    logAudit({ action: 'LOGOUT', resourceType: 'system', description: 'User logged out' })
+    // Give the log a moment to flush
+    await new Promise(r => setTimeout(r, 500))
+  } catch { /* best effort */ }
   await signOut()
   window.location.href = '/login'
 }

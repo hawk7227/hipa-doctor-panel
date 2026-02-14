@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, signInWithPassword, sendOTP, verifyOTP } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 
 export default function LoginPage() {
   const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password')
@@ -68,6 +69,7 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
+        logAudit({ action: 'LOGIN', resourceType: 'system', description: `Password login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
           router.push('/doctor/appointments')
@@ -147,6 +149,7 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
+        logAudit({ action: 'LOGIN', resourceType: 'system', description: `OTP login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
           router.push('/doctor/appointments')

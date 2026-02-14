@@ -11,7 +11,7 @@ import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
-  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight
+  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList
 } from 'lucide-react'
 
 // ─── NAV ITEMS ───────────────────────────────────────────────
@@ -30,6 +30,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: '/doctor/settings/staff', label: 'Staff Management', icon: UsersRound },
   { href: '/doctor/chart-management', label: 'Chart Management', icon: Shield },
+  { href: '/doctor/settings/audit', label: 'Audit Log', icon: ClipboardList },
 ] as const
 
 // ─── COMPONENT ───────────────────────────────────────────────

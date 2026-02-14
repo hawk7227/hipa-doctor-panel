@@ -352,7 +352,7 @@ export default function DoctorDashboard() {
     : '5 years experience'
 
   return (
-    <div className="min-h-screen bg-[#0a1f1f] text-white">
+    <div className="h-full overflow-auto bg-[#0a1f1f] text-white">
       {/* Notifications Drawer */}
       {showNotificationsDrawer && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">

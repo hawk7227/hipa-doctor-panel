@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { logViewAppointment, logViewChart } from '@/lib/audit'
 import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, AlertCircle, Activity, Mic, Phone, ExternalLink, Lock, Unlock, Stethoscope, User, FlaskConical, Syringe, FolderOpen, Users, Wine, Scissors, Building2, ClipboardCheck, DollarSign, MessageSquare, Video, Loader2, Download, Eye, Shield } from 'lucide-react'
 import ZoomMeetingEmbed from './ZoomMeetingEmbed'
 import MedicalRecordsView from './MedicalRecordsView'
@@ -1229,6 +1230,13 @@ export default function AppointmentDetailModal({
     } else {
       preventAutoScrollRef.current = false
       if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }
+    }
+  }, [isOpen, appointmentId])
+
+  // ── Audit log: record PHI access ──
+  useEffect(() => {
+    if (isOpen && appointmentId) {
+      logViewAppointment(appointmentId)
     }
   }, [isOpen, appointmentId])
 
