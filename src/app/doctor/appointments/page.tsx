@@ -12,7 +12,7 @@ import { PROVIDER_TIMEZONE, CALENDAR_DEFAULTS } from '@/lib/constants'
 import { useNotifications } from '@/lib/notifications'
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, ArrowLeft,
-  Video, Phone, MessageSquare, Zap, Bell, List, Printer, Calendar
+  Video, Phone, MessageSquare, Zap, List, Printer, Calendar
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -27,7 +27,9 @@ interface ClinicalNote {
 
 interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_date_time' | 'visit_type'> {
   requested_date_time: string | null
+  scheduled_time?: string | null
   visit_type: string | null
+  chart_status?: string | null
   patients?: {
     first_name?: string | null
     last_name?: string | null
@@ -43,7 +45,6 @@ interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_
   chief_complaint?: string | null
   reason?: string | null
   chart_locked: boolean | null
-  chart_status?: string | null
   created_at?: string | null
 }
 
