@@ -25,3 +25,13 @@ export {
 } from './PanelRegistry'
 
 export type { PanelConfig } from './PanelRegistry'
+
+export {
+  saveLayout,
+  loadLayout,
+  listLayouts,
+  deleteLayout,
+  cancelPendingSave,
+} from './LayoutPersistence'
+
+export type { SavedLayout } from './LayoutPersistence'
