@@ -135,8 +135,17 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentDoctorId, setCurrentDoctorId] = useState<string | null>(null)
-  const [currentDate, setCurrentDate] = useState(() => new Date())
-  const [calendarView, setCalendarView] = useState<CalendarView>('week')
+  const [currentDate, setCurrentDate] = useState(() => {
+    const dateParam = searchParams.get('date')
+    if (dateParam) {
+      const parsed = new Date(dateParam + 'T12:00:00')
+      if (!isNaN(parsed.getTime())) return parsed
+    }
+    return new Date()
+  })
+  const [calendarView, setCalendarView] = useState<CalendarView>(
+    (searchParams.get('view') as CalendarView) || 'week'
+  )
   const [refreshing, setRefreshing] = useState(false)
 
   // ── Modal state ──
@@ -163,6 +172,20 @@ export default function AppointmentsPage() {
   const [showWelcome, setShowWelcome] = useState(false)
   const today = useMemo(() => new Date(), [])
   const timeSlots = useMemo(() => getTimeSlots(), [])
+
+  // ── URL sync: update browser URL when appointment/view/date changes ──
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (selectedAppointmentId) params.set('apt', selectedAppointmentId)
+    if (calendarView !== 'week') params.set('view', calendarView)
+    // Only add date if not today
+    const todayStr = formatDateKey(new Date())
+    const currentStr = formatDateKey(currentDate)
+    if (currentStr !== todayStr) params.set('date', currentStr)
+    const paramStr = params.toString()
+    const newUrl = paramStr ? `/doctor/appointments?${paramStr}` : '/doctor/appointments'
+    window.history.replaceState(null, '', newUrl)
+  }, [selectedAppointmentId, calendarView, currentDate])
 
   // ── Computed ──
   const visibleDates = useMemo(() => {
