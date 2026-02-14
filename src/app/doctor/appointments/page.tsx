@@ -7,6 +7,8 @@ import { sendAppointmentStatusEmail } from '@/lib/email'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
 import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
+import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChipBorderStyle, getChipStatusIcon } from '@/components/calendar'
+import type { HoverPreviewData } from '@/components/calendar'
 import '../availability/availability.css'
 
 function convertToTimezone(dateString: string, timezone: string): Date {
@@ -176,6 +178,8 @@ export default function DoctorAppointments() {
   // CELEBRATION STATE - FRONTEND ONLY (Added)
   // ============================================
   const [showWelcome, setShowWelcome] = useState(false)
+  const [showMiniCalendar, setShowMiniCalendar] = useState(false)
+  const hoverPreview = useHoverPreview()
   const [particles, setParticles] = useState<Array<{id: number, x: number, color: string, size: number, duration: number, delay: number, shape: string}>>([])
   const [confetti, setConfetti] = useState<Array<{id: number, x: number, color: string, delay: number}>>([])
   const [soundEnabled, setSoundEnabled] = useState(false)
@@ -586,6 +590,21 @@ export default function DoctorAppointments() {
     console.log('📅 Time slots generated:', sortedHours.length, 'slots from', sortedHours[0]?.hour + ':' + sortedHours[0]?.minute, 'to', sortedHours[sortedHours.length-1]?.hour + ':' + sortedHours[sortedHours.length-1]?.minute)
     
     return slots
+  }, [appointments])
+
+  // ─── DATES WITH APPOINTMENTS (for MiniCalendar dots) ─────
+  const datesWithAppointments = useMemo(() => {
+    const dates = new Set<string>()
+    appointments.forEach((apt: Appointment) => {
+      if (apt.scheduled_time) {
+        const d = new Date(apt.scheduled_time)
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        dates.add(`${y}-${m}-${day}`)
+      }
+    })
+    return dates
   }, [appointments])
 
   const formatTime = (date: Date) => {
@@ -1678,6 +1697,14 @@ export default function DoctorAppointments() {
           </div>
 
           <div className="calendar-header-right">
+            <button
+              className="nav-btn"
+              onClick={() => setShowMiniCalendar(!showMiniCalendar)}
+              title="Toggle mini calendar"
+              style={showMiniCalendar ? { background: 'rgba(94,234,212,0.2)', color: '#5eead4' } : {}}
+            >
+              📅
+            </button>
             <button 
               className={`nav-btn ${calendarViewType === 'week' ? 'active' : ''}`}
               onClick={() => setCalendarViewType('week')}
@@ -1706,7 +1733,23 @@ export default function DoctorAppointments() {
         </div>
 
         {/* Full Screen Calendar Container */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+          {/* Mini Calendar Sidebar */}
+          {showMiniCalendar && (
+            <div style={{ flexShrink: 0, padding: '8px', borderRight: '1px solid #1a3d3d', overflowY: 'auto' }}>
+              <MiniCalendar
+                currentDate={currentDate}
+                onDateSelect={(date) => {
+                  setCurrentDate(date)
+                  setCalendarViewType('week')
+                }}
+                onMonthChange={(date) => {
+                  setCurrentDate(date)
+                }}
+                datesWithAppointments={datesWithAppointments}
+              />
+            </div>
+          )}
           {viewType === 'calendar' ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
             {calendarViewType === 'week' ? (
@@ -1768,13 +1811,53 @@ export default function DoctorAppointments() {
                                   <small style={{ fontSize: '11px', opacity: 0.9, color: 'white' }}>{formatTime(time)}</small>
                                 </div>
                               ) : (
-                                <div className={`availability-event blocked ${appointment.visit_type || 'video'}`} style={{ position: 'relative' }}>
-                                  {appointment.chart_locked && (
-                                    <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '10px', color: '#fbbf24', filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))' }} title="Chart locked">🔒</span>
-                                  )}
-                                  {appointment.status === 'completed' && !appointment.chart_locked && (
-                                    <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '10px', color: '#4ade80', opacity: 0.8 }} title="Completed">✓</span>
-                                  )}
+                                <div
+                                className={`availability-event blocked ${appointment.visit_type || 'video'}`}
+                                style={{
+                                  position: 'relative',
+                                  ...getChipBorderStyle(deriveChartStatus(appointment)),
+                                }}
+                                onMouseEnter={(e) => {
+                                  playHoverSound()
+                                  const chipEl = e.currentTarget as HTMLElement
+                                  const previewData: HoverPreviewData = {
+                                    patientName: `${appointment.patients?.first_name || ''} ${appointment.patients?.last_name || ''}`.trim() || 'Patient',
+                                    patientGender: appointment.patients?.gender || undefined,
+                                    patientDOB: appointment.patients?.date_of_birth || undefined,
+                                    providerName: 'LaMonica A. Hodges',
+                                    appointmentTime: formatTime(time),
+                                    appointmentDuration: '30 min',
+                                    appointmentDate: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                                    visitType: appointment.visit_type || 'video',
+                                    chartStatus: deriveChartStatus(appointment),
+                                    chiefComplaint: getAppointmentReason(appointment) || undefined,
+                                    appointmentStatus: appointment.status,
+                                  }
+                                  hoverPreview.showPreview(previewData, chipEl)
+                                }}
+                                onMouseLeave={() => {
+                                  hoverPreview.hidePreview()
+                                }}
+                              >
+                                  {(() => {
+                                    const statusIcon = getChipStatusIcon(deriveChartStatus(appointment))
+                                    if (!statusIcon) return null
+                                    return (
+                                      <span
+                                        style={{
+                                          position: 'absolute',
+                                          top: 2,
+                                          right: 4,
+                                          fontSize: '10px',
+                                          color: statusIcon.color,
+                                          filter: `drop-shadow(0 0 4px ${statusIcon.color}40)`,
+                                        }}
+                                        title={statusIcon.title}
+                                      >
+                                        {statusIcon.icon}
+                                      </span>
+                                    )
+                                  })()}
                                   <div className="appointment-name">
                                     {appointment.patients?.first_name} {appointment.patients?.last_name}
                                   </div>
@@ -2004,6 +2087,15 @@ export default function DoctorAppointments() {
             </div>
           </div>
         )}
+
+        {/* Hover Preview Popup */}
+        <HoverPreview
+          data={hoverPreview.data}
+          anchorRect={hoverPreview.anchorRect}
+          isVisible={hoverPreview.isVisible}
+          onMouseEnter={hoverPreview.onPopupMouseEnter}
+          onMouseLeave={hoverPreview.onPopupMouseLeave}
+        />
 
         {/* Appointment Detail Modal */}
         <AppointmentDetailModal 
