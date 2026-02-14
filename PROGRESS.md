@@ -15,8 +15,8 @@
 |-------|------|--------|---------------|-------|
 | — | Dashboard Buttons + Sidebar | ✅ COMPLETE | 4 files | 2 buttons, 2 cards, 2 sidebar links, 2 full pages |
 | A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
-| B | Calendar Enterprise Upgrade | 🟡 IN PROGRESS | 12+ files | Rebuild done, notification system, extras module, chart status icons |
-| C | Calendar + Workspace Integration | ⬜ NOT STARTED | | URL routing (fixes refresh bug), sidebar collapse, workspace canvas, mobile |
+| B | Calendar Enterprise Upgrade | ✅ COMPLETE | 15+ files | Full rebuild, notification system v2, extras, list view, keyboard/touch, print |
+| C | Calendar + Workspace Integration | 🟡 NEXT | | URL routing, workspace canvas, mobile stacked layout |
 | D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
 | E | Port All Existing Panels | ⬜ NOT STARTED | | Wrap 25 panels in Panel Shell, React.memo, skeleton loaders |
 | F | Polish | ⬜ NOT STARTED | | 60fps animations, mobile gestures, accessibility, error boundaries |
@@ -29,20 +29,34 @@
 
 ---
 
-## CURRENT PHASE: B — Calendar Enterprise Upgrade (IN PROGRESS)
+## CURRENT PHASE: B — COMPLETE ✅
 
-### Completed:
-- ✅ Complete calendar rebuild (687 lines, was 2275)
+### Everything built in Phase B:
+- ✅ Complete calendar rebuild (968 lines, mobile-first, zero inline styles)
 - ✅ HoverPreview, MiniCalendar, ChartStatusChip components
 - ✅ 5-state chart status icons (draft=🔓, preliminary=⏳, signed=✓, closed=🔒, amended=🔒✎)
 - ✅ Bright colors + bold fonts matching dashboard
-- ✅ CalendarExtras module (confetti/sounds/welcome, disabled by default)
-- ✅ NOTIFICATION SYSTEM: realtime Supabase listeners, Web Audio sounds, bell + toast
+- ✅ CalendarExtras module (confetti/sounds/welcome, disabled by default, Rule 17)
+- ✅ NOTIFICATION SYSTEM v2: realtime Supabase, 4 sound themes, volume slider, position picker, per-type toggles, clickable navigation, browser push API
 - ✅ Sidebar auto-collapse on workspace pages
-- ✅ Demo mode button (dev only)
+- ✅ Demo mode button (dev only) — 7 appointments showing all chart states
+- ✅ List view (agenda style with grouped days)
+- ✅ Keyboard shortcuts (←→ nav, T=today, D/W/L=views, N=new)
+- ✅ Touch swipe for mobile day navigation
+- ✅ Print button
+- ✅ Appointment count badges on day headers
+- ✅ Build Rules 16 (no patching) and 17 (extras disabled by default) added
 
-### Next Action:
-Review calendar visual quality, continue Phase B remaining items (provider filter, toolbar polish)
+---
+
+## NEXT PHASE: C — Calendar + Workspace Integration
+
+### Plan:
+1. URL routing — appointment ID in URL params so refresh works, deep-links work
+2. Workspace canvas with react-grid-layout
+3. Default layout: Patient Snapshot + SOAP locked
+4. Mobile stacked card layout
+5. Toolbar with all panel buttons + active indicators
 
 ---
 
