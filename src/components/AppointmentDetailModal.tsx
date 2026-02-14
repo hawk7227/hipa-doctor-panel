@@ -1,6 +1,6 @@
-import { PROVIDER_TIMEZONE } from '@/lib/constants'
 'use client'
 
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { logViewAppointment, logViewChart } from '@/lib/audit'
