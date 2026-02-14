@@ -601,45 +601,54 @@ export default function DoctorDashboard() {
 
           {/* Action Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
-            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d] flex flex-col">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-teal-500/20 rounded-lg flex items-center justify-center mb-3">
+                <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-teal-400" />
+              </div>
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">View All Appointments</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Manage slots, reschedule, and join visits.</p>
-            <Link href="/doctor/appointments" className="bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
-              Manage ▸
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4 flex-1">Manage slots, reschedule, and join visits.</p>
+              <Link href="/doctor/appointments" className="bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base mt-auto">
+                Manage ▸
               </Link>
             </div>
-            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d] flex flex-col">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-3">
+                <UserPlus className="w-5 h-5 sm:w-6 sm:h-6 text-pink-400" />
+              </div>
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Manage Patients</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Charts, messages, and prescriptions.</p>
-            <Link href="/doctor/patients" className="bg-pink-500 hover:bg-pink-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
-              Open ▸
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4 flex-1">Charts, messages, and prescriptions.</p>
+              <Link href="/doctor/patients" className="bg-pink-500 hover:bg-pink-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base mt-auto">
+                Open ▸
               </Link>
             </div>
-            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d] flex flex-col">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3">
+                <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
+              </div>
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Review Documents</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Lab results, uploads, and forms.</p>
-            <Link href="/doctor/records" className="bg-blue-500 hover:bg-blue-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
-              Review ▸
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4 flex-1">Lab results, uploads, and forms.</p>
+              <Link href="/doctor/records" className="bg-blue-500 hover:bg-blue-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base mt-auto">
+                Review ▸
               </Link>
             </div>
-            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d] flex flex-col">
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3">
                 <Users className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
               </div>
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Staff Management</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Add assistants, manage permissions, view activity logs.</p>
-            <Link href="/doctor/settings/staff" className="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
-              Manage ▸
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4 flex-1">Add assistants, manage permissions, view activity logs.</p>
+              <Link href="/doctor/settings/staff" className="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base mt-auto">
+                Manage ▸
               </Link>
             </div>
-            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d] flex flex-col">
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3">
                 <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
               </div>
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Chart Management</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Sign notes, close charts, manage addendums, audit trail.</p>
-            <Link href="/doctor/chart-management" className="bg-purple-500 hover:bg-purple-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
-              Open ▸
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4 flex-1">Sign notes, close charts, manage addendums, audit trail.</p>
+              <Link href="/doctor/chart-management" className="bg-purple-500 hover:bg-purple-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base mt-auto">
+                Open ▸
               </Link>
             </div>
           </div>
