@@ -103,14 +103,14 @@
 ### Medium
 - [ ] Prop drilling patient data into 25 panels → Phase A
 - [x] 12+ fetch calls without AbortController → FIXED: useFetch hook with AbortController
-- [ ] 6 components with no loading states → Phase E
+- [x] 6 components with no loading states → FIXED: PanelSkeleton + PanelWrapper for all panels
 - [ ] Timer/subscription memory leaks → Phase E
 
 ### Low
-- [ ] 'America/Phoenix' hardcoded 10x → constants.ts
+- [x] 'America/Phoenix' hardcoded 10x → FIXED: all runtime refs use PROVIDER_TIMEZONE constant
 - [ ] Status strings as raw text → typed enums
 - [ ] Z-index chaos → z-index scale in constants
-- [ ] 12 interactive elements without accessibility → Phase F
+- [x] 12 interactive elements without accessibility → FIXED: skip-to-content, nav landmarks, aria-labels
 - [ ] SSR-unsafe window/document access → Phase F
 
 ---
