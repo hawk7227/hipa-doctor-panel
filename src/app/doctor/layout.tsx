@@ -127,6 +127,10 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
     <AuthWrapper>
       <NotificationProvider doctorId={doctorId}>
       <div className="h-screen bg-[#0a1f1f] flex overflow-hidden">
+        {/* Skip to content — accessibility */}
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:bg-teal-400 focus:text-[#0a1f1f] focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-bold">
+          Skip to main content
+        </a>
 
         {/* ═══ MOBILE: Hamburger Button ═══ */}
         <button
@@ -144,6 +148,8 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
 
         {/* ═══ SIDEBAR ═══ */}
         <aside
+          role="navigation"
+          aria-label="Main navigation"
           className={`
             fixed left-0 top-0 h-full bg-[#0d2626] border-r border-[#1a3d3d] z-50
             flex flex-col transition-all duration-200 ease-out
@@ -215,7 +221,7 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
         </aside>
 
         {/* ═══ MAIN CONTENT ═══ */}
-        <main className={`flex-1 h-full overflow-hidden transition-all duration-200 ${contentMargin}`}>
+        <main id="main-content" className={`flex-1 h-full overflow-hidden transition-all duration-200 ${contentMargin}`}>
           {/* Mobile top padding for hamburger button */}
           <div className="h-full pt-12 lg:pt-0">
             <ErrorBoundary label="Page">
