@@ -396,7 +396,7 @@ export default function AppointmentsPage() {
         <div className="bg-[#0d2626] border border-red-500/30 rounded-xl p-6 max-w-sm text-center">
           <p className="text-red-400 font-medium mb-2">Failed to load calendar</p>
           <p className="text-gray-400 text-sm mb-4">{error}</p>
-          <button onClick={handleRefresh} className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={handleRefresh} className="bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-teal-500/20">
             Try Again
           </button>
         </div>
@@ -414,10 +414,10 @@ export default function AppointmentsPage() {
             <button onClick={() => router.push('/doctor/dashboard')} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors md:hidden" aria-label="Back to dashboard">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-base md:text-lg font-bold text-white truncate">Your Appointments</h1>
+            <h1 className="text-lg md:text-xl font-bold text-white truncate">Your Appointments</h1>
           </div>
           <div className="flex items-center space-x-1.5">
-            <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors disabled:opacity-50" aria-label="Refresh" title="Refresh appointments">
+            <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50" aria-label="Refresh" title="Refresh appointments">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
@@ -426,7 +426,7 @@ export default function AppointmentsPage() {
                 setSelectedSlotTime(new Date(2000, 0, 1, new Date().getHours() + 1, 0))
                 setShowCreateDialog(true)
               }}
-              className="flex items-center space-x-1.5 bg-teal-500 hover:bg-teal-600 text-white pl-2.5 pr-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center space-x-1.5 bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] pl-2.5 pr-3.5 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-teal-500/20"
               aria-label="New appointment"
             >
               <Plus className="w-4 h-4" />
@@ -437,18 +437,18 @@ export default function AppointmentsPage() {
 
         <div className="flex items-center justify-between px-3 pb-2 md:px-4">
           <div className="flex items-center space-x-1">
-            <button onClick={() => navigateDate('prev')} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors" aria-label="Previous">
+            <button onClick={() => navigateDate('prev')} className="p-1.5 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors" aria-label="Previous">
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <button onClick={goToToday} className="px-2.5 py-1 rounded-lg text-xs font-medium text-teal-400 hover:bg-teal-500/10 transition-colors">Today</button>
-            <button onClick={() => navigateDate('next')} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors" aria-label="Next">
+            <button onClick={goToToday} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-pink-500/15 text-pink-400 hover:bg-pink-500/25 border border-pink-500/30 transition-colors">Today</button>
+            <button onClick={() => navigateDate('next')} className="p-1.5 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors" aria-label="Next">
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="text-sm text-gray-300 font-medium ml-2 truncate">{dateLabel}</span>
+            <span className="text-sm text-white font-bold ml-2 truncate">{dateLabel}</span>
           </div>
-          <div className="flex items-center bg-[#0a1f1f] rounded-lg p-0.5">
-            <button onClick={() => setCalendarView('day')} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${calendarView === 'day' ? 'bg-teal-500/20 text-teal-400' : 'text-gray-400 hover:text-white'}`}>Day</button>
-            <button onClick={() => setCalendarView('week')} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${calendarView === 'week' ? 'bg-teal-500/20 text-teal-400' : 'text-gray-400 hover:text-white'}`}>Week</button>
+          <div className="flex items-center bg-[#0a1f1f] rounded-lg p-0.5 border border-[#1a3d3d]">
+            <button onClick={() => setCalendarView('day')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'day' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Day</button>
+            <button onClick={() => setCalendarView('week')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'week' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Week</button>
           </div>
         </div>
       </div>
@@ -465,29 +465,29 @@ export default function AppointmentsPage() {
             datesWithAppointments={datesWithAppointments}
           />
           <div className="mt-4 space-y-1.5">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium px-1">Today&apos;s Summary</p>
+            <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold px-1">Today&apos;s Summary</p>
             {(() => {
               const todayApts = appointments.filter(apt => apt.scheduled_time && isSameDay(new Date(apt.scheduled_time), today))
               const completed = todayApts.filter(a => a.status === 'completed').length
               const pending = todayApts.filter(a => a.status === 'pending').length
               const accepted = todayApts.filter(a => a.status === 'accepted').length
               return (
-                <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-3 space-y-2">
+                <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Total</span>
-                    <span className="text-sm font-bold text-white">{todayApts.length}</span>
+                    <span className="text-xs text-gray-300 font-medium">Total</span>
+                    <span className="text-lg font-bold text-white">{todayApts.length}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Completed</span>
-                    <span className="text-sm font-medium text-green-400">{completed}</span>
+                    <span className="text-xs text-gray-300 font-medium">Completed</span>
+                    <span className="text-lg font-bold text-green-400">{completed}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Accepted</span>
-                    <span className="text-sm font-medium text-blue-400">{accepted}</span>
+                    <span className="text-xs text-gray-300 font-medium">Accepted</span>
+                    <span className="text-lg font-bold text-blue-400">{accepted}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">Pending</span>
-                    <span className="text-sm font-medium text-amber-400">{pending}</span>
+                    <span className="text-xs text-gray-300 font-medium">Pending</span>
+                    <span className="text-lg font-bold text-amber-400">{pending}</span>
                   </div>
                 </div>
               )
@@ -507,8 +507,8 @@ export default function AppointmentsPage() {
                 const dayNum = date.getDate()
                 return (
                   <div key={i} className={`flex-1 min-w-0 text-center py-2 border-l border-[#1a3d3d]/50 first:border-l-0 ${isToday ? 'bg-teal-500/5' : ''}`}>
-                    <p className={`text-[10px] uppercase tracking-wider font-medium ${isToday ? 'text-teal-400' : 'text-gray-500'}`}>{dayName}</p>
-                    <p className={`text-lg font-bold leading-tight ${isToday ? 'text-teal-400' : 'text-gray-200'}`}>{dayNum}</p>
+                    <p className={`text-[10px] uppercase tracking-widest font-bold ${isToday ? 'text-teal-400' : 'text-gray-400'}`}>{dayName}</p>
+                    <p className={`text-xl font-bold leading-tight ${isToday ? 'text-teal-400' : 'text-white'}`}>{dayNum}</p>
                   </div>
                 )
               })}
@@ -565,10 +565,10 @@ export default function AppointmentsPage() {
                         {appointment && (
                           <div
                             className={`m-0.5 rounded-lg p-1.5 md:p-2 h-[calc(100%-4px)] overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:brightness-110 relative ${
-                              appointment.status === 'completed' ? 'bg-green-500/10' :
-                              appointment.status === 'pending' ? 'bg-amber-500/10' :
-                              appointment.status === 'accepted' ? 'bg-blue-500/10' :
-                              'bg-gray-500/10'
+                              appointment.status === 'completed' ? 'bg-green-500/15 hover:bg-green-500/25' :
+                              appointment.status === 'pending' ? 'bg-amber-500/15 hover:bg-amber-500/25' :
+                              appointment.status === 'accepted' ? 'bg-blue-500/15 hover:bg-blue-500/25' :
+                              'bg-gray-500/15 hover:bg-gray-500/25'
                             }`}
                             style={getChipBorderStyle(deriveChartStatus(appointment))}
                             onMouseEnter={(e) => {
@@ -595,7 +595,7 @@ export default function AppointmentsPage() {
                               if (!si) return null
                               return <span className="absolute top-1 right-1.5 text-[10px]" style={{ color: si.color }} title={si.title}>{si.icon}</span>
                             })()}
-                            <p className="text-xs font-semibold text-white truncate leading-tight">
+                            <p className="text-xs font-bold text-white truncate leading-tight">
                               {appointment.patients?.first_name} {appointment.patients?.last_name?.charAt(0)}.
                             </p>
                             <div className="flex items-center space-x-1 mt-0.5">
