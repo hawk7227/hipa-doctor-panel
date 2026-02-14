@@ -1,119 +1,547 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, Plus, Shield, Activity } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
+import {
+  ROLES, ROLE_CONFIG, ROLE_PERMISSIONS, PERMISSION_GROUPS,
+  type Role, type Permission, getPermissionsForRole,
+} from '@/lib/rbac'
+import {
+  Users, Plus, Shield, X, ChevronDown, ChevronRight,
+  Mail, RefreshCw, Search, MoreHorizontal, UserCheck,
+  UserX, Edit3, Trash2, Check
+} from 'lucide-react'
+
+// ═══════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════
+
+interface StaffMember {
+  id: string
+  user_id: string | null
+  email: string
+  first_name: string
+  last_name: string
+  role: Role
+  doctor_id: string
+  permissions: Permission[]
+  active: boolean
+  last_login_at: string | null
+  invited_at: string | null
+  accepted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════════════════════════
 
 export default function StaffManagementPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [authorized, setAuthorized] = useState(false)
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Modal state
+  const [showInvite, setShowInvite] = useState(false)
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
+  const [showPermissions, setShowPermissions] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+
+  // Invite form
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteFirst, setInviteFirst] = useState('')
+  const [inviteLast, setInviteLast] = useState('')
+  const [inviteRole, setInviteRole] = useState<Role>('assistant')
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+
+  // ── Fetch ──
+  const fetchStaff = useCallback(async (docId: string) => {
+    const { data, error } = await supabase
+      .from('practice_staff')
+      .select('*')
+      .eq('doctor_id', docId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Staff fetch error:', error)
+      setStaff([])
+    } else {
+      setStaff((data || []) as unknown as StaffMember[])
+    }
+  }, [])
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const init = async () => {
       try {
         const authUser = await getCurrentUser()
-        if (!authUser || !authUser.doctor) {
-          router.push('/login')
-          return
-        }
-        // TODO Phase G: Check if user is provider (not assistant)
-        setAuthorized(true)
-      } catch (error) {
-        console.error('Auth check failed:', error)
-        router.push('/login')
+        if (!authUser?.doctor) { router.push('/login'); return }
+        setDoctorId(authUser.doctor.id)
+        await fetchStaff(authUser.doctor.id)
+      } catch (err) {
+        console.error('Staff init error:', err)
       } finally {
         setLoading(false)
       }
     }
-    checkAuth()
-  }, [router])
+    init()
+  }, [router, fetchStaff])
+
+  const handleRefresh = async () => {
+    if (!doctorId || refreshing) return
+    setRefreshing(true)
+    await fetchStaff(doctorId)
+    setRefreshing(false)
+  }
+
+  // ── Invite ──
+  const handleInvite = async () => {
+    if (!doctorId || !inviteEmail.trim() || !inviteFirst.trim() || !inviteLast.trim()) return
+    setInviteLoading(true)
+    setInviteError(null)
+
+    try {
+      // Check for duplicate
+      const existing = staff.find(s => s.email.toLowerCase() === inviteEmail.toLowerCase())
+      if (existing) {
+        setInviteError('This email is already on your staff list.')
+        setInviteLoading(false)
+        return
+      }
+
+      const permissions = getPermissionsForRole(inviteRole)
+
+      const { error } = await supabase.from('practice_staff').insert({
+        email: inviteEmail.trim().toLowerCase(),
+        first_name: inviteFirst.trim(),
+        last_name: inviteLast.trim(),
+        role: inviteRole,
+        doctor_id: doctorId,
+        permissions,
+        active: true,
+        invited_at: new Date().toISOString(),
+      })
+
+      if (error) {
+        setInviteError(error.message)
+      } else {
+        logAudit({
+          action: 'ADD_STAFF',
+          resourceType: 'staff',
+          description: `Invited ${inviteFirst} ${inviteLast} (${inviteEmail}) as ${inviteRole}`,
+        })
+        setShowInvite(false)
+        setInviteEmail('')
+        setInviteFirst('')
+        setInviteLast('')
+        setInviteRole('assistant')
+        await fetchStaff(doctorId)
+      }
+    } catch (err) {
+      setInviteError('Failed to invite staff member')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  // ── Update role ──
+  const handleUpdateRole = async (member: StaffMember, newRole: Role) => {
+    if (!doctorId) return
+    const permissions = getPermissionsForRole(newRole)
+    const { error } = await supabase
+      .from('practice_staff')
+      .update({ role: newRole, permissions, updated_at: new Date().toISOString() })
+      .eq('id', member.id)
+    if (!error) {
+      logAudit({
+        action: 'UPDATE_STAFF_PERMISSIONS',
+        resourceType: 'staff',
+        resourceId: member.id,
+        description: `Changed ${member.first_name} ${member.last_name} role to ${newRole}`,
+        metadata: { oldRole: member.role, newRole },
+      })
+      await fetchStaff(doctorId)
+    }
+    setEditingStaff(null)
+  }
+
+  // ── Toggle permission ──
+  const handleTogglePermission = async (member: StaffMember, perm: Permission) => {
+    if (!doctorId) return
+    const newPerms = member.permissions.includes(perm)
+      ? member.permissions.filter(p => p !== perm)
+      : [...member.permissions, perm]
+
+    const { error } = await supabase
+      .from('practice_staff')
+      .update({ permissions: newPerms, updated_at: new Date().toISOString() })
+      .eq('id', member.id)
+    if (!error) {
+      logAudit({
+        action: 'UPDATE_STAFF_PERMISSIONS',
+        resourceType: 'staff',
+        resourceId: member.id,
+        description: `${member.permissions.includes(perm) ? 'Removed' : 'Added'} permission: ${perm}`,
+      })
+      await fetchStaff(doctorId)
+    }
+  }
+
+  // ── Toggle active ──
+  const handleToggleActive = async (member: StaffMember) => {
+    if (!doctorId) return
+    const { error } = await supabase
+      .from('practice_staff')
+      .update({ active: !member.active, updated_at: new Date().toISOString() })
+      .eq('id', member.id)
+    if (!error) {
+      logAudit({
+        action: member.active ? 'REMOVE_STAFF' : 'ADD_STAFF',
+        resourceType: 'staff',
+        resourceId: member.id,
+        description: `${member.active ? 'Deactivated' : 'Reactivated'} ${member.first_name} ${member.last_name}`,
+      })
+      await fetchStaff(doctorId)
+    }
+    setMenuOpen(null)
+  }
+
+  // ── Delete ──
+  const handleDelete = async (member: StaffMember) => {
+    if (!doctorId) return
+    if (!confirm(`Remove ${member.first_name} ${member.last_name} from your staff? This cannot be undone.`)) return
+
+    const { error } = await supabase
+      .from('practice_staff')
+      .delete()
+      .eq('id', member.id)
+    if (!error) {
+      logAudit({
+        action: 'REMOVE_STAFF',
+        resourceType: 'staff',
+        resourceId: member.id,
+        description: `Permanently removed ${member.first_name} ${member.last_name}`,
+      })
+      await fetchStaff(doctorId)
+    }
+    setMenuOpen(null)
+  }
+
+  // ── Filtered ──
+  const filtered = search.trim()
+    ? staff.filter(s => `${s.first_name} ${s.last_name} ${s.email}`.toLowerCase().includes(search.toLowerCase()))
+    : staff
+
+  const activeCount = staff.filter(s => s.active).length
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a1f1f] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-400"></div>
+      <div className="h-full bg-[#0a1f1f] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-400" />
       </div>
     )
   }
 
-  if (!authorized) {
-    return null
-  }
+  // ═══════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div className="min-h-screen bg-[#0a1f1f] text-white p-4 sm:p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="h-full overflow-auto bg-[#0a1f1f] text-white">
+      <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-5">
+
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
-              <Users className="w-6 h-6 text-amber-400" />
+            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Staff Management</h1>
-              <p className="text-sm text-gray-400">Add assistants, manage permissions, view activity</p>
+              <h1 className="text-xl font-bold text-white">Staff Management</h1>
+              <p className="text-xs text-gray-400">{activeCount} active staff member{activeCount !== 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-bold transition-colors flex items-center space-x-2">
-            <Plus className="w-4 h-4" />
-            <span>Add Staff</span>
-          </button>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-green-400" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Active Staff</p>
-                <p className="text-2xl font-bold text-white">0</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
-                <Shield className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Pending Invites</p>
-                <p className="text-2xl font-bold text-white">0</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <Activity className="w-5 h-5 text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Active Sessions</p>
-                <p className="text-2xl font-bold text-white">0</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Staff List - Empty State */}
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-8">
-          <div className="flex flex-col items-center justify-center text-center py-12">
-            <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mb-4">
-              <Users className="w-8 h-8 text-amber-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">No Staff Members Yet</h3>
-            <p className="text-gray-400 mb-6 max-w-md">Add assistants, scribes, or medical assistants to your practice. They&apos;ll get their own login and can help manage patient charts.</p>
-            <button className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-lg font-bold transition-colors flex items-center space-x-2">
-              <Plus className="w-5 h-5" />
-              <span>Add Your First Staff Member</span>
+          <div className="flex items-center space-x-2">
+            <button onClick={() => setShowInvite(true)} className="flex items-center space-x-1.5 bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+              <Plus className="w-3.5 h-3.5" />
+              <span>Invite Staff</span>
+            </button>
+            <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
+
+        {/* Role Legend */}
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(ROLE_CONFIG) as Role[]).map(role => {
+            const config = ROLE_CONFIG[role]
+            const count = staff.filter(s => s.role === role && s.active).length
+            return (
+              <div key={role} className={`flex items-center space-x-1.5 ${config.bgColor} rounded-lg px-3 py-1.5 border border-white/5`}>
+                <span className={`text-[10px] font-bold ${config.color}`}>{config.label}</span>
+                <span className="text-[10px] text-gray-400">{count}</span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Search */}
+        {staff.length > 3 && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search staff..."
+              className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50"
+            />
+          </div>
+        )}
+
+        {/* Staff List */}
+        <div className="space-y-2">
+          {filtered.length === 0 ? (
+            <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] py-16 text-center">
+              <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+              <p className="text-sm text-gray-400 font-medium">{staff.length === 0 ? 'No staff members yet' : 'No results'}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {staff.length === 0 ? 'Invite your first team member to get started.' : 'Try a different search term.'}
+              </p>
+              {staff.length === 0 && (
+                <button onClick={() => setShowInvite(true)} className="mt-4 bg-teal-400 hover:bg-teal-500 text-[#0a1f1f] px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+                  Invite Staff Member
+                </button>
+              )}
+            </div>
+          ) : (
+            filtered.map(member => {
+              const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.assistant
+              const isExpanded = showPermissions === member.id
+
+              return (
+                <div key={member.id} className={`bg-[#0d2626] rounded-lg border transition-colors ${member.active ? 'border-[#1a3d3d]' : 'border-red-500/20 opacity-60'}`}>
+                  {/* Main row */}
+                  <div className="flex items-center space-x-3 px-4 py-3">
+                    {/* Avatar */}
+                    <div className={`w-10 h-10 rounded-lg ${roleConfig.bgColor} flex items-center justify-center flex-shrink-0`}>
+                      <span className={`text-sm font-bold ${roleConfig.color}`}>
+                        {member.first_name[0]}{member.last_name[0]}
+                      </span>
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm font-bold text-white truncate">{member.first_name} {member.last_name}</p>
+                        {!member.active && <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 rounded font-bold">INACTIVE</span>}
+                        {member.accepted_at && <UserCheck className="w-3 h-3 text-green-400" />}
+                        {!member.accepted_at && <Mail className="w-3 h-3 text-amber-400" />}
+                      </div>
+                      <p className="text-xs text-gray-400 truncate">{member.email}</p>
+                    </div>
+
+                    {/* Role badge */}
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${roleConfig.bgColor} ${roleConfig.color} flex-shrink-0`}>
+                      {roleConfig.label}
+                    </span>
+
+                    {/* Permissions toggle */}
+                    <button
+                      onClick={() => setShowPermissions(isExpanded ? null : member.id)}
+                      className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                      title="View permissions"
+                    >
+                      <Shield className="w-4 h-4" />
+                    </button>
+
+                    {/* Menu */}
+                    <div className="relative">
+                      <button onClick={() => setMenuOpen(menuOpen === member.id ? null : member.id)} className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                      {menuOpen === member.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(null)} />
+                          <div className="absolute right-0 top-full mt-1 w-48 bg-[#0d2626] border border-[#1a3d3d] rounded-lg shadow-2xl z-50 overflow-hidden">
+                            {/* Role options */}
+                            {(Object.keys(ROLE_CONFIG) as Role[]).filter(r => r !== 'doctor').map(role => (
+                              <button
+                                key={role}
+                                onClick={() => { handleUpdateRole(member, role); setMenuOpen(null) }}
+                                className={`w-full text-left px-4 py-2 text-xs hover:bg-white/5 transition-colors flex items-center justify-between ${member.role === role ? 'text-teal-400' : 'text-gray-300'}`}
+                              >
+                                <span>Set as {ROLE_CONFIG[role].label}</span>
+                                {member.role === role && <Check className="w-3 h-3" />}
+                              </button>
+                            ))}
+                            <div className="border-t border-[#1a3d3d]" />
+                            <button onClick={() => handleToggleActive(member)} className="w-full text-left px-4 py-2 text-xs hover:bg-white/5 transition-colors text-gray-300 flex items-center space-x-2">
+                              {member.active ? <UserX className="w-3 h-3 text-red-400" /> : <UserCheck className="w-3 h-3 text-green-400" />}
+                              <span>{member.active ? 'Deactivate' : 'Reactivate'}</span>
+                            </button>
+                            <button onClick={() => handleDelete(member)} className="w-full text-left px-4 py-2 text-xs hover:bg-white/5 transition-colors text-red-400 flex items-center space-x-2">
+                              <Trash2 className="w-3 h-3" />
+                              <span>Remove permanently</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Permissions panel */}
+                  {isExpanded && (
+                    <div className="border-t border-[#1a3d3d] px-4 py-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Permissions</p>
+                        <button
+                          onClick={() => {
+                            const defaults = getPermissionsForRole(member.role)
+                            handleResetPermissions(member, defaults)
+                          }}
+                          className="text-[10px] text-teal-400 hover:text-teal-300 font-bold"
+                        >
+                          Reset to role defaults
+                        </button>
+                      </div>
+                      {PERMISSION_GROUPS.map(group => (
+                        <div key={group.label}>
+                          <p className="text-[10px] text-gray-400 font-bold mb-1">{group.label}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.permissions.map(perm => {
+                              const has = member.permissions.includes(perm.key)
+                              return (
+                                <button
+                                  key={perm.key}
+                                  onClick={() => handleTogglePermission(member, perm.key)}
+                                  className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium ${
+                                    has
+                                      ? 'bg-teal-500/15 border-teal-500/30 text-teal-400'
+                                      : 'bg-[#0a1f1f] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
+                                  }`}
+                                >
+                                  {has ? '✓' : '○'} {perm.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
       </div>
+
+      {/* ═══ INVITE MODAL ═══ */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowInvite(false)} />
+          <div className="relative bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Invite Staff Member</h2>
+              <button onClick={() => setShowInvite(false)} className="p-1 rounded hover:bg-white/10 text-gray-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {inviteError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">{inviteError}</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-gray-400 font-bold uppercase">First Name</label>
+                <input
+                  type="text" value={inviteFirst} onChange={(e) => setInviteFirst(e.target.value)}
+                  className="w-full mt-1 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50"
+                  placeholder="Jane"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400 font-bold uppercase">Last Name</label>
+                <input
+                  type="text" value={inviteLast} onChange={(e) => setInviteLast(e.target.value)}
+                  className="w-full mt-1 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50"
+                  placeholder="Smith"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-400 font-bold uppercase">Email</label>
+              <input
+                type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                className="w-full mt-1 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50"
+                placeholder="jane@practice.com"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-400 font-bold uppercase">Role</label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                {(['assistant', 'admin', 'billing'] as Role[]).map(role => {
+                  const config = ROLE_CONFIG[role]
+                  return (
+                    <button
+                      key={role}
+                      onClick={() => setInviteRole(role)}
+                      className={`p-3 rounded-lg border text-center transition-all ${
+                        inviteRole === role
+                          ? `${config.bgColor} border-teal-500/30`
+                          : 'bg-[#0a1f1f] border-[#1a3d3d] hover:border-[#2a5d5d]'
+                      }`}
+                    >
+                      <p className={`text-xs font-bold ${inviteRole === role ? config.color : 'text-gray-300'}`}>{config.label}</p>
+                      <p className="text-[9px] text-gray-500 mt-0.5 line-clamp-2">{config.description}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <button
+              onClick={handleInvite}
+              disabled={inviteLoading || !inviteEmail.trim() || !inviteFirst.trim() || !inviteLast.trim()}
+              className="w-full bg-teal-400 hover:bg-teal-500 disabled:opacity-50 text-[#0a1f1f] py-2.5 rounded-lg text-sm font-bold transition-colors"
+            >
+              {inviteLoading ? 'Inviting...' : 'Send Invite'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
+
+  // Helper to reset permissions
+  function handleResetPermissions(member: StaffMember, defaults: Permission[]) {
+    if (!doctorId) return
+    supabase
+      .from('practice_staff')
+      .update({ permissions: defaults, updated_at: new Date().toISOString() })
+      .eq('id', member.id)
+      .then(({ error }) => {
+        if (!error) {
+          logAudit({
+            action: 'UPDATE_STAFF_PERMISSIONS',
+            resourceType: 'staff',
+            resourceId: member.id,
+            description: `Reset permissions to ${member.role} defaults`,
+          })
+          fetchStaff(doctorId!)
+        }
+      })
+  }
 }
