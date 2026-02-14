@@ -73,103 +73,110 @@ class NotificationSoundEngine {
 
   private getContext(): AudioContext {
     if (!this.ctx) this.ctx = new AudioContext()
+    // Resume if suspended (browser autoplay policy)
+    if (this.ctx.state === 'suspended') this.ctx.resume()
     return this.ctx
   }
 
-  // Bright, friendly two-tone chime for new appointments
+  private playNote(ctx: AudioContext, freq: number, startTime: number, duration: number, vol: number, type: OscillatorType = 'sine') {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, startTime)
+    gain.gain.setValueAtTime(vol, startTime)
+    gain.gain.setValueAtTime(vol, startTime + duration * 0.7)
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(startTime)
+    osc.stop(startTime + duration)
+  }
+
+  // ♪ Happy 4-note ascending melody — "ding ding ding DING!" 
   playNewAppointment(volume: number) {
     const ctx = this.getContext()
-    const now = ctx.currentTime
-    const gain = ctx.createGain()
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(volume * 0.3, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
-
-    // Two ascending tones — cheerful
-    const osc1 = ctx.createOscillator()
-    osc1.type = 'sine'
-    osc1.frequency.setValueAtTime(523, now) // C5
-    osc1.connect(gain)
-    osc1.start(now)
-    osc1.stop(now + 0.15)
-
-    const osc2 = ctx.createOscillator()
-    osc2.type = 'sine'
-    osc2.frequency.setValueAtTime(659, now + 0.15) // E5
-    osc2.connect(gain)
-    osc2.start(now + 0.15)
-    osc2.stop(now + 0.4)
+    const t = ctx.currentTime
+    const v = volume * 0.6
+    this.playNote(ctx, 523, t, 0.12, v)         // C5
+    this.playNote(ctx, 659, t + 0.13, 0.12, v)  // E5
+    this.playNote(ctx, 784, t + 0.26, 0.12, v)  // G5
+    this.playNote(ctx, 1047, t + 0.39, 0.35, v * 1.2) // C6 (louder, longer)
   }
 
-  // Quick urgent triple-beep for instant visits
+  // ⚡ Urgent pulsing alarm — attention-grabbing triple burst
   playInstantVisit(volume: number) {
     const ctx = this.getContext()
-    const now = ctx.currentTime
-    const gain = ctx.createGain()
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(volume * 0.35, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8)
-
+    const t = ctx.currentTime
+    const v = volume * 0.7
     for (let i = 0; i < 3; i++) {
-      const osc = ctx.createOscillator()
-      osc.type = 'square'
-      osc.frequency.setValueAtTime(880, now + i * 0.15) // A5
-      osc.connect(gain)
-      osc.start(now + i * 0.15)
-      osc.stop(now + i * 0.15 + 0.08)
+      const offset = i * 0.22
+      this.playNote(ctx, 880, t + offset, 0.08, v, 'square')       // A5
+      this.playNote(ctx, 1109, t + offset + 0.08, 0.08, v, 'square') // C#6
     }
+    // Final long tone
+    this.playNote(ctx, 1320, t + 0.7, 0.3, v * 0.8, 'sawtooth') // E6
   }
 
-  // Soft bubble pop for messages
+  // 💬 Bubbly two-tone pop — like a chat bubble appearing
   playMessage(volume: number) {
     const ctx = this.getContext()
-    const now = ctx.currentTime
-    const gain = ctx.createGain()
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(volume * 0.25, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
-
-    const osc = ctx.createOscillator()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(784, now) // G5
-    osc.frequency.exponentialRampToValueAtTime(1047, now + 0.1) // C6 - ascending pop
-    osc.connect(gain)
-    osc.start(now)
-    osc.stop(now + 0.15)
+    const t = ctx.currentTime
+    const v = volume * 0.55
+    // Low bubble
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(600, t)
+    osc1.frequency.exponentialRampToValueAtTime(900, t + 0.08)
+    gain1.gain.setValueAtTime(v, t)
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    osc1.start(t)
+    osc1.stop(t + 0.15)
+    // High pop
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(1000, t + 0.1)
+    osc2.frequency.exponentialRampToValueAtTime(1400, t + 0.18)
+    gain2.gain.setValueAtTime(v * 0.9, t + 0.1)
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.start(t + 0.1)
+    osc2.stop(t + 0.3)
   }
 
-  // Low subtle tone for system alerts
+  // 🔔 Two-tone doorbell — professional alert
   playSystemAlert(volume: number) {
     const ctx = this.getContext()
-    const now = ctx.currentTime
-    const gain = ctx.createGain()
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(volume * 0.2, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
-
-    const osc = ctx.createOscillator()
-    osc.type = 'triangle'
-    osc.frequency.setValueAtTime(392, now) // G4
-    osc.connect(gain)
-    osc.start(now)
-    osc.stop(now + 0.3)
+    const t = ctx.currentTime
+    const v = volume * 0.5
+    this.playNote(ctx, 659, t, 0.25, v, 'triangle')      // E5
+    this.playNote(ctx, 523, t + 0.28, 0.35, v, 'triangle') // C5 (lower, longer)
   }
 
-  // Cash register ding for payments
+  // 💰 Cash register — cheerful cha-ching!
   playPayment(volume: number) {
     const ctx = this.getContext()
-    const now = ctx.currentTime
-    const gain = ctx.createGain()
-    gain.connect(ctx.destination)
-    gain.gain.setValueAtTime(volume * 0.3, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8)
+    const t = ctx.currentTime
+    const v = volume * 0.6
+    // Quick rattle
+    this.playNote(ctx, 1319, t, 0.06, v * 0.5)       // E6
+    this.playNote(ctx, 1397, t + 0.06, 0.06, v * 0.5) // F6
+    this.playNote(ctx, 1319, t + 0.12, 0.06, v * 0.5) // E6
+    // Big DING
+    this.playNote(ctx, 1568, t + 0.2, 0.5, v * 1.3)  // G6 loud + long
+  }
 
-    const osc1 = ctx.createOscillator()
-    osc1.type = 'sine'
-    osc1.frequency.setValueAtTime(1047, now) // C6
-    osc1.connect(gain)
-    osc1.start(now)
-    osc1.stop(now + 0.5)
+  // ❌ Descending two-tone — cancellation/negative
+  playCancellation(volume: number) {
+    const ctx = this.getContext()
+    const t = ctx.currentTime
+    const v = volume * 0.5
+    this.playNote(ctx, 523, t, 0.2, v, 'triangle')      // C5
+    this.playNote(ctx, 392, t + 0.22, 0.3, v, 'triangle') // G4 (descending = sad)
   }
 
   play(type: NotificationType, volume: number) {
@@ -180,6 +187,7 @@ class NotificationSoundEngine {
         case 'patient_message':
         case 'admin_message': this.playMessage(volume); break
         case 'payment_received': this.playPayment(volume); break
+        case 'appointment_cancelled': this.playCancellation(volume); break
         default: this.playSystemAlert(volume); break
       }
     } catch (err) {
@@ -219,7 +227,7 @@ const MAX_NOTIFICATIONS = 50
 
 const defaultSettings: NotificationSettings = {
   soundEnabled: true,
-  soundVolume: 0.5,
+  soundVolume: 0.8,
   toastDuration: 5000,
 }
 

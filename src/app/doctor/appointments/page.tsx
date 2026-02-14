@@ -413,7 +413,7 @@ export default function AppointmentsPage() {
         patients: { first_name: 'Aisha', last_name: 'Patel', email: '', phone: '', chief_complaint: 'Skin rash assessment - amended dosage' },
       },
       {
-        id: 'demo-6', doctor_id: '', patient_id: 'p6', status: 'pending',
+        id: 'demo-6', doctor_id: '', patient_id: 'p6', status: 'accepted',
         scheduled_time: makeTime(13, 30), requested_date_time: makeTime(13, 30),
         visit_type: 'instant', chart_locked: false, chart_status: 'draft',
         patients: { first_name: 'David', last_name: 'Kim', email: '', phone: '', chief_complaint: 'Urgent sore throat' },
