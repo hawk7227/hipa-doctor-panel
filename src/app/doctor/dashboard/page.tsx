@@ -646,7 +646,7 @@ export default function DoctorDashboard() {
                 <Shield className="w-5 h-5 text-purple-400" />
               </div>
               <h3 className="text-sm sm:text-base font-semibold text-white mb-1">Chart Management</h3>
-              <p className="text-gray-400 text-xs sm:text-sm mb-3 flex-1">Sign notes, close charts, manage addendums, audit trail.</p>
+              <p className="text-gray-400 text-xs sm:text-sm mb-3">Sign notes, close charts, manage addendums, audit trail.</p>
               <Link href="/doctor/chart-management" className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-1.5 rounded-lg font-bold transition-colors inline-flex items-center gap-1 text-sm w-fit mt-auto">
                 Open <ChevronRight className="w-4 h-4" />
               </Link>
