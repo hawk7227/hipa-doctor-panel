@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatDateForDateTimeLocal } from '../utils/timezone-utils'
@@ -210,7 +211,7 @@ export function useAppointmentData(
       // Format appointment time in doctor's timezone
       // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
       if (appointmentData.requested_date_time) {
-        const doctorTimezone = 'America/Phoenix'
+        const doctorTimezone = PROVIDER_TIMEZONE
         const formattedDate = formatDateForDateTimeLocal(appointmentData.requested_date_time, doctorTimezone)
         setNewDateTime(formattedDate)
       }

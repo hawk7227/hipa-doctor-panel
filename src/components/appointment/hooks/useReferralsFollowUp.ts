@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
@@ -262,7 +263,7 @@ export function useReferralsFollowUp(
       const [hours, minutes] = followUpData.time.split(':').map(Number)
       
       // Convert to Phoenix timezone to get correct date components (same as CreateAppointmentDialog)
-      const doctorTimezone = 'America/Phoenix'
+      const doctorTimezone = PROVIDER_TIMEZONE
       // Create a date string from the parsed components and convert to Phoenix timezone
       // This ensures we get the correct date components in Phoenix timezone
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00Z`

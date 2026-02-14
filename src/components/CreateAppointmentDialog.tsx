@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -234,7 +235,7 @@ export default function CreateAppointmentDialog({
       // We need to extract Phoenix time components correctly
       
       // Convert selectedDate to Phoenix timezone to get correct date components
-      const doctorTimezone = 'America/Phoenix'
+      const doctorTimezone = PROVIDER_TIMEZONE
       const phoenixDate = convertToTimezone(selectedDate.toISOString(), doctorTimezone)
       const year = phoenixDate.getUTCFullYear()
       const month = phoenixDate.getUTCMonth() + 1 // JavaScript months are 0-indexed

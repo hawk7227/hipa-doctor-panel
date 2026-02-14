@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { zoomService } from '@/lib/zoom'
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
     // This must match the calendar which always uses Phoenix timezone
-    const doctorTimezone = 'America/Phoenix'
+    const doctorTimezone = PROVIDER_TIMEZONE
     console.log('🌍 Using doctor timezone:', doctorTimezone)
 
     // Step 1: Update Zoom meeting if it exists

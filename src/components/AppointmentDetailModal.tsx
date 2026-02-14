@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
@@ -755,7 +756,7 @@ export default function AppointmentDetailModal({
     }
     setRescheduleLoading(true)
     try {
-      const doctorTimezone = 'America/Phoenix'
+      const doctorTimezone = PROVIDER_TIMEZONE
       const utcDateTime = convertDateTimeLocalToUTC(newDateTime, doctorTimezone)
       
       const response = await fetch('/api/appointments/reschedule', {
@@ -1274,7 +1275,7 @@ export default function AppointmentDetailModal({
 
   const getAppointmentForSlot = (date: Date, time: Date): CalendarAppointment | null => {
     if (!stableAppointments || stableAppointments.length === 0) return null
-    const doctorTimezone = 'America/Phoenix'
+    const doctorTimezone = PROVIDER_TIMEZONE
     const dateInPhoenix = convertToTimezone(date.toISOString(), doctorTimezone)
     const slotDateStr = getDateString(dateInPhoenix, doctorTimezone)
     const phoenixYear = dateInPhoenix.getUTCFullYear()
@@ -1314,7 +1315,7 @@ export default function AppointmentDetailModal({
   // ═══════════════════════════════════════════════════════════════
   const renderCurrentDaySlots = () => {
     if (!appointment?.requested_date_time) return null
-    const doctorTimezone = 'America/Phoenix'
+    const doctorTimezone = PROVIDER_TIMEZONE
     const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
     const slots: Date[] = []
     for (let hour = 5; hour <= 20; hour++) {
@@ -1423,7 +1424,7 @@ export default function AppointmentDetailModal({
                 <span className="text-cyan-400">APPOINTMENT</span>
                 {appointment?.requested_date_time && (
                   <> • {(() => {
-                    const doctorTimezone = 'America/Phoenix'
+                    const doctorTimezone = PROVIDER_TIMEZONE
                     const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
                     return appointmentDate.toLocaleString('en-US', {
                       month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'

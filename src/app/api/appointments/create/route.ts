@@ -1,3 +1,4 @@
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { zoomService } from "@/lib/zoom";
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     // CRITICAL: Provider timezone is ALWAYS America/Phoenix per industry standard requirements
     // This must match the calendar's hardcoded timezone
-    const doctorTimezone = "America/Phoenix";
+    const doctorTimezone = PROVIDER_TIMEZONE;
 
     // Try to find user_id from patient email if provided (or use passed userId)
     let finalUserId: string | null = userId || null;
