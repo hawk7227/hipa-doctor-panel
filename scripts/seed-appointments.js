@@ -63,9 +63,8 @@ async function seed() {
       patient_id: patients[0]?.id,
       status: 'accepted',
       visit_type: 'video',
-      scheduled_time: new Date(today.getTime() + 9 * 3600000).toISOString(), // 9 AM today
-      requested_date_time: new Date(today.getTime() + 9 * 3600000).toISOString(),
-      chart_status: 'draft',
+      service_type: 'consultation',
+      requested_date_time: new Date(today.getTime() + 9 * 3600000).toISOString(), // 9 AM today
       chief_complaint: 'UTI symptoms - burning sensation, frequent urination for 3 days',
     },
     {
@@ -73,9 +72,8 @@ async function seed() {
       patient_id: patients[1]?.id || patients[0]?.id,
       status: 'accepted',
       visit_type: 'phone',
-      scheduled_time: new Date(today.getTime() + 11 * 3600000).toISOString(), // 11 AM today
-      requested_date_time: new Date(today.getTime() + 11 * 3600000).toISOString(),
-      chart_status: 'preliminary',
+      service_type: 'consultation',
+      requested_date_time: new Date(today.getTime() + 11 * 3600000).toISOString(), // 11 AM today
       chief_complaint: 'Follow-up on ADHD medication adjustment - Adderall 20mg',
     },
     {
@@ -83,10 +81,8 @@ async function seed() {
       patient_id: patients[2]?.id || patients[0]?.id,
       status: 'completed',
       visit_type: 'video',
-      scheduled_time: new Date(today.getTime() - 2 * 3600000).toISOString(), // 2 hours ago
-      requested_date_time: new Date(today.getTime() - 2 * 3600000).toISOString(),
-      chart_status: 'signed',
-      chart_locked: false,
+      service_type: 'consultation',
+      requested_date_time: new Date(today.getTime() - 2 * 3600000).toISOString(), // 2 hours ago
       chief_complaint: 'STD testing - routine screening, no symptoms',
     },
     {
@@ -94,8 +90,8 @@ async function seed() {
       patient_id: patients[0]?.id,
       status: 'pending',
       visit_type: 'async',
-      scheduled_time: new Date(today.getTime() + 86400000 + 10 * 3600000).toISOString(), // Tomorrow 10 AM
-      requested_date_time: new Date(today.getTime() + 86400000 + 10 * 3600000).toISOString(),
+      service_type: 'consultation',
+      requested_date_time: new Date(today.getTime() + 86400000 + 10 * 3600000).toISOString(), // Tomorrow 10 AM
       chief_complaint: 'Prescription refill request - birth control',
     },
     {
@@ -103,9 +99,8 @@ async function seed() {
       patient_id: patients[1]?.id || patients[0]?.id,
       status: 'accepted',
       visit_type: 'instant',
-      scheduled_time: new Date(today.getTime() + 14 * 3600000).toISOString(), // 2 PM today
-      requested_date_time: new Date(today.getTime() + 14 * 3600000).toISOString(),
-      chart_status: 'draft',
+      service_type: 'urgent_care',
+      requested_date_time: new Date(today.getTime() + 14 * 3600000).toISOString(), // 2 PM today
       chief_complaint: 'Urgent care - severe headache and nausea since this morning',
     },
   ];
@@ -114,7 +109,7 @@ async function seed() {
   const { data: created, error: aptErr } = await supabase
     .from('appointments')
     .insert(appointments)
-    .select('id, status, visit_type, scheduled_time, chart_status');
+    .select('id, status, visit_type, requested_date_time');
 
   if (aptErr) {
     console.error('Error creating appointments:', aptErr);
@@ -124,8 +119,8 @@ async function seed() {
 
   console.log(`\n✅ Created ${created.length} appointments:`);
   created.forEach(apt => {
-    const time = new Date(apt.scheduled_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    console.log(`  ${apt.id} — ${apt.visit_type} — ${apt.status} — ${time} — chart: ${apt.chart_status || 'none'}`);
+    const time = new Date(apt.requested_date_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    console.log(`  ${apt.id} — ${apt.visit_type} — ${apt.status} — ${time}`);
   });
 
   console.log('\n🎉 Done! Refresh your calendar at http://localhost:3000/doctor/appointments');
