@@ -20,6 +20,12 @@ export default function LoginPage() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect') || '/doctor/appointments'
 
+  const doRedirect = (path?: string) => {
+    const dest = path || redirectTo
+    // Use window.location for reliable redirect (router.push can fail with encoded URLs)
+    window.location.href = dest
+  }
+
   // Check if user is already authenticated
   useEffect(() => {
     checkAuthStatus()
@@ -30,7 +36,7 @@ export default function LoginPage() {
       const user = await getCurrentUser()
       if (user) {
         // User is already authenticated, redirect to appointments
-        router.push(redirectTo)
+        doRedirect()
       }
     } catch (error) {
       console.error('Error checking auth status:', error)
@@ -74,7 +80,7 @@ export default function LoginPage() {
         logAudit({ action: 'LOGIN', resourceType: 'system', description: `Password login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
-          router.push(redirectTo)
+          doRedirect()
         }, 1000)
       }
     } catch (error) {
@@ -154,7 +160,7 @@ export default function LoginPage() {
         logAudit({ action: 'LOGIN', resourceType: 'system', description: `OTP login: ${email}` })
         setSuccess('Login successful! Redirecting...')
         setTimeout(() => {
-          router.push(redirectTo)
+          doRedirect()
         }, 1000)
       }
     } catch (error) {
