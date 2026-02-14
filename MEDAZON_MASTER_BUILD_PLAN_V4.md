@@ -21,6 +21,8 @@
 13. **VERTICAL RHYTHM ALIGNMENT** — Use `flex flex-col` + `flex-1` on variable-height content + `mt-auto` on bottom elements. This guarantees titles align with titles, descriptions align with descriptions, and buttons align with buttons across every row, regardless of content length.
 14. **CONTENT-AGNOSTIC LAYOUT** — Layout must not break with short text, long text, empty states, or overflow. Always test: what happens with 2 words? What happens with 20 words? Truncate with `line-clamp` or `truncate` where needed. Never rely on content being a specific length.
 15. **PRE-PUSH VISUAL AUDIT** — Before pushing any UI change, mentally walk through every repeating group on the affected page. Ask: "Do all items in this group have identical structure? Are all bottom edges aligned? Would a longer title break this?" Fix before push, not after.
+16. **NO PATCHING BUGGY CODE** — Never patch, hotfix, or add lines on top of broken infrastructure. If the existing code is buggy, monolithic, uses inline styles, or has structural problems — REBUILD IT PROPERLY from scratch at enterprise level, mobile-first. The old code gets backed up and replaced, not bandaged.
+17. **DELIGHTFUL EXTRAS (disabled by default)** — Fun features like confetti, sound effects, particle animations, and colorful welcome popups are welcome BUT must be: (a) disabled by default, (b) toggled via a Settings/Preferences control, (c) built as isolated modules that don't touch core logic, (d) never block or obscure functional UI.
 
 ---
 
