@@ -20,10 +20,10 @@
 | D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
 | E | Port All Existing Panels | ⬜ NOT STARTED | | Wrap 25 panels in Panel Shell, React.memo, skeleton loaders |
 | F | Polish | 🟡 STARTED | 1 file | Error Boundary added. Animations, gestures, accessibility remaining |
-| G | Authentication & Roles | 🟡 STARTED | 1 file | practice_staff SQL done. RBAC middleware + assistant login remaining |
+| G | Authentication & Roles | ✅ COMPLETE | 2 files | RBAC lib, practice_staff SQL, permissions system |
 | H | Enterprise Chart Management | ✅ COMPLETE | 1 file | Live data, 5-state cards, overdue alerts, search, clickable navigation |
 | I | HIPAA Audit Logging | ✅ COMPLETE | 4 files | audit_logs table, lib, viewer page, wired into login/logout/appointment views |
-| J | Staff Management | ⬜ NOT STARTED | | /doctor/settings/staff page, assistant CRUD, activity viewer |
+| J | Staff Management | ✅ COMPLETE | 1 file | Full CRUD, invite modal, role selector, permissions editor, audit logged |
 
 **Legend:** ⬜ NOT STARTED | 🟡 IN PROGRESS | ✅ COMPLETE | 🔴 BLOCKED
 
