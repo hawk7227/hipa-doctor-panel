@@ -14,7 +14,7 @@
 | Phase | Name | Status | Files Changed | Notes |
 |-------|------|--------|---------------|-------|
 | — | Dashboard Buttons + Sidebar | ⬜ NOT STARTED | | 2 buttons, 2 cards, 2 sidebar links (provider-only) |
-| A | Foundation | 🟡 IN PROGRESS | 4 files | constants.ts, WorkspaceState, PanelRegistry done. Panel Shell + react-grid-layout remaining |
+| A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
 | B | Calendar Enterprise Upgrade | ⬜ NOT STARTED | | Hover popup, chart status chips, mini calendar, daily view, provider filter |
 | C | Calendar + Workspace Integration | ⬜ NOT STARTED | | URL routing (fixes refresh bug), sidebar collapse, workspace canvas, mobile |
 | D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
@@ -29,28 +29,35 @@
 
 ---
 
-## CURRENT PHASE: A — Foundation (IN PROGRESS)
+## CURRENT PHASE: B — Calendar Enterprise Upgrade (NEXT)
 
 ### Next Action:
-Build Panel Shell component (drag, resize, lock, minimize, close) + Layout Persistence Service
+Hover preview popup on appointment chips + 5-state chart status indicators
 
 ---
 
 ## FILES CREATED / MODIFIED LOG
 
 ### Pre-Build (existing)
-- `src/app/doctor/dashboard/page.tsx` — 619 lines (needs 2 buttons + 2 cards)
-- `src/app/doctor/layout.tsx` — sidebar (needs 2 links, provider-only)
-- `src/components/AppointmentDetailModal.tsx` — 7100 lines (will be decomposed)
-- `src/app/doctor/appointments/page.tsx` — 2275 lines (calendar, needs enterprise upgrade)
+- `src/app/doctor/dashboard/page.tsx` — 619 lines (MODIFIED: 2 buttons + 2 cards)
+- `src/app/doctor/layout.tsx` — sidebar (MODIFIED: 2 links, provider-only)
+- `src/components/AppointmentDetailModal.tsx` — 7100 lines (will be decomposed in Phase E)
+- `src/app/doctor/appointments/page.tsx` — 2275 lines (calendar, Phase B upgrade)
 
-### Phase A: Foundation (IN PROGRESS)
-- ✅ `src/lib/constants.ts` — enums, timezone, z-index, RBAC, panel IDs, chart status (UPDATED from existing)
-- ✅ `src/lib/workspace/WorkspaceState.tsx` — React context + useReducer (NEW)
-- ✅ `src/lib/workspace/PanelRegistry.ts` — 30 panel configs with sizes/colors/categories (NEW)
-- ✅ `src/lib/workspace/index.ts` — barrel export (NEW)
-- ⬜ Panel Shell component — drag, resize, lock, minimize, close (NEXT)
-- ⬜ Layout Persistence Service — Supabase save/load (NEXT)
+### Dashboard + Sidebar (COMPLETE)
+- ✅ `src/app/doctor/dashboard/page.tsx` — 2 buttons, 2 action cards (uniform structure)
+- ✅ `src/app/doctor/layout.tsx` — 2 sidebar links with divider
+- ✅ `src/app/doctor/settings/staff/page.tsx` — Staff Management page
+- ✅ `src/app/doctor/chart-management/page.tsx` — Chart Management page (5-state cards + cosign queue)
+
+### Phase A: Foundation (COMPLETE)
+- ✅ `src/lib/constants.ts` — enums, timezone, z-index, RBAC, panel IDs, chart status
+- ✅ `src/lib/workspace/WorkspaceState.tsx` — React context + useReducer (replaces 60 useState)
+- ✅ `src/lib/workspace/PanelRegistry.ts` — 30 panel configs with sizes/colors/categories
+- ✅ `src/lib/workspace/LayoutPersistence.ts` — Supabase save/load with debounced auto-save
+- ✅ `src/lib/workspace/index.ts` — barrel export
+- ✅ `src/components/workspace/PanelShell.tsx` — drag, resize, lock, minimize, close (React.memo)
+- ✅ `supabase/migrations/create_doctor_workspace_layouts.sql` — RLS-enabled table
 
 ### Phase B: Calendar Enterprise Upgrade
 *Not started yet*
