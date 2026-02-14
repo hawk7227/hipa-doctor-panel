@@ -497,10 +497,11 @@ export default function AppointmentsPage() {
               <button
                 onClick={() => {
                   const types = ['new_appointment', 'instant_visit', 'patient_message', 'payment_received', 'appointment_cancelled'] as const
-                  const titles = ['New Appointment', '⚡ Instant Visit', 'Patient Message', 'Payment Received', 'Appointment Cancelled']
-                  const bodies = ['Sarah Johnson booked a video visit', 'Urgent care request from David Kim', 'Emily Chen: "When will my results be ready?"', '$75.00 payment from James Rodriguez', 'Lisa Thompson cancelled her 3:00 PM visit']
+                  const titles = ['📅 New Appointment Booked', '⚡ Instant Visit Request', '💬 Patient Message', '💰 Payment Received', '❌ Appointment Cancelled']
+                  const bodies = ['Sarah Johnson booked a video visit for 2:30 PM — tap to view', 'Urgent care request from David Kim — tap to view queue', 'Emily Chen: "When will my results be ready?" — tap to reply', '$75.00 payment from James Rodriguez — tap to view', 'Lisa Thompson cancelled her 3:00 PM visit']
+                  const urls = ['/doctor/appointments', '/doctor/appointments', '/doctor/communication', '/doctor/billing', '/doctor/appointments']
                   const idx = Math.floor(Math.random() * types.length)
-                  addNotification({ type: types[idx], title: titles[idx], body: bodies[idx], priority: idx === 1 ? 'urgent' : idx === 4 ? 'high' : 'normal' })
+                  addNotification({ type: types[idx], title: titles[idx], body: bodies[idx], priority: idx === 1 ? 'urgent' : idx === 4 ? 'high' : 'normal', actionUrl: urls[idx] })
                 }}
                 className="px-2 py-1.5 rounded-lg bg-pink-500/15 border border-pink-500/30 text-pink-400 hover:bg-pink-500/25 text-[10px] font-bold transition-colors"
                 title="Send test notification (dev only)"
