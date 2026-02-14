@@ -13,7 +13,7 @@
 
 | Phase | Name | Status | Files Changed | Notes |
 |-------|------|--------|---------------|-------|
-| — | Dashboard Buttons + Sidebar | ⬜ NOT STARTED | | 2 buttons, 2 cards, 2 sidebar links (provider-only) |
+| — | Dashboard Buttons + Sidebar | ✅ COMPLETE | 4 files | 2 buttons, 2 cards, 2 sidebar links, 2 full pages |
 | A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
 | B | Calendar Enterprise Upgrade | ⬜ NOT STARTED | | Hover popup, chart status chips, mini calendar, daily view, provider filter |
 | C | Calendar + Workspace Integration | ⬜ NOT STARTED | | URL routing (fixes refresh bug), sidebar collapse, workspace canvas, mobile |
