@@ -3,9 +3,14 @@ import { supabase } from '@/lib/supabase'
 import { zoomService } from '@/lib/zoom'
 import { sendAppointmentRescheduledEmail } from '@/lib/email'
 
-export async function POST(request: NextRequest) {
+import { requireAuth } from '@/lib/api-auth'
+export async function POST(req: NextRequest) {
   try {
-    const { appointmentId, newTime } = await request.json()
+   
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+  const request = req
+ const { appointmentId, newTime } = await request.json()
 
     if (!appointmentId || !newTime) {
       return NextResponse.json(

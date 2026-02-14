@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 
-export async function POST(request: NextRequest) {
+import { requireAuth } from '@/lib/api-auth'
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
+   
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+  const request = req
+ const body = await request.json()
     const { meetingNumber, role = 0 } = body
 
     if (!meetingNumber) {

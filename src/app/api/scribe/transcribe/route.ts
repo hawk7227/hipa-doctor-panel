@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { requireAuth } from '@/lib/api-auth'
+import { NextRequest } from 'next/server'
 export async function POST(req: Request) {
   try {
+  const auth = await requireAuth(req as NextRequest)
+  if ('error' in auth && auth.error) return auth.error
+
     // Read audio from the request
     const form = await req.formData();
     const audio = form.get("audio") as Blob;

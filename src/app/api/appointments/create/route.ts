@@ -4,11 +4,16 @@ import { zoomService } from "@/lib/zoom";
 import { sendAdminNotification } from "@/lib/email";
 import { dailyService } from "@/lib/daily";
 
-export async function POST(request: NextRequest) {
+import { requireAuth } from '@/lib/api-auth'
+export async function POST(req: NextRequest) {
   console.log("📋 Create appointment API called");
 
   try {
-    const body = await request.json();
+   
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+  const request = req
+ const body = await request.json();
     console.log("📤 Request body:", body);
 
     const {

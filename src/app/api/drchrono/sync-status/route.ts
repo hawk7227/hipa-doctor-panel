@@ -7,8 +7,12 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 // Query params: ?limit=10&sync_id=123
 // ═══════════════════════════════════════════════════════════════════
 
+import { requireAuth } from '@/lib/api-auth'
 export async function GET(req: NextRequest) {
   try {
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+
     const syncId = req.nextUrl.searchParams.get('sync_id')
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '10', 10)
 

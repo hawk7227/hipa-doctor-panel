@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { dailyService } from "@/lib/daily";
 
-export async function GET(request: NextRequest) {
+import { requireAuth } from '@/lib/api-auth'
+export async function GET(req: NextRequest) {
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
   );
@@ -12,7 +13,11 @@ export async function GET(request: NextRequest) {
   );
 
   try {
-    const { searchParams } = new URL(request.url);
+   
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+  const request = req
+ const { searchParams } = new URL(request.url);
     const appointmentId = searchParams.get("appointmentId");
 
     console.log("📋 STEP 2: Parsing request parameters");

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { generateClinicalNotePDF } from '@/lib/generateClinicalNotePDF'
 import type { ClinicalNotePDFInput, SOAPNotes } from '@/lib/generateClinicalNotePDF'
 
+import { requireAuth } from '@/lib/api-auth'
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -12,6 +13,9 @@ export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
   try {
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+
     const body = await req.json()
     const { appointmentId, providerName, providerRole } = body
 

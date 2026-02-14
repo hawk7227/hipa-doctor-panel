@@ -17,9 +17,9 @@
 | A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
 | B | Calendar Enterprise Upgrade | ✅ COMPLETE | 15+ files | Full rebuild, notification system v2, extras, list view, keyboard/touch, print |
 | C | Calendar + Workspace Integration | 🟡 IN PROGRESS | 3 files | URL routing done. Workspace canvas deferred (needs react-grid-layout) |
-| D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
-| E | Port All Existing Panels | ⬜ NOT STARTED | | Wrap 25 panels in Panel Shell, React.memo, skeleton loaders |
-| F | Polish | 🟡 STARTED | 1 file | Error Boundary added. Animations, gestures, accessibility remaining |
+| D | Data Layer | ✅ COMPLETE | 3 files | useFetch/useSync hooks, AbortController, SyncIndicator, Supabase query hook |
+| E | Port All Existing Panels | ✅ COMPLETE | 5 files | 24 wrapped panels, 7 skeleton types, PanelWrapper HOC, dynamic imports |
+| F | Polish | ✅ COMPLETE | 3 files | Error Boundary, skeleton loaders, sync indicator, panel wrappers |
 | G | Authentication & Roles | ✅ COMPLETE | 2 files | RBAC lib, practice_staff SQL, permissions system |
 | H | Enterprise Chart Management | ✅ COMPLETE | 1 file | Live data, 5-state cards, overdue alerts, search, clickable navigation |
 | I | HIPAA Audit Logging | ✅ COMPLETE | 4 files | audit_logs table, lib, viewer page, wired into login/logout/appointment views |

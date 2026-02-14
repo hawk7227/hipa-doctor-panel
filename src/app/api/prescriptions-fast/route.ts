@@ -6,15 +6,20 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
+import { requireAuth } from '@/lib/api-auth'
 // Force Node.js runtime for better performance
 export const runtime = 'nodejs'
 // Disable dynamic rendering to avoid delays
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+export async function GET(req: NextRequest) {
   const startTime = performance.now()
   try {
-    const { searchParams } = new URL(request.url)
+   
+  const auth = await requireAuth(req)
+  if ('error' in auth && auth.error) return auth.error
+  const request = req
+ const { searchParams } = new URL(request.url)
     const appointmentId = searchParams.get('appointment_id')
     
     if (!appointmentId) {
