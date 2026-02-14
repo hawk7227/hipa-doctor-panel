@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight, Calendar, Bell, X, UserPlus, Clock, BarChart3 } from 'lucide-react'
+import { ChevronRight, Calendar, Bell, X, UserPlus, Clock, BarChart3, Users, Shield } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 
@@ -451,6 +451,18 @@ export default function DoctorDashboard() {
           >
               Open Calendar
             </button>
+          <button
+            onClick={() => router.push('/doctor/settings/staff')}
+            className="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold transition-colors text-sm sm:text-base"
+          >
+              Manage Staff
+            </button>
+          <button
+            onClick={() => router.push('/doctor/chart-management')}
+            className="bg-purple-500 hover:bg-purple-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold transition-colors text-sm sm:text-base"
+          >
+              Chart Management
+            </button>
           </div>
 
           {/* Stats Cards */}
@@ -588,7 +600,7 @@ export default function DoctorDashboard() {
           </div>
 
           {/* Action Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
             <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
               <h3 className="text-base sm:text-lg font-semibold text-white mb-2">View All Appointments</h3>
               <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Manage slots, reschedule, and join visits.</p>
@@ -608,6 +620,26 @@ export default function DoctorDashboard() {
               <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Lab results, uploads, and forms.</p>
             <Link href="/doctor/records" className="bg-blue-500 hover:bg-blue-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
               Review ▸
+              </Link>
+            </div>
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3">
+                <Users className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
+              </div>
+              <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Staff Management</h3>
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Add assistants, manage permissions, view activity logs.</p>
+            <Link href="/doctor/settings/staff" className="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
+              Manage ▸
+              </Link>
+            </div>
+            <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3">
+                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
+              </div>
+              <h3 className="text-base sm:text-lg font-semibold text-white mb-2">Chart Management</h3>
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">Sign notes, close charts, manage addendums, audit trail.</p>
+            <Link href="/doctor/chart-management" className="bg-purple-500 hover:bg-purple-600 text-white px-4 sm:px-6 py-2 rounded-lg font-bold transition-colors inline-flex items-center text-sm sm:text-base">
+              Open ▸
               </Link>
             </div>
           </div>

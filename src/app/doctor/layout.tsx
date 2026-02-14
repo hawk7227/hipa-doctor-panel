@@ -182,6 +182,32 @@ export default function DoctorLayout({ children }: DoctorLayoutProps) {
                 >
                   Availability
                 </Link>
+
+                <div className="border-t border-[#1a3d3d] my-3"></div>
+
+                <Link 
+                  href="/doctor/settings/staff" 
+                  className={`block px-4 py-3 rounded-lg transition-colors ${
+                    isActive('/doctor/settings/staff') 
+                      ? 'bg-[#164e4e] text-white font-medium' 
+                      : 'text-gray-300 hover:bg-[#164e4e]'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  Staff Management
+                </Link>
+
+                <Link 
+                  href="/doctor/chart-management" 
+                  className={`block px-4 py-3 rounded-lg transition-colors ${
+                    isActive('/doctor/chart-management') 
+                      ? 'bg-[#164e4e] text-white font-medium' 
+                      : 'text-gray-300 hover:bg-[#164e4e]'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  Chart Management
+                </Link>
               </div>
             </nav>
             
