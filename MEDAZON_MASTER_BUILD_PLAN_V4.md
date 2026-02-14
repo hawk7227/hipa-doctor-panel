@@ -16,6 +16,7 @@
 8. **SYNTAX CHECK** — Balanced brackets/braces/parens, closed strings/templates, closed JSX tags, complete ternaries
 9. **If something else should change beyond the request → ASK FIRST, explain why, wait for approval**
 10. **ALL builds must be ENTERPRISE LEVEL** — production-quality, HIPAA-compliant, scalable, no shortcuts
+11. **NO SHELLS OR PLACEHOLDERS** — Every component ships fully structured. Every card in a grid must have identical internal structure (icon → title → description → button). Buttons always align to bottom. No mismatched heights, no missing elements, no "we'll fix it later". If a page has real sections, they must have real layout even before data is wired. Every grid row is visually uniform.
 
 ---
 
