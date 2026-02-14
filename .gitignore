@@ -40,3 +40,7 @@ next-env.d.ts
 *.local
 *.local
 .env
+-e 
+# Environment variables
+.env.local
+.env*.local
