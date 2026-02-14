@@ -54,6 +54,7 @@ export default function DoctorDashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [upcomingAppointments, setUpcomingAppointments] = useState<AppointmentWithUser[]>([])
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
+  const [chartAlerts, setChartAlerts] = useState({ overdue: 0, unsigned: 0 })
   const [currentDate, setCurrentDate] = useState<Date>(new Date())
   const [loading, setLoading] = useState(true)
 
@@ -285,6 +286,30 @@ export default function DoctorDashboard() {
       })
       
       setNotifications(appointmentNotifications)
+
+      // Chart alerts
+      try {
+        const { data: chartData } = await supabase
+          .from('appointments')
+          .select('id, status, chart_status, chart_locked, updated_at, scheduled_time, created_at')
+          .eq('doctor_id', currentDoctor.id)
+          .neq('status', 'cancelled')
+        
+        if (chartData) {
+          let overdue = 0
+          let unsigned = 0
+          chartData.forEach((r: any) => {
+            const cs = r.chart_status || (r.chart_locked ? 'closed' : r.status === 'completed' ? 'signed' : 'draft')
+            if (cs === 'draft' || cs === 'preliminary') unsigned++
+            // Overdue: completed but not locked, >24 hours
+            if (!r.chart_locked && r.status === 'completed' && cs !== 'closed' && cs !== 'amended') {
+              const hrs = (Date.now() - new Date(r.updated_at || r.scheduled_time || r.created_at).getTime()) / 3600000
+              if (hrs > 24) overdue++
+            }
+          })
+          setChartAlerts({ overdue, unsigned })
+        }
+      } catch { /* silent — chart alerts are bonus info */ }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -546,6 +571,40 @@ export default function DoctorDashboard() {
               )}
                 </div>
               </div>
+
+          {/* ── Chart Alerts ── */}
+          {(chartAlerts.overdue > 0 || chartAlerts.unsigned > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 sm:mb-6">
+              {chartAlerts.overdue > 0 && (
+                <Link href="/doctor/chart-management?filter=overdue" className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-lg p-4 hover:bg-red-500/15 transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 bg-red-500/20 rounded-lg flex items-center justify-center">
+                      <Shield className="w-4 h-4 text-red-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">Overdue Charts</p>
+                      <p className="text-[10px] text-gray-400">Unsigned &gt; 24 hours</p>
+                    </div>
+                  </div>
+                  <span className="text-xl font-bold text-red-400">{chartAlerts.overdue}</span>
+                </Link>
+              )}
+              {chartAlerts.unsigned > 0 && (
+                <Link href="/doctor/chart-management?filter=unsigned" className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 hover:bg-amber-500/15 transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                      <Shield className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">Unsigned Notes</p>
+                      <p className="text-[10px] text-gray-400">Draft + Preliminary</p>
+                    </div>
+                  </div>
+                  <span className="text-xl font-bold text-amber-400">{chartAlerts.unsigned}</span>
+                </Link>
+              )}
+            </div>
+          )}
 
           {/* Recent Notifications Card */}
           <div className="bg-[#0d2626] rounded-lg p-4 sm:p-6 border border-[#1a3d3d]">
