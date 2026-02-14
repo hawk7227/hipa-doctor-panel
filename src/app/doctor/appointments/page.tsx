@@ -9,9 +9,10 @@ import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
 import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChipBorderStyle, getChipStatusIcon, useExtras, ExtrasToggleButton, ConfettiOverlay, WelcomePopup } from '@/components/calendar'
 import type { HoverPreviewData } from '@/components/calendar'
 import { PROVIDER_TIMEZONE, CALENDAR_DEFAULTS } from '@/lib/constants'
+import { useNotifications } from '@/lib/notifications'
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, ArrowLeft,
-  Video, Phone, MessageSquare, Zap
+  Video, Phone, MessageSquare, Zap, Bell
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -158,6 +159,7 @@ export default function AppointmentsPage() {
 
   const hoverPreview = useHoverPreview()
   const extras = useExtras()
+  const { addNotification } = useNotifications()
   const [showWelcome, setShowWelcome] = useState(false)
   const today = useMemo(() => new Date(), [])
   const timeSlots = useMemo(() => getTimeSlots(), [])
@@ -484,6 +486,7 @@ export default function AppointmentsPage() {
           <div className="flex items-center space-x-1.5">
             {/* Dev: Load demo appointments to see all chart states */}
             {process.env.NODE_ENV === 'development' && (
+              <>
               <button
                 onClick={loadDemoAppointments}
                 className="px-2 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[10px] font-bold transition-colors"
@@ -491,6 +494,20 @@ export default function AppointmentsPage() {
               >
                 Demo
               </button>
+              <button
+                onClick={() => {
+                  const types = ['new_appointment', 'instant_visit', 'patient_message', 'payment_received', 'appointment_cancelled'] as const
+                  const titles = ['New Appointment', '⚡ Instant Visit', 'Patient Message', 'Payment Received', 'Appointment Cancelled']
+                  const bodies = ['Sarah Johnson booked a video visit', 'Urgent care request from David Kim', 'Emily Chen: "When will my results be ready?"', '$75.00 payment from James Rodriguez', 'Lisa Thompson cancelled her 3:00 PM visit']
+                  const idx = Math.floor(Math.random() * types.length)
+                  addNotification({ type: types[idx], title: titles[idx], body: bodies[idx], priority: idx === 1 ? 'urgent' : idx === 4 ? 'high' : 'normal' })
+                }}
+                className="px-2 py-1.5 rounded-lg bg-pink-500/15 border border-pink-500/30 text-pink-400 hover:bg-pink-500/25 text-[10px] font-bold transition-colors"
+                title="Send test notification (dev only)"
+              >
+                🔔 Test
+              </button>
+              </>
             )}
             <ExtrasToggleButton extras={extras} />
             <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50" aria-label="Refresh" title="Refresh appointments">

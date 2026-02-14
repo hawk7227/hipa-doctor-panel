@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
 import { signOutAndRedirect } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
+import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib/notifications'
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
@@ -34,8 +36,22 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
 
   const isActive = (path: string) => pathname === path
+
+  // Fetch doctor ID for notification provider
+  useEffect(() => {
+    const fetchDoctorId = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
+        if (doctor) setDoctorId(doctor.id)
+      } catch { /* silent */ }
+    }
+    fetchDoctorId()
+  }, [])
 
   // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -106,6 +122,7 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
 
   return (
     <AuthWrapper>
+      <NotificationProvider doctorId={doctorId}>
       <div className="h-screen bg-[#0a1f1f] flex overflow-hidden">
 
         {/* ═══ MOBILE: Hamburger Button ═══ */}
@@ -157,8 +174,13 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          {/* Footer: Sign out + Collapse toggle */}
+          {/* Footer: Notifications + Sign out + Collapse toggle */}
           <div className="flex-shrink-0 border-t border-[#1a3d3d] p-2 space-y-1">
+            {/* Notification Bell */}
+            <div className={`flex ${collapsed ? 'justify-center' : 'px-1'}`}>
+              <NotificationBell />
+            </div>
+
             {/* Sign Out */}
             <button
               onClick={signOutAndRedirect}
@@ -191,7 +213,11 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+
+        {/* Global notification toast */}
+        <NotificationToast />
       </div>
+      </NotificationProvider>
     </AuthWrapper>
   )
 }
