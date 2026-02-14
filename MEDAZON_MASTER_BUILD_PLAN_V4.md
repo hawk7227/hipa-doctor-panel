@@ -17,6 +17,10 @@
 9. **If something else should change beyond the request → ASK FIRST, explain why, wait for approval**
 10. **ALL builds must be ENTERPRISE LEVEL** — production-quality, HIPAA-compliant, scalable, no shortcuts
 11. **NO SHELLS OR PLACEHOLDERS** — Every component ships fully structured. Every card in a grid must have identical internal structure (icon → title → description → button). Buttons always align to bottom. No mismatched heights, no missing elements, no "we'll fix it later". If a page has real sections, they must have real layout even before data is wired. Every grid row is visually uniform.
+12. **COMPONENT STRUCTURE PARITY** — Every item in a repeating group (grid cards, list rows, table rows, tab panels) must have identical DOM structure. Same elements in the same order. If one card has an icon, ALL cards have an icon. No exceptions.
+13. **VERTICAL RHYTHM ALIGNMENT** — Use `flex flex-col` + `flex-1` on variable-height content + `mt-auto` on bottom elements. This guarantees titles align with titles, descriptions align with descriptions, and buttons align with buttons across every row, regardless of content length.
+14. **CONTENT-AGNOSTIC LAYOUT** — Layout must not break with short text, long text, empty states, or overflow. Always test: what happens with 2 words? What happens with 20 words? Truncate with `line-clamp` or `truncate` where needed. Never rely on content being a specific length.
+15. **PRE-PUSH VISUAL AUDIT** — Before pushing any UI change, mentally walk through every repeating group on the affected page. Ask: "Do all items in this group have identical structure? Are all bottom edges aligned? Would a longer title break this?" Fix before push, not after.
 
 ---
 
