@@ -313,62 +313,6 @@ export default function AppointmentsPage() {
     }
   }, [loading, calendarView])
 
-  // ── Keyboard shortcuts ──
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Don't trigger when typing in inputs
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.metaKey || e.ctrlKey) return
-
-      switch (e.key) {
-        case 'ArrowLeft': e.preventDefault(); navigateDate('prev'); break
-        case 'ArrowRight': e.preventDefault(); navigateDate('next'); break
-        case 't': case 'T': e.preventDefault(); goToToday(); break
-        case 'd': case 'D': e.preventDefault(); setCalendarView('day'); break
-        case 'w': case 'W': e.preventDefault(); setCalendarView('week'); break
-        case 'l': case 'L': e.preventDefault(); setCalendarView('list'); break
-        case 'n': case 'N':
-          if (!showCreateDialog) {
-            e.preventDefault()
-            setSelectedSlotDate(currentDate)
-            setSelectedSlotTime(new Date(2000, 0, 1, new Date().getHours() + 1, 0))
-            setShowCreateDialog(true)
-          }
-          break
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [navigateDate, goToToday, currentDate, showCreateDialog])
-
-  // ── Touch swipe for mobile day navigation ──
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
-  useEffect(() => {
-    const el = gridRef.current
-    if (!el) return
-
-    const onTouchStart = (e: TouchEvent) => {
-      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-    }
-    const onTouchEnd = (e: TouchEvent) => {
-      if (!touchStart.current) return
-      const dx = e.changedTouches[0].clientX - touchStart.current.x
-      const dy = e.changedTouches[0].clientY - touchStart.current.y
-      // Only trigger horizontal swipe (not vertical scroll)
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        navigateDate(dx > 0 ? 'prev' : 'next')
-      }
-      touchStart.current = null
-    }
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchend', onTouchEnd)
-    }
-  }, [navigateDate])
-
   // ═══════════════════════════════════════════════════════════
   // HANDLERS
   // ═══════════════════════════════════════════════════════════
@@ -451,6 +395,59 @@ export default function AppointmentsPage() {
       fetchAppointments(currentDoctorId, true)
     } catch (err) { console.error('Error cancelling instant visit:', err) }
   }, [activeInstantVisit, currentDoctorId, fetchAppointments])
+
+  // ═══════════════════════════════════════════════════════════
+  // KEYBOARD SHORTCUTS + TOUCH SWIPE
+  // ═══════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.metaKey || e.ctrlKey) return
+      switch (e.key) {
+        case 'ArrowLeft': e.preventDefault(); navigateDate('prev'); break
+        case 'ArrowRight': e.preventDefault(); navigateDate('next'); break
+        case 't': case 'T': e.preventDefault(); goToToday(); break
+        case 'd': case 'D': e.preventDefault(); setCalendarView('day'); break
+        case 'w': case 'W': e.preventDefault(); setCalendarView('week'); break
+        case 'l': case 'L': e.preventDefault(); setCalendarView('list'); break
+        case 'n': case 'N':
+          if (!showCreateDialog) {
+            e.preventDefault()
+            setSelectedSlotDate(currentDate)
+            setSelectedSlotTime(new Date(2000, 0, 1, new Date().getHours() + 1, 0))
+            setShowCreateDialog(true)
+          }
+          break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigateDate, goToToday, currentDate, showCreateDialog])
+
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    const onTouchStart = (e: TouchEvent) => {
+      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!touchStart.current) return
+      const dx = e.changedTouches[0].clientX - touchStart.current.x
+      const dy = e.changedTouches[0].clientY - touchStart.current.y
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        navigateDate(dx > 0 ? 'prev' : 'next')
+      }
+      touchStart.current = null
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [navigateDate])
 
   // ═══════════════════════════════════════════════════════════
   // DEV: DEMO APPOINTMENTS (shows all chart states)
