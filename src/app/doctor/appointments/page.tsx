@@ -12,7 +12,7 @@ import { PROVIDER_TIMEZONE, CALENDAR_DEFAULTS } from '@/lib/constants'
 import { useNotifications } from '@/lib/notifications'
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, ArrowLeft,
-  Video, Phone, MessageSquare, Zap, Bell
+  Video, Phone, MessageSquare, Zap, Bell, List, Printer, Calendar
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -47,7 +47,7 @@ interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_
   created_at?: string | null
 }
 
-type CalendarView = 'week' | 'day'
+type CalendarView = 'week' | 'day' | 'list'
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -304,14 +304,70 @@ export default function AppointmentsPage() {
 
   // ── Scroll to current time on load ──
   useEffect(() => {
-    if (!loading && gridRef.current) {
+    if (!loading && gridRef.current && calendarView !== 'list') {
       const startMin = CALENDAR_DEFAULTS.START_HOUR * 60
       const currentMin = getNowMinutes()
       const rowHeight = 64
       const targetRow = Math.floor((currentMin - startMin) / CALENDAR_DEFAULTS.SLOT_MINUTES)
       gridRef.current.scrollTop = Math.max(0, (targetRow - 2) * rowHeight)
     }
-  }, [loading])
+  }, [loading, calendarView])
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.metaKey || e.ctrlKey) return
+
+      switch (e.key) {
+        case 'ArrowLeft': e.preventDefault(); navigateDate('prev'); break
+        case 'ArrowRight': e.preventDefault(); navigateDate('next'); break
+        case 't': case 'T': e.preventDefault(); goToToday(); break
+        case 'd': case 'D': e.preventDefault(); setCalendarView('day'); break
+        case 'w': case 'W': e.preventDefault(); setCalendarView('week'); break
+        case 'l': case 'L': e.preventDefault(); setCalendarView('list'); break
+        case 'n': case 'N':
+          if (!showCreateDialog) {
+            e.preventDefault()
+            setSelectedSlotDate(currentDate)
+            setSelectedSlotTime(new Date(2000, 0, 1, new Date().getHours() + 1, 0))
+            setShowCreateDialog(true)
+          }
+          break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigateDate, goToToday, currentDate, showCreateDialog])
+
+  // ── Touch swipe for mobile day navigation ──
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!touchStart.current) return
+      const dx = e.changedTouches[0].clientX - touchStart.current.x
+      const dy = e.changedTouches[0].clientY - touchStart.current.y
+      // Only trigger horizontal swipe (not vertical scroll)
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        navigateDate(dx > 0 ? 'prev' : 'next')
+      }
+      touchStart.current = null
+    }
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [navigateDate])
 
   // ═══════════════════════════════════════════════════════════
   // HANDLERS
@@ -345,6 +401,29 @@ export default function AppointmentsPage() {
       setShowCreateDialog(true)
     }
   }, [getAppointmentForSlot])
+
+  const handlePrint = useCallback(() => {
+    window.print()
+  }, [])
+
+  const getAppointmentsForDate = useCallback((date: Date): CalendarAppointment[] => {
+    return appointments.filter(apt => apt.scheduled_time && isSameDay(new Date(apt.scheduled_time), date))
+      .sort((a, b) => new Date(a.scheduled_time!).getTime() - new Date(b.scheduled_time!).getTime())
+  }, [appointments])
+
+  // List view: appointments for visible date range
+  const listViewAppointments = useMemo(() => {
+    if (calendarView !== 'list') return []
+    const weekDates = getWeekDates(currentDate)
+    const result: { date: Date; appointments: CalendarAppointment[] }[] = []
+    weekDates.forEach(date => {
+      const dayApts = getAppointmentsForDate(date)
+      if (dayApts.length > 0) {
+        result.push({ date, appointments: dayApts })
+      }
+    })
+    return result
+  }, [calendarView, currentDate, getAppointmentsForDate])
 
   const handleStartCall = useCallback(() => {
     if (activeInstantVisit) {
@@ -540,9 +619,17 @@ export default function AppointmentsPage() {
             </button>
             <span className="text-sm text-white font-bold ml-2 truncate">{dateLabel}</span>
           </div>
-          <div className="flex items-center bg-[#0a1f1f] rounded-lg p-0.5 border border-[#1a3d3d]">
-            <button onClick={() => setCalendarView('day')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'day' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Day</button>
-            <button onClick={() => setCalendarView('week')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'week' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Week</button>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center bg-[#0a1f1f] rounded-lg p-0.5 border border-[#1a3d3d]">
+              <button onClick={() => setCalendarView('day')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'day' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Day</button>
+              <button onClick={() => setCalendarView('week')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'week' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>Week</button>
+              <button onClick={() => setCalendarView('list')} className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-colors ${calendarView === 'list' ? 'bg-blue-400 text-[#0a1f1f] shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}>
+                <List className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <button onClick={handlePrint} className="p-1.5 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-400 hover:text-teal-400 transition-colors hidden md:block" title="Print appointments" aria-label="Print">
+              <Printer className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
@@ -589,8 +676,89 @@ export default function AppointmentsPage() {
           </div>
         </div>
 
-        {/* ── Main Grid ── */}
+        {/* ── Main Content Area ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+          {/* ══ LIST VIEW ══ */}
+          {calendarView === 'list' ? (
+            <div ref={gridRef} className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4">
+              {listViewAppointments.length === 0 ? (
+                <div className="text-center py-16">
+                  <Calendar className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <p className="text-sm text-gray-400 font-medium">No appointments this week</p>
+                  <p className="text-xs text-gray-500 mt-1">Try navigating to a different week or create a new appointment.</p>
+                </div>
+              ) : (
+                listViewAppointments.map(({ date, appointments: dayApts }) => {
+                  const isToday = isSameDay(date, today)
+                  return (
+                    <div key={formatDateKey(date)}>
+                      {/* Day header */}
+                      <div className="flex items-center space-x-2 mb-2">
+                        <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${isToday ? 'bg-teal-500/15 text-teal-400 border border-teal-500/30' : 'bg-[#0d2626] text-gray-300 border border-[#1a3d3d]'}`}>
+                          {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: PROVIDER_TIMEZONE })}
+                        </div>
+                        {isToday && <span className="text-[9px] text-teal-400 font-bold uppercase tracking-wider">Today</span>}
+                        <span className="text-[10px] text-gray-500 font-bold">{dayApts.length} appt{dayApts.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      {/* Appointment cards */}
+                      <div className="space-y-1.5">
+                        {dayApts.map(apt => {
+                          const aptTime = apt.scheduled_time ? new Date(apt.scheduled_time) : null
+                          const timeStr = aptTime ? formatSlotTime(aptTime) : ''
+                          const reason = getAppointmentReason(apt)
+                          const chartStatus = deriveChartStatus(apt)
+                          const statusIcon = getChipStatusIcon(chartStatus)
+                          const VisitIcon = getVisitTypeIcon(apt.visit_type)
+                          return (
+                            <div
+                              key={apt.id}
+                              className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all hover:brightness-110 ${
+                                apt.status === 'completed' ? 'bg-green-500/10 hover:bg-green-500/15' :
+                                apt.status === 'pending' ? 'bg-amber-500/10 hover:bg-amber-500/15' :
+                                apt.status === 'accepted' ? 'bg-blue-500/10 hover:bg-blue-500/15' :
+                                'bg-gray-500/10 hover:bg-gray-500/15'
+                              }`}
+                              style={getChipBorderStyle(chartStatus)}
+                              onClick={() => setSelectedAppointmentId(apt.id)}
+                            >
+                              {/* Time */}
+                              <div className="w-16 flex-shrink-0 text-right">
+                                <p className="text-sm font-bold text-white">{timeStr}</p>
+                              </div>
+                              {/* Patient info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <p className="text-sm font-bold text-white truncate">
+                                    {apt.patients?.first_name} {apt.patients?.last_name}
+                                  </p>
+                                  <span style={{ color: statusIcon.color, filter: `drop-shadow(0 0 3px ${statusIcon.color}50)` }} className="text-xs" title={statusIcon.title}>{statusIcon.icon}</span>
+                                </div>
+                                {reason && <p className="text-xs text-gray-400 truncate mt-0.5">{reason}</p>}
+                              </div>
+                              {/* Visit type */}
+                              <div className="flex items-center space-x-1.5 flex-shrink-0">
+                                <VisitIcon className="w-3.5 h-3.5 text-gray-400" />
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded capitalize ${
+                                  apt.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                                  apt.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                                  apt.status === 'accepted' ? 'bg-blue-500/20 text-blue-400' :
+                                  'bg-gray-500/20 text-gray-400'
+                                }`}>{apt.status}</span>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          ) : (
+          /* ══ GRID VIEW (day/week) ══ */
+          <>
           {/* Column headers */}
           <div className="flex-shrink-0 border-b border-[#1a3d3d] bg-[#0d2626]">
             <div className="flex">
@@ -599,10 +767,18 @@ export default function AppointmentsPage() {
                 const isToday = isSameDay(date, today)
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: PROVIDER_TIMEZONE })
                 const dayNum = date.getDate()
+                const dayAptCount = getAppointmentsForDate(date).length
                 return (
                   <div key={i} className={`flex-1 min-w-0 text-center py-2 border-l border-[#1a3d3d]/50 first:border-l-0 ${isToday ? 'bg-teal-500/5' : ''}`}>
                     <p className={`text-[10px] uppercase tracking-widest font-bold ${isToday ? 'text-teal-400' : 'text-gray-400'}`}>{dayName}</p>
-                    <p className={`text-xl font-bold leading-tight ${isToday ? 'text-teal-400' : 'text-white'}`}>{dayNum}</p>
+                    <div className="flex items-center justify-center space-x-1">
+                      <p className={`text-xl font-bold leading-tight ${isToday ? 'text-teal-400' : 'text-white'}`}>{dayNum}</p>
+                      {dayAptCount > 0 && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isToday ? 'bg-teal-500/20 text-teal-400' : 'bg-white/10 text-gray-300'}`}>
+                          {dayAptCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -709,6 +885,8 @@ export default function AppointmentsPage() {
               )
             })}
           </div>
+          </>
+          )}
         </div>
       </div>
 
