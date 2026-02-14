@@ -14,7 +14,7 @@
 | Phase | Name | Status | Files Changed | Notes |
 |-------|------|--------|---------------|-------|
 | — | Dashboard Buttons + Sidebar | ⬜ NOT STARTED | | 2 buttons, 2 cards, 2 sidebar links (provider-only) |
-| A | Foundation | ⬜ NOT STARTED | | Panel Registry, State Manager, Layout Persistence, Panel Shell, react-grid-layout |
+| A | Foundation | 🟡 IN PROGRESS | 4 files | constants.ts, WorkspaceState, PanelRegistry done. Panel Shell + react-grid-layout remaining |
 | B | Calendar Enterprise Upgrade | ⬜ NOT STARTED | | Hover popup, chart status chips, mini calendar, daily view, provider filter |
 | C | Calendar + Workspace Integration | ⬜ NOT STARTED | | URL routing (fixes refresh bug), sidebar collapse, workspace canvas, mobile |
 | D | Data Layer | ⬜ NOT STARTED | | DrChrono patient sync, panels read from Supabase, eRx popup |
@@ -29,10 +29,10 @@
 
 ---
 
-## CURRENT PHASE: NONE — READY TO START
+## CURRENT PHASE: A — Foundation (IN PROGRESS)
 
 ### Next Action:
-Dashboard buttons + sidebar links → then Phase A
+Build Panel Shell component (drag, resize, lock, minimize, close) + Layout Persistence Service
 
 ---
 
@@ -44,11 +44,13 @@ Dashboard buttons + sidebar links → then Phase A
 - `src/components/AppointmentDetailModal.tsx` — 7100 lines (will be decomposed)
 - `src/app/doctor/appointments/page.tsx` — 2275 lines (calendar, needs enterprise upgrade)
 
-### Phase: Dashboard Buttons + Sidebar
-*Not started yet*
-
-### Phase A: Foundation
-*Not started yet*
+### Phase A: Foundation (IN PROGRESS)
+- ✅ `src/lib/constants.ts` — enums, timezone, z-index, RBAC, panel IDs, chart status (UPDATED from existing)
+- ✅ `src/lib/workspace/WorkspaceState.tsx` — React context + useReducer (NEW)
+- ✅ `src/lib/workspace/PanelRegistry.ts` — 30 panel configs with sizes/colors/categories (NEW)
+- ✅ `src/lib/workspace/index.ts` — barrel export (NEW)
+- ⬜ Panel Shell component — drag, resize, lock, minimize, close (NEXT)
+- ⬜ Layout Persistence Service — Supabase save/load (NEXT)
 
 ### Phase B: Calendar Enterprise Upgrade
 *Not started yet*
