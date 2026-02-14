@@ -4,6 +4,7 @@ import { ReactNode, useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { signOutAndRedirect } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib/notifications'
@@ -210,7 +211,9 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
         <main className={`flex-1 h-full overflow-hidden transition-all duration-200 ${contentMargin}`}>
           {/* Mobile top padding for hamburger button */}
           <div className="h-full pt-12 lg:pt-0">
-            {children}
+            <ErrorBoundary label="Page">
+              {children}
+            </ErrorBoundary>
           </div>
         </main>
 
