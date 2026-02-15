@@ -4,14 +4,10 @@ import { supabase } from '@/lib/supabase'
 import { zoomService } from '@/lib/zoom'
 import { sendAppointmentRescheduledEmail } from '@/lib/email'
 
-import { requireAuth } from '@/lib/api-auth'
 export async function POST(req: NextRequest) {
   try {
    
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
-  const request = req
- const { appointmentId, newTime } = await request.json()
+ const { appointmentId, newTime } = await req.json()
 
     if (!appointmentId || !newTime) {
       return NextResponse.json(
@@ -146,7 +142,7 @@ export async function POST(req: NextRequest) {
         timezone: doctorTimezone
       }).catch(err => {
         console.error('Zoom update error:', err)
-        // Don't fail the request if Zoom update fails
+        // Don't fail the req if Zoom update fails
       })
     }
 
@@ -189,7 +185,7 @@ export async function POST(req: NextRequest) {
         appointment.zoom_meeting_url || undefined
       ).catch(err => {
         console.error('Email send error:', err)
-        // Don't fail the request if email fails
+        // Don't fail the req if email fails
       })
     }
 

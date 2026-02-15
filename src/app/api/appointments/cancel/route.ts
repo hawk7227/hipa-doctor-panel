@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
-import { requireAuth } from '@/lib/api-auth'
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
    
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
-  const request = req
- const { appointmentId, reason } = await request.json()
+ const { appointmentId, reason } = await req.json()
 
     if (!appointmentId) {
       return NextResponse.json(

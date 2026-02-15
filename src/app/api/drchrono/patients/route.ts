@@ -1,10 +1,7 @@
-import { requireAuth } from '@/lib/api-auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { drchronoFetch } from '@/lib/drchrono'
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
   const firstName = req.nextUrl.searchParams.get('first_name')
   const lastName = req.nextUrl.searchParams.get('last_name')
   const chartId = req.nextUrl.searchParams.get('chart_id')

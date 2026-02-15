@@ -2,14 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { smtpEmailService } from '@/lib/smtp'
 
-import { requireAuth } from '@/lib/api-auth'
 export async function POST(req: NextRequest) {
   try {
    
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
-  const request = req
- const { to, subject, html, text } = await request.json()
+ const { to, subject, html, text } = await req.json()
 
     // Validate required fields
     if (!to || !subject || !html) {

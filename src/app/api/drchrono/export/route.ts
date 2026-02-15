@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { requireAuth } from '@/lib/api-auth'
 export async function POST(req: NextRequest) {
   try {
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
 
     const { data, type, patientName } = await req.json()
 

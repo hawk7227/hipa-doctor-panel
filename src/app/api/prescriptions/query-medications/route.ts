@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PHIQueryClient } from '@/lib/emrdirect';
 
-import { requireAuth } from '@/lib/api-auth'
 // Force this API route to use Node.js runtime (required for TLS/FS modules)
 export const runtime = 'nodejs';
 
@@ -16,10 +15,7 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   try {
    
-  const auth = await requireAuth(req)
-  if ('error' in auth && auth.error) return auth.error
-  const request = req
- const searchParams = request.nextUrl.searchParams;
+ const searchParams = req.nextUrl.searchParams;
     const patientId = searchParams.get('patientId');
 
     if (!patientId) {
