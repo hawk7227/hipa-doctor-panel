@@ -75,23 +75,23 @@ import { usePatientData } from '@/hooks/usePatientData'
 import ErxComposer from '@/components/appointment/sections/ErxComposer'
 import OrdersPanelV2 from '@/components/panels/OrdersPanelV2'
 import PrescriptionHistoryPanelV2 from '@/components/panels/PrescriptionHistoryPanelV2'
-import ChartManagementPanel from '@/components/ChartManagementPanel'
-import MedicationHistoryPanel from '@/components/MedicationHistoryPanel'
-import AppointmentsOverlayPanel from '@/components/AppointmentsOverlayPanel'
+import ChartManagementPanelV2 from '@/components/panels/ChartManagementPanelV2'
+import MedicationHistoryPanelV2 from '@/components/panels/MedicationHistoryPanelV2'
+import AppointmentsPanelV2 from '@/components/panels/AppointmentsPanelV2'
 import AllergiesPanelV2 from '@/components/panels/AllergiesPanelV2'
 import VitalsPanelV2 from '@/components/panels/VitalsPanelV2'
 import MedicationsPanelV2 from '@/components/panels/MedicationsPanelV2'
-import DemographicsPanel from '@/components/DemographicsPanel'
+import DemographicsPanelV2 from '@/components/panels/DemographicsPanelV2'
 import ProblemsPanelV2 from '@/components/panels/ProblemsPanelV2'
-import ClinicalNotesPanel from '@/components/ClinicalNotesPanel'
-import LabResultsPanel from '@/components/LabResultsPanel'
-import ImmunizationsPanel from '@/components/ImmunizationsPanel'
-import DocumentsPanel from '@/components/DocumentsPanel'
-import { FamilyHistoryPanel, SocialHistoryPanel, SurgicalHistoryPanel } from '@/components/HistoryPanels'
-import PharmacyPanel from '@/components/PharmacyPanel'
-import CarePlansPanel from '@/components/CarePlansPanel'
-import BillingPanel from '@/components/BillingPanel'
-import UnifiedCommHub from '@/components/UnifiedCommHub'
+import ClinicalNotesPanelV2 from '@/components/panels/ClinicalNotesPanelV2'
+import LabResultsPanelV2 from '@/components/panels/LabResultsPanelV2'
+import ImmunizationsPanelV2 from '@/components/panels/ImmunizationsPanelV2'
+import DocumentsPanelV2 from '@/components/panels/DocumentsPanelV2'
+import HistoryPanelV2 from '@/components/panels/HistoryPanelV2'
+import PharmacyPanelV2 from '@/components/panels/PharmacyPanelV2'
+import CarePlansPanelV2 from '@/components/panels/CarePlansPanelV2'
+import BillingPanelV2 from '@/components/panels/BillingPanelV2'
+import CommHubPanelV2 from '@/components/panels/CommHubPanelV2'
 import DailyMeetingEmbed from '@/components/DailycoMeetingPanel'
 
 // ── Toolbar config ──
@@ -738,10 +738,10 @@ export default function WorkspaceCanvas({
                   </div>
                 )}
                 {activeTab === 'Notes' && patientId && (
-                  <ClinicalNotesPanel isOpen patientId={patientId} patientName={patientName} onClose={() => setActiveTab('SOAP')} />
+                  <ClinicalNotesPanelV2 isOpen patientId={patientId} patientName={patientName} onClose={() => setActiveTab('SOAP')} />
                 )}
                 {activeTab === 'Billing' && patientId && (
-                  <BillingPanel isOpen patientId={patientId} patientName={patientName} onClose={() => setActiveTab('SOAP')} />
+                  <BillingPanelV2 isOpen patientId={patientId} patientName={patientName} onClose={() => setActiveTab('SOAP')} />
                 )}
                 {activeTab === 'Audit' && (
                   <div className="text-sm">
@@ -797,47 +797,27 @@ export default function WorkspaceCanvas({
         const close = () => closeOverlay(panelId)
 
         const PANEL_MAP: Record<string, React.ReactNode> = {
-          'medication-history': <MedicationHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'medication-history': <MedicationHistoryPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'orders': <OrdersPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
           'prescription-history': <PrescriptionHistoryPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'appointments': <AppointmentsOverlayPanel isOpen patientName={pname} appointments={[]} onClose={close} onViewAppointment={() => {}} />,
+          'appointments': <AppointmentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'allergies': <AllergiesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'vitals': <VitalsPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
           'medications': <MedicationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'demographics': <DemographicsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'demographics': <DemographicsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'problems': <ProblemsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'clinical-notes': <ClinicalNotesPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'lab-results-panel': <LabResultsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'immunizations': <ImmunizationsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'documents': <DocumentsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'family-history': <FamilyHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'social-history': <SocialHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'surgical-history': <SurgicalHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'pharmacy': <PharmacyPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'care-plans': <CarePlansPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'billing': <BillingPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'comm-hub': <UnifiedCommHub isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'chart-management': <ChartManagementPanel
-            isOpen onClose={close} appointmentId={aid}
-            chartStatus={chart.chartStatus as any} chartSignedAt={chart.chartSignedAt} chartSignedBy={chart.chartSignedBy}
-            chartClosedAt={chart.chartClosedAt} chartClosedBy={chart.chartClosedBy}
-            clinicalNotePdfUrl={chart.clinicalNotePdfUrl}
-            addendums={chart.addendums}
-            currentUserName={currentUser?.email || 'Provider'}
-            chartActionLoading={chart.chartActionLoading}
-            onChartStatusChange={() => {}}
-            onSetChartStatus={chart.setChartStatus as any}
-            onSetChartLocked={chart.setChartLocked}
-            onSetChartSignedAt={() => {}}
-            onSetChartSignedBy={() => {}}
-            onSetChartClosedAt={() => {}}
-            onSetChartClosedBy={() => {}}
-            onSetClinicalNotePdfUrl={() => {}}
-            onSetAddendums={() => {}}
-            onSetAppointment={() => {}}
-            onSetError={(msg: string) => setError(msg)}
-            onSetChartActionLoading={() => {}}
-          />,
+          'clinical-notes': <ClinicalNotesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'lab-results-panel': <LabResultsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'immunizations': <ImmunizationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'documents': <DocumentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'family-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="family" onClose={close} />,
+          'social-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="social" onClose={close} />,
+          'surgical-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="surgical" onClose={close} />,
+          'pharmacy': <PharmacyPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'care-plans': <CarePlansPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+          'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} onClose={close} />,
           'drchrono-erx': prescriptions ? <ErxComposer {...prescriptions as any} onClose={close} /> : null,
 
 
