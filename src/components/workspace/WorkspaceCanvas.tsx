@@ -110,29 +110,29 @@ const MARGIN: [number, number] = [8, 8]
 // Default layout for the main panels
 const DEFAULT_LAYOUTS: ResponsiveLayouts = {
   lg: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 5, minW: 3, minH: 3 },
-    { i: 'soap-notes', x: 4, y: 0, w: 8, h: 12, minW: 4, minH: 6 },
-    { i: 'video-panel', x: 0, y: 5, w: 4, h: 7, minW: 3, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 3, minH: 4 },
+    { i: 'soap-notes', x: 4, y: 0, w: 8, h: 16, minW: 4, minH: 8 },
+    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 3, minH: 4 },
   ],
   md: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 5, minW: 3, minH: 3 },
-    { i: 'soap-notes', x: 4, y: 0, w: 4, h: 12, minW: 4, minH: 6 },
-    { i: 'video-panel', x: 0, y: 5, w: 4, h: 7, minW: 3, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 3, minH: 4 },
+    { i: 'soap-notes', x: 4, y: 0, w: 4, h: 16, minW: 4, minH: 8 },
+    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 3, minH: 4 },
   ],
   sm: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 4, minW: 2, minH: 3 },
-    { i: 'soap-notes', x: 0, y: 4, w: 4, h: 10, minW: 2, minH: 6 },
-    { i: 'video-panel', x: 0, y: 14, w: 4, h: 6, minW: 2, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 5, minW: 2, minH: 3 },
+    { i: 'soap-notes', x: 0, y: 5, w: 4, h: 14, minW: 2, minH: 8 },
+    { i: 'video-panel', x: 0, y: 19, w: 4, h: 8, minW: 2, minH: 4 },
   ],
   xs: [
-    { i: 'patient-info', x: 0, y: 0, w: 2, h: 5 },
-    { i: 'soap-notes', x: 0, y: 5, w: 2, h: 12 },
-    { i: 'video-panel', x: 0, y: 17, w: 2, h: 6 },
+    { i: 'patient-info', x: 0, y: 0, w: 2, h: 6 },
+    { i: 'soap-notes', x: 0, y: 6, w: 2, h: 16 },
+    { i: 'video-panel', x: 0, y: 22, w: 2, h: 8 },
   ],
   xxs: [
-    { i: 'patient-info', x: 0, y: 0, w: 1, h: 5 },
-    { i: 'soap-notes', x: 0, y: 5, w: 1, h: 12 },
-    { i: 'video-panel', x: 0, y: 17, w: 1, h: 6 },
+    { i: 'patient-info', x: 0, y: 0, w: 1, h: 6 },
+    { i: 'soap-notes', x: 0, y: 6, w: 1, h: 16 },
+    { i: 'video-panel', x: 0, y: 22, w: 1, h: 8 },
   ],
 }
 
@@ -280,12 +280,16 @@ export default function WorkspaceCanvas({
   }, [appointmentId])
 
   // ── Derived display data ──
-  const patientName = appointment?.patients
-    ? `${appointment.patients.first_name || ''} ${appointment.patients.last_name || ''}`.trim()
+  // Supabase joins may return patients as array or object — normalize
+  const patientData = appointment?.patients
+    ? (Array.isArray(appointment.patients) ? appointment.patients[0] : appointment.patients)
+    : null
+  const patientName = patientData
+    ? `${patientData.first_name || ''} ${patientData.last_name || ''}`.trim() || 'N/A'
     : 'N/A'
-  const patientEmail = appointment?.patients?.email || 'N/A'
-  const patientPhone = appointment?.patients?.phone || 'N/A'
-  const patientDob = (appointment?.patients as any)?.date_of_birth || 'N/A'
+  const patientEmail = patientData?.email || 'N/A'
+  const patientPhone = patientData?.phone || patientData?.mobile_phone || 'N/A'
+  const patientDob = patientData?.date_of_birth || 'N/A'
 
   // ── Layout change handler ──
   const handleLayoutChange = useCallback((_layout: any, allLayouts: any) => {
