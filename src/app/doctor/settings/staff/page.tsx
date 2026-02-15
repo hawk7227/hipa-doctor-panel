@@ -90,6 +90,7 @@ export default function StaffManagementPage() {
   const [inviteFirst, setInviteFirst] = useState('')
   const [inviteLast, setInviteLast] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('assistant')
+  const [invitePermissions, setInvitePermissions] = useState<Permission[]>(getPermissionsForRole('assistant'))
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
 
@@ -212,7 +213,7 @@ export default function StaffManagementPage() {
         return
       }
 
-      const permissions = getPermissionsForRole(inviteRole)
+      const permissions = invitePermissions
 
       const { error } = await supabase.from('practice_staff').insert({
         email: inviteEmail.trim().toLowerCase(),
@@ -231,13 +232,14 @@ export default function StaffManagementPage() {
         logAudit({
           action: 'ADD_STAFF',
           resourceType: 'staff',
-          description: `Invited ${inviteFirst} ${inviteLast} (${inviteEmail}) as ${inviteRole}`,
+          description: `Invited ${inviteFirst} ${inviteLast} (${inviteEmail}) as ${inviteRole} with ${permissions.length} permissions`,
         })
         setShowInvite(false)
         setInviteEmail('')
         setInviteFirst('')
         setInviteLast('')
         setInviteRole('assistant')
+        setInvitePermissions(getPermissionsForRole('assistant'))
         await fetchStaff(doctorId)
       }
     } catch (err) {
@@ -810,7 +812,7 @@ export default function StaffManagementPage() {
                   return (
                     <button
                       key={role}
-                      onClick={() => setInviteRole(role)}
+                      onClick={() => { setInviteRole(role); setInvitePermissions(getPermissionsForRole(role)) }}
                       className={`p-3 rounded-lg border text-center transition-all ${
                         inviteRole === role
                           ? `${config.bgColor} border-teal-500/30`
@@ -822,6 +824,42 @@ export default function StaffManagementPage() {
                     </button>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* Permissions Checklist */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] text-gray-400 font-bold uppercase">Permissions ({invitePermissions.length})</label>
+                <button onClick={() => setInvitePermissions(getPermissionsForRole(inviteRole))} className="text-[10px] text-teal-400 hover:text-teal-300 font-bold">
+                  Reset to defaults
+                </button>
+              </div>
+              <div className="bg-[#0a1f1f] rounded-lg border border-[#1a3d3d] p-3 max-h-48 overflow-y-auto space-y-3">
+                {PERMISSION_GROUPS.map(group => (
+                  <div key={group.label}>
+                    <p className="text-[10px] text-gray-500 font-bold mb-1">{group.label}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {group.permissions.map(perm => {
+                        const has = invitePermissions.includes(perm.key)
+                        return (
+                          <button key={perm.key}
+                            onClick={() => {
+                              setInvitePermissions(prev =>
+                                has ? prev.filter(p => p !== perm.key) : [...prev, perm.key]
+                              )
+                            }}
+                            className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium ${
+                              has ? 'bg-teal-500/15 border-teal-500/30 text-teal-400' : 'bg-[#0d2626] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
+                            }`}
+                          >
+                            {has ? '✓' : '○'} {perm.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
