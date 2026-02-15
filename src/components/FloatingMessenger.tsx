@@ -136,7 +136,7 @@ export default function FloatingMessenger() {
         try {
           const res = await fetch('/api/admin/messaging?action=conversations')
           const d = await res.json()
-          const myConv = (d.conversations || []).find((c: any) => c.doctor_id === user.doctor.id)
+          const myConv = (d.conversations || []).find((c: any) => c.doctor_id === user?.doctor?.id)
           if (myConv) { setAdminConv(myConv); setUnreadAdmin(myConv.unread_count || 0) }
         } catch {}
         // Staff convs
