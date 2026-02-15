@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
@@ -8,55 +9,44 @@ const supabaseAdmin = createClient(
 )
 
 /**
- * Authenticate API caller from session cookie or Authorization header.
- * Returns { userId, email, doctorId } or a 401 NextResponse.
+ * Authenticate API caller using Supabase SSR cookie handling.
  */
 export async function requireAuth(req?: NextRequest): Promise<
   { userId: string; email: string; doctorId: string | null } | NextResponse
 > {
   try {
-    let accessToken: string | null = null
+    const cookieStore = await cookies()
 
-    // 1. Check Authorization header
-    const authHeader = req?.headers.get('authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      accessToken = authHeader.substring(7)
-    }
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+        },
+      }
+    )
 
-    // 2. Check cookies
-    if (!accessToken) {
-      const cookieStore = await cookies()
-      const allCookies = cookieStore.getAll()
-      
-      // Find auth token cookie (may be chunked)
-      const tokenCookie = allCookies.find(c => c.name.includes('auth-token') && !c.name.includes('.'))
-      const chunks = allCookies.filter(c => c.name.includes('auth-token.')).sort((a, b) => a.name.localeCompare(b.name))
-      
-      const raw = tokenCookie?.value || (chunks.length > 0 ? chunks.map(c => c.value).join('') : null)
-      
-      if (raw) {
-        try {
-          const decoded = Buffer.from(raw, 'base64').toString()
-          const parsed = JSON.parse(decoded)
-          accessToken = Array.isArray(parsed) ? parsed[0] : parsed.access_token || parsed
-        } catch {
-          accessToken = raw
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user?.email) {
+      // Fallback: Authorization header
+      if (req) {
+        const authHeader = req.headers.get('authorization')
+        if (authHeader?.startsWith('Bearer ')) {
+          const { data: { user: hUser }, error: hErr } = await supabaseAdmin.auth.getUser(authHeader.substring(7))
+          if (!hErr && hUser?.email) {
+            const { data: doc } = await supabaseAdmin.from('doctors').select('id').eq('email', hUser.email).single()
+            return { userId: hUser.id, email: hUser.email, doctorId: doc?.id || null }
+          }
         }
       }
+      return NextResponse.json({ error: 'Unauthorized - no session' }, { status: 401 })
     }
 
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(accessToken)
-    if (error || !user?.email) {
-      return NextResponse.json({ error: 'Unauthorized - invalid session' }, { status: 401 })
-    }
-
-    // Look up doctor
     const { data: doctor } = await supabaseAdmin.from('doctors').select('id').eq('email', user.email).single()
-
     return { userId: user.id, email: user.email, doctorId: doctor?.id || null }
   } catch {
     return NextResponse.json({ error: 'Authentication failed' }, { status: 401 })
