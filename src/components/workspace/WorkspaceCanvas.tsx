@@ -98,8 +98,12 @@ import DailyMeetingEmbed from '@/components/DailycoMeetingPanel'
 import { EHR_PANELS } from '@/components/appointment/sections/ToolbarButtons'
 import type { PanelId } from '@/components/appointment/hooks/usePanelVisibility'
 
-// ── react-grid-layout (direct import, SSR guarded in render) ──
-import { ResponsiveGridLayout as RGL } from 'react-grid-layout'
+// ── react-grid-layout (dynamic import — NO SSR, uses window) ──
+import dynamic from 'next/dynamic'
+const RGL = dynamic(
+  () => import('react-grid-layout').then(mod => mod.ResponsiveGridLayout),
+  { ssr: false }
+) as any
 
 // ═══════════════════════════════════════════════════════════════
 // GRID LAYOUT CONFIG
