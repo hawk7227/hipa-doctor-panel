@@ -82,155 +82,67 @@ export default function DoctorDashboard() {
       const currentDoctor = authUser.doctor
       setDoctor(currentDoctor)
 
-      // Fetch appointments for this doctor
+      // Fetch aggregated stats from API (combines local + drchrono data)
+      try {
+        const statsRes = await fetch('/api/dashboard/stats')
+        if (statsRes.ok) {
+          const statsData = await statsRes.json()
+          setStats(prev => ({
+            ...prev,
+            totalPatients: statsData.totalPatients || 0,
+            activePatients: statsData.activePatients || 0,
+            newThisMonth: statsData.newThisMonth || 0,
+            avgAppointments: statsData.avgAppointments || 0,
+            appointmentsToday: statsData.appointmentsToday || 0,
+          }))
+          if (statsData.upcomingAppointments && statsData.upcomingAppointments.length > 0) {
+            setUpcomingAppointments(statsData.upcomingAppointments.map((a: any) => ({
+              id: a.id,
+              requested_date_time: a.requested_date_time,
+              status: a.status,
+              visit_type: a.visit_type,
+              patients: a.patient_name ? {
+                first_name: a.patient_name.split(' ')[0],
+                last_name: a.patient_name.split(' ').slice(1).join(' '),
+              } : null,
+            })))
+          }
+        }
+      } catch (err) {
+        console.error('Dashboard stats API error:', err)
+      }
+
+      // Also try local appointments as fallback for upcoming list
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const todayEnd = new Date(today)
       todayEnd.setHours(23, 59, 59, 999)
       
-      const { data: appointments, error: appointmentsError } = await supabase
+      // Fetch local appointments for earnings/documents/chart queries
+      const { data: appointments } = await supabase
         .from('appointments')
-        .select(`
-          id,
-          patient_id,
-          requested_date_time,
-          status,
-          visit_type,
-          created_at,
-          patients!appointments_patient_id_fkey(first_name, last_name, created_at)
-        `)
+        .select('id, patient_id, requested_date_time, status, visit_type, patients!appointments_patient_id_fkey(first_name, last_name)')
         .eq('doctor_id', currentDoctor.id)
         .order('requested_date_time', { ascending: true })
 
-      if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError)
-      } else {
-        const appointmentsList = appointments || []
-        
-        // Count today's appointments
-        const todayAppointments = appointmentsList.filter((apt: any) => {
+      // If API stats returned 0 patients, fallback to local upcoming
+      if (upcomingAppointments.length === 0 && appointments) {
+        const upcoming = appointments.filter((apt: any) => {
           if (!apt.requested_date_time) return false
-          const aptDate = new Date(apt.requested_date_time)
-          return aptDate >= today && aptDate <= todayEnd && 
-                 (apt.status === 'accepted' || apt.status === 'pending')
-        })
-
-        // Get upcoming appointments (accepted or pending, future dates)
-        const upcoming = appointmentsList.filter((apt: any) => {
-          if (!apt.requested_date_time) return false
-          const aptDate = new Date(apt.requested_date_time)
-          return aptDate > todayEnd && 
-                 (apt.status === 'accepted' || apt.status === 'pending')
+          return new Date(apt.requested_date_time) > todayEnd && (apt.status === 'accepted' || apt.status === 'pending')
         }).slice(0, 5).map((apt: any) => ({
           id: apt.id,
           requested_date_time: apt.requested_date_time,
           status: apt.status,
           visit_type: apt.visit_type,
-          users: Array.isArray(apt.users) ? apt.users[0] : apt.users || null
+          patients: Array.isArray(apt.patients) ? apt.patients[0] : apt.patients || null,
         }))
-
-        setUpcomingAppointments(upcoming as AppointmentWithUser[])
-        setStats(prev => ({
-          ...prev,
-          appointmentsToday: todayAppointments.length,
-          upcomingAppointments: upcoming.length
-        }))
+        if (upcoming.length > 0) setUpcomingAppointments(upcoming as AppointmentWithUser[])
       }
 
-      // Fetch unique patients count using patient_id
-      const appointmentsList = appointments || []
-      const uniquePatientIds = new Set(
-        appointmentsList
-          .map((apt: any) => apt.patient_id)
-          .filter((id: any) => id !== null && id !== undefined)
-      )
-      
-      setStats(prev => ({
-        ...prev,
-        totalPatients: uniquePatientIds.size
-      }))
-
-      // Calculate Active Patients (patients with appointments in the last 30 days)
-      const thirtyDaysAgo = new Date(today)
-      thirtyDaysAgo.setDate(today.getDate() - 30)
-      
-      const activePatientIds = new Set(
-        appointmentsList
-          .filter((apt: any) => {
-            if (!apt.requested_date_time) return false
-            const aptDate = new Date(apt.requested_date_time)
-            return aptDate >= thirtyDaysAgo && aptDate <= todayEnd
-          })
-          .map((apt: any) => apt.patient_id)
-          .filter((id: any) => id !== null && id !== undefined)
-      )
-      
-      setStats(prev => ({
-        ...prev,
-        activePatients: activePatientIds.size
-      }))
-
-      // Calculate New This Month (patients created this month who have appointments with this doctor)
+      // Fetch monthly earnings (current month)
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
       const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59)
-      
-      // Query patients directly who have appointments with this doctor and were created this month
-      const uniquePatientIdsArray = Array.from(uniquePatientIds)
-      if (uniquePatientIdsArray.length > 0) {
-        const { data: newPatientsData, error: newPatientsError } = await supabase
-          .from('patients')
-          .select('id')
-          .gte('created_at', monthStart.toISOString())
-          .lte('created_at', monthEnd.toISOString())
-          .in('id', uniquePatientIdsArray)
-        
-        if (!newPatientsError && newPatientsData) {
-          setStats(prev => ({
-            ...prev,
-            newThisMonth: newPatientsData.length
-          }))
-        } else {
-          // Fallback to calculating from appointments data
-          const newPatientIds = new Set(
-            appointmentsList
-              .filter((apt: any) => {
-                if (!apt.patients?.created_at) return false
-                const patientCreatedDate = new Date(apt.patients.created_at)
-                return patientCreatedDate >= monthStart && patientCreatedDate <= monthEnd
-              })
-              .map((apt: any) => apt.patient_id)
-              .filter((id: any) => id !== null && id !== undefined)
-          )
-          
-          setStats(prev => ({
-            ...prev,
-            newThisMonth: newPatientIds.size
-          }))
-        }
-      } else {
-        setStats(prev => ({
-          ...prev,
-          newThisMonth: 0
-        }))
-      }
-
-      // Calculate Average Appointments (average per day over the last 30 days)
-      const appointmentsInLast30Days = appointmentsList.filter((apt: any) => {
-        if (!apt.requested_date_time) return false
-        const aptDate = new Date(apt.requested_date_time)
-        return aptDate >= thirtyDaysAgo && aptDate <= todayEnd
-      })
-      
-      const avgAppointments = appointmentsInLast30Days.length > 0
-        ? (appointmentsInLast30Days.length / 30).toFixed(1)
-        : '0.0'
-      
-      setStats(prev => ({
-        ...prev,
-        avgAppointments: parseFloat(avgAppointments)
-      }))
-
-      // Fetch monthly earnings (current month) - monthStart and monthEnd already defined above
 
       const { data: earningsData, error: earningsError } = await supabase
         .from('payment_records')
