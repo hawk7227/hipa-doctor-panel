@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { drchronoFetch } from '@/lib/drchrono'
 
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   const patientId = req.nextUrl.searchParams.get('patient_id')
 
   if (!patientId) {

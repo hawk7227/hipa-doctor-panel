@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { twilioService } from '@/lib/twilio'
 import { supabase } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     // Get user from cookies
     const cookieStore = await cookies()

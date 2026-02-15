@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -110,6 +111,7 @@ async function callLLM(prompt: string): Promise<string> {
 
 // POST /api/scribe/generate-soap
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const doctorId = await getDoctorId(req)
     if (!doctorId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

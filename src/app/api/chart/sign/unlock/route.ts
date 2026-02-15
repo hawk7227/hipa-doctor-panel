@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseAdmin = createClient(
@@ -7,6 +8,7 @@ const supabaseAdmin = createClient(
 )
 
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
 
     const appointmentId = req.nextUrl.searchParams.get('appointmentId')

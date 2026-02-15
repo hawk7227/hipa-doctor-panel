@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from '@/lib/supabase'
 import { capturePayment } from '@/lib/payment'
 import { zoomService } from '@/lib/zoom'
 import { sendAppointmentStatusEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   console.log('📋 Accept appointment API called')
   
   try {

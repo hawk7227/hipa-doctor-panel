@@ -1,44 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '../_shared'
+import { db, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
+function getTable(type: string | null) {
+  if (type === 'family') return 'patient_family_history'
+  if (type === 'social') return 'patient_social_history'
+  if (type === 'surgical') return 'patient_surgical_history'
+  return null
+}
+
 export async function GET(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
-  const history_type = req.nextUrl.searchParams.get('type') // family, social, surgical
+  const history_type = req.nextUrl.searchParams.get('type')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    let query = db.from('patient_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false })
-    if (history_type) query = query.eq('history_type', history_type)
-    const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data: data || [], drchrono_data: [] })
+    if (history_type) {
+      const table = getTable(history_type)
+      if (!table) return NextResponse.json({ error: 'Invalid history type. Use: family, social, surgical' }, { status: 400 })
+      const { data, error } = await db.from(table).select('*').eq('patient_id', patient_id).order('created_at', { ascending: false })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ data: data || [], drchrono_data: [] })
+    }
+    // Return all three types
+    const [fam, soc, sur] = await Promise.all([
+      db.from('patient_family_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }),
+      db.from('patient_social_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }),
+      db.from('patient_surgical_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }),
+    ])
+    return NextResponse.json({ data: { family: fam.data || [], social: soc.data || [], surgical: sur.data || [] }, drchrono_data: [] })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
-    const { patient_id, history_type, description, details, status } = await req.json()
-    if (!patient_id || !history_type || !description) return NextResponse.json({ error: 'patient_id, history_type, description required' }, { status: 400 })
-    const { data, error } = await db.from('patient_history').insert({ patient_id, history_type, description, details: details||null, status: status||'active' }).select().single()
+    const body = await req.json()
+    const { history_type, ...rest } = body
+    if (!rest.patient_id || !history_type) return NextResponse.json({ error: 'patient_id, history_type required' }, { status: 400 })
+    const table = getTable(history_type)
+    if (!table) return NextResponse.json({ error: 'Invalid history type' }, { status: 400 })
+    const { data, error } = await db.from(table).insert(rest).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ data })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
 export async function PUT(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
-    const { id, ...updates } = await req.json()
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-    const { data, error } = await db.from('patient_history').update(updates).eq('id', id).select().single()
+    const { id, history_type, ...updates } = await req.json()
+    if (!id || !history_type) return NextResponse.json({ error: 'id and history_type required' }, { status: 400 })
+    const table = getTable(history_type)
+    if (!table) return NextResponse.json({ error: 'Invalid history type' }, { status: 400 })
+    const { data, error } = await db.from(table).update(updates).eq('id', id).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ data })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const id = req.nextUrl.searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-  const { error } = await db.from('patient_history').delete().eq('id', id)
+  const type = req.nextUrl.searchParams.get('type')
+  if (!id || !type) return NextResponse.json({ error: 'id and type required' }, { status: 400 })
+  const table = getTable(type)
+  if (!table) return NextResponse.json({ error: 'Invalid history type' }, { status: 400 })
+  const { error } = await db.from(table).delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

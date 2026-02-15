@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '../_shared'
+import { db, authenticateDoctor } from '../_shared'
 
 export async function GET(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
@@ -11,6 +12,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { data, error } = await db.from('quality_measures').insert(body).select().single()
@@ -20,6 +22,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { id, ...updates } = body

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 import { drchronoFetch } from '@/lib/drchrono'
 
@@ -18,6 +19,7 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { drchrono_id, patient_id } = body

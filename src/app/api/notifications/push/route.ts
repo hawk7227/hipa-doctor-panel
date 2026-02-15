@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js';
 import * as webpush from 'web-push';
 
@@ -22,6 +23,7 @@ webpush.setVapidDetails(
 
 // POST — Send a push notification
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { recipient_id, recipient_role, title, body, url, type, tag } = await request.json();
 

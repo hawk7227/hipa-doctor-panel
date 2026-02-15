@@ -4,246 +4,185 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
-import {
-  BarChart3, ArrowLeft, RefreshCw, FileText, DollarSign, Activity,
-  Users, Calendar, TrendingUp, Download, Clock, AlertCircle,
-  PieChart, Target, Stethoscope, ChevronRight
-} from 'lucide-react'
+import { BarChart3, RefreshCw, FileText, DollarSign, Activity, Users, Calendar, TrendingUp, Clock, AlertCircle, Target, Stethoscope, CheckCircle, XCircle, Receipt, Building2, Pill, FlaskConical, UserPlus } from 'lucide-react'
 
 type ReportTab = 'overview' | 'clinical' | 'financial' | 'operational' | 'quality'
-
-interface KPI { label: string; value: string; change: string; trend: 'up' | 'down' | 'flat'; icon: typeof Activity }
+interface KPI { label: string; value: string; icon: typeof Activity; color: string }
+const INP = "w-full px-2.5 py-1.5 bg-[#061818] border border-[#1a3d3d]/50 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500/50"
+const fmtMoney = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
 export default function ReportsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [doctorId, setDoctorId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ReportTab>('overview')
-  const [dateRange, setDateRange] = useState('30')
-  const [kpis, setKpis] = useState<Record<string, number>>({})
+  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d')
+  const [data, setData] = useState<any>({})
 
   useEffect(() => {
     const init = async () => {
-      try {
-        const authUser = await getCurrentUser()
-        if (!authUser?.doctor) { router.push('/login'); return }
-        setDoctorId(authUser.doctor.id)
-      } catch (err) { console.error(err) } finally { setLoading(false) }
-    }
-    init()
-  }, [router])
+      try { const au = await getCurrentUser(); if (!au?.doctor?.id) { router.push('/login'); return }; setDoctorId(au.doctor.id); await fetchData(au.doctor.id) } catch { router.push('/login') }
+    }; init()
+  }, [router]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchKPIs = useCallback(async () => {
-    if (!doctorId) return
-    const since = new Date(Date.now() - parseInt(dateRange) * 86400000).toISOString()
-    const [appts, patients, claims, payments] = await Promise.all([
-      supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId).gte('created_at', since),
-      supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', doctorId).gte('created_at', since),
-      supabase.from('claims').select('total_charge, total_paid, status').eq('doctor_id', doctorId).gte('created_at', since),
-      supabase.from('payments').select('amount').eq('doctor_id', doctorId).gte('created_at', since),
-    ])
-    const totalRevenue = (payments.data || []).reduce((s, p) => s + (parseFloat(p.amount as any) || 0), 0)
-    const totalCharges = (claims.data || []).reduce((s, c) => s + (parseFloat(c.total_charge as any) || 0), 0)
-    setKpis({
-      appointments: appts.count || 0, newPatients: patients.count || 0,
-      totalRevenue, totalCharges, claimsSubmitted: (claims.data || []).length,
-      claimsPaid: (claims.data || []).filter(c => c.status === 'paid').length,
-    })
-  }, [doctorId, dateRange])
+  const fetchData = useCallback(async (docId: string) => {
+    setLoading(true)
+    try {
+      const days = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 }
+      const since = new Date(Date.now() - days[dateRange] * 86400000).toISOString()
+      const [pR, aR, cR, pmR, rxR, lR, rfR, nR] = await Promise.all([
+        supabase.from('patients').select('id, created_at', { count: 'exact' }).eq('doctor_id', docId),
+        supabase.from('appointments').select('id, status, created_at').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('billing_claims').select('id, status, total_charge, total_paid, created_at').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('billing_payments').select('id, amount, voided, payment_type').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('prescriptions').select('id, is_controlled, created_at').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('lab_orders').select('id, status, created_at').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('referrals').select('id, status, created_at').eq('doctor_id', docId).gte('created_at', since),
+        supabase.from('clinical_notes').select('id, status, created_at').eq('doctor_id', docId).gte('created_at', since),
+      ])
+      const pts = pR.data || [], apts = aR.data || [], cls = cR.data || []
+      const pays = (pmR.data || []).filter((p: any) => !p.voided)
+      const rxs = rxR.data || [], labs = lR.data || [], refs = rfR.data || [], notes = nR.data || []
+      const tc = cls.reduce((s: number, c: any) => s + (c.total_charge || 0), 0)
+      const tp = pays.reduce((s: number, p: any) => s + (p.amount || 0), 0)
+      const np = pts.filter((p: any) => new Date(p.created_at) >= new Date(since)).length
+      const ca = apts.filter((a: any) => a.status === 'completed' || a.status === 'finished').length
+      const xa = apts.filter((a: any) => a.status === 'cancelled' || a.status === 'no_show').length
+      const dc = cls.filter((c: any) => c.status === 'denied').length
+      const sn = notes.filter((n: any) => n.status === 'signed' || n.status === 'locked').length
+      setData({ totalPatients: pR.count || pts.length, newPatients: np, totalApts: apts.length, completedApts: ca, cancelledApts: xa, noShowRate: apts.length > 0 ? Math.round((xa / apts.length) * 100) : 0, totalCharges: tc, totalCollected: tp, collectionRate: tc > 0 ? Math.round((tp / tc) * 100) : 0, outstanding: tc - tp, claimCount: cls.length, deniedClaims: dc, denialRate: cls.length > 0 ? Math.round((dc / cls.length) * 100) : 0, prescriptions: rxs.length, controlledRx: rxs.filter((r: any) => r.is_controlled).length, labOrders: labs.length, pendingLabs: labs.filter((l: any) => l.status === 'pending').length, referrals: refs.length, pendingRefs: refs.filter((r: any) => r.status === 'draft' || r.status === 'pending').length, notes: notes.length, signedNotes: sn, unsignedNotes: notes.length - sn })
+    } catch (e) { console.error('Reports:', e) } finally { setLoading(false) }
+  }, [dateRange])
 
-  useEffect(() => { if (doctorId) fetchKPIs() }, [doctorId, dateRange, fetchKPIs])
+  useEffect(() => { if (doctorId) fetchData(doctorId) }, [dateRange, doctorId, fetchData])
 
-  if (loading) return <div className="min-h-screen bg-[#0a1f1f] flex items-center justify-center"><RefreshCw className="w-8 h-8 text-teal-400 animate-spin" /></div>
+  if (loading) return <div className="min-h-screen bg-[#030f0f] flex items-center justify-center"><RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" /></div>
 
-  const kpiCards: KPI[] = [
-    { label: 'Appointments', value: (kpis.appointments || 0).toString(), change: '+12%', trend: 'up', icon: Calendar },
-    { label: 'New Patients', value: (kpis.newPatients || 0).toString(), change: '+8%', trend: 'up', icon: Users },
-    { label: 'Revenue', value: `$${(kpis.totalRevenue || 0).toLocaleString()}`, change: '+15%', trend: 'up', icon: DollarSign },
-    { label: 'Claims Submitted', value: (kpis.claimsSubmitted || 0).toString(), change: '', trend: 'flat', icon: FileText },
+  const TABS: { key: ReportTab; label: string; icon: typeof Activity }[] = [
+    { key: 'overview', label: 'Overview', icon: BarChart3 }, { key: 'clinical', label: 'Clinical', icon: Stethoscope },
+    { key: 'financial', label: 'Financial', icon: DollarSign }, { key: 'operational', label: 'Operations', icon: Calendar },
+    { key: 'quality', label: 'Quality', icon: Target },
   ]
 
   return (
-    <div className="min-h-screen bg-[#0a1f1f] overflow-y-auto">
-      <div className="bg-[#0d2626] border-b border-[#1a3d3d] px-4 py-3">
+    <div className="min-h-screen bg-[#030f0f] text-white">
+      <div className="sticky top-0 z-20 bg-[#030f0f]/95 backdrop-blur-sm border-b border-[#1a3d3d]/50 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <button onClick={() => router.push('/doctor/dashboard')} className="p-1.5 rounded-lg hover:bg-[#1a3d3d] text-gray-400"><ArrowLeft className="w-4 h-4" /></button>
-            <h1 className="text-lg font-bold text-white flex items-center space-x-2"><BarChart3 className="w-5 h-5 text-teal-400" /><span>Reports & Analytics</span></h1>
+          <div className="flex items-center gap-3"><BarChart3 className="w-5 h-5 text-emerald-400" /><div><h1 className="text-lg font-bold">Reports & Analytics</h1><p className="text-xs text-gray-500">Practice performance insights</p></div></div>
+          <div className="flex items-center gap-2">
+            <select value={dateRange} onChange={e => setDateRange(e.target.value as any)} className={`${INP} w-auto`}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="1y">Last year</option></select>
+            <button onClick={() => doctorId && fetchData(doctorId)} className="p-2 hover:bg-[#0a1f1f] rounded-lg"><RefreshCw className="w-4 h-4 text-gray-400" /></button>
           </div>
-          <select value={dateRange} onChange={e => setDateRange(e.target.value)} className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-1.5 text-xs text-white">
-            <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option>
-          </select>
         </div>
-        <div className="flex mt-3 space-x-1 overflow-x-auto">
-          {([
-            { key: 'overview' as ReportTab, label: 'Overview', icon: PieChart },
-            { key: 'clinical' as ReportTab, label: 'Clinical', icon: Stethoscope },
-            { key: 'financial' as ReportTab, label: 'Financial', icon: DollarSign },
-            { key: 'operational' as ReportTab, label: 'Operational', icon: Activity },
-            { key: 'quality' as ReportTab, label: 'Quality', icon: Target },
-          ]).map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap ${activeTab === tab.key ? 'bg-teal-600/20 text-teal-400' : 'text-gray-400 hover:text-white hover:bg-[#1a3d3d]'}`}>
-              <tab.icon className="w-3.5 h-3.5" /><span>{tab.label}</span>
-            </button>
-          ))}
+        <div className="flex gap-1 mt-3 overflow-x-auto">
+          {TABS.map(t => <button key={t.key} onClick={() => setActiveTab(t.key)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${activeTab === t.key ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-gray-400 hover:text-white hover:bg-[#0a1f1f]'}`}><t.icon className="w-3.5 h-3.5" />{t.label}</button>)}
         </div>
       </div>
-
       <div className="p-4">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          {kpiCards.map(k => (
-            <div key={k.label} className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-              <div className="flex items-center justify-between mb-2">
-                <k.icon className="w-5 h-5 text-teal-400" />
-                {k.change && <span className={`text-[10px] font-bold ${k.trend === 'up' ? 'text-green-400' : k.trend === 'down' ? 'text-red-400' : 'text-gray-400'}`}>{k.change}</span>}
-              </div>
-              <p className="text-2xl font-bold text-white">{k.value}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5">{k.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {activeTab === 'overview' && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-white">Dashboard Overview</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Revenue chart placeholder */}
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <h3 className="text-xs font-bold text-gray-300 mb-3">Revenue Trend</h3>
-                <div className="h-40 flex items-end space-x-1">
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const h = 20 + Math.random() * 80
-                    return <div key={i} className="flex-1 bg-teal-500/30 rounded-t" style={{ height: `${h}%` }} />
-                  })}
-                </div>
-                <div className="flex justify-between mt-2"><span className="text-[9px] text-gray-500">Jan</span><span className="text-[9px] text-gray-500">Jun</span><span className="text-[9px] text-gray-500">Dec</span></div>
-              </div>
-              {/* Appointment types */}
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <h3 className="text-xs font-bold text-gray-300 mb-3">Appointments by Type</h3>
-                <div className="space-y-2">
-                  {[
-                    { type: 'Telehealth', pct: 45, color: 'bg-teal-500' },
-                    { type: 'In-Person', pct: 30, color: 'bg-blue-500' },
-                    { type: 'Follow-Up', pct: 15, color: 'bg-cyan-500' },
-                    { type: 'New Patient', pct: 10, color: 'bg-amber-500' },
-                  ].map(t => (
-                    <div key={t.type}>
-                      <div className="flex justify-between text-[10px] text-gray-400 mb-0.5"><span>{t.type}</span><span>{t.pct}%</span></div>
-                      <div className="h-2 bg-[#1a3d3d] rounded-full overflow-hidden"><div className={`h-full ${t.color} rounded-full`} style={{ width: `${t.pct}%` }} /></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {/* Quick reports */}
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold text-gray-300">Quick Reports</h3>
-              {[
-                { name: 'Patient Demographics Summary', desc: 'Age, gender, location distribution', icon: Users },
-                { name: 'Appointment No-Show Rate', desc: 'Missed appointments analysis', icon: Calendar },
-                { name: 'Revenue by Service Type', desc: 'CPT code breakdown', icon: DollarSign },
-                { name: 'Clinical Quality Measures', desc: 'MIPS/HEDIS compliance', icon: Target },
-                { name: 'Provider Productivity', desc: 'Patients seen, RVU generation', icon: Activity },
-                { name: 'Claim Denial Analysis', desc: 'Top denial reasons and trends', icon: AlertCircle },
-              ].map(r => (
-                <div key={r.name} className="bg-[#0d2626] rounded-lg p-3 border border-[#1a3d3d] flex items-center justify-between hover:border-teal-500/30 cursor-pointer">
-                  <div className="flex items-center space-x-3">
-                    <r.icon className="w-4 h-4 text-teal-400" />
-                    <div><p className="text-xs font-medium text-white">{r.name}</p><p className="text-[10px] text-gray-500">{r.desc}</p></div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button className="px-2 py-1 rounded text-[10px] bg-teal-600/20 text-teal-400 hover:bg-teal-600/40">Generate</button>
-                    <Download className="w-3.5 h-3.5 text-gray-500" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'clinical' && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-white">Clinical Reports</h2>
-            {['Patient Visit Summary', 'Diagnosis Frequency', 'Medication Prescribing Patterns', 'Lab Order Volume', 'Referral Completion Rates', 'Chronic Disease Registry', 'Preventive Care Compliance', 'Immunization Coverage'].map(r => (
-              <div key={r} className="bg-[#0d2626] rounded-lg p-3 border border-[#1a3d3d] flex items-center justify-between">
-                <span className="text-xs text-white">{r}</span>
-                <button className="px-2 py-1 rounded text-[10px] bg-teal-600/20 text-teal-400 hover:bg-teal-600/40">Run</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'financial' && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-white">Financial Reports</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <p className="text-[10px] text-gray-500">Total Charges</p>
-                <p className="text-xl font-bold text-white">${(kpis.totalCharges || 0).toLocaleString()}</p>
-              </div>
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <p className="text-[10px] text-gray-500">Collections</p>
-                <p className="text-xl font-bold text-green-400">${(kpis.totalRevenue || 0).toLocaleString()}</p>
-              </div>
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <p className="text-[10px] text-gray-500">Claims Paid</p>
-                <p className="text-xl font-bold text-teal-400">{kpis.claimsPaid || 0}</p>
-              </div>
-              <div className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <p className="text-[10px] text-gray-500">Collection Rate</p>
-                <p className="text-xl font-bold text-amber-400">{kpis.totalCharges ? ((kpis.totalRevenue / kpis.totalCharges * 100).toFixed(1)) : 0}%</p>
-              </div>
-            </div>
-            {['Aging Report (30/60/90/120)', 'Payer Mix Analysis', 'CPT Code Revenue', 'Denial Report', 'Patient Balance Report', 'Payment Posting Summary', 'ERA Reconciliation', 'Fee Schedule Comparison'].map(r => (
-              <div key={r} className="bg-[#0d2626] rounded-lg p-3 border border-[#1a3d3d] flex items-center justify-between">
-                <span className="text-xs text-white">{r}</span>
-                <button className="px-2 py-1 rounded text-[10px] bg-teal-600/20 text-teal-400 hover:bg-teal-600/40">Run</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'operational' && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-white">Operational Reports</h2>
-            {['Scheduling Utilization', 'No-Show/Cancellation Analysis', 'Wait Time Analysis', 'Staff Productivity', 'Telehealth vs In-Person', 'Room Utilization', 'Patient Throughput', 'Chart Completion Rates'].map(r => (
-              <div key={r} className="bg-[#0d2626] rounded-lg p-3 border border-[#1a3d3d] flex items-center justify-between">
-                <span className="text-xs text-white">{r}</span>
-                <button className="px-2 py-1 rounded text-[10px] bg-teal-600/20 text-teal-400 hover:bg-teal-600/40">Run</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'quality' && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-white">Quality Measures</h2>
-            <p className="text-[10px] text-gray-500">MIPS/HEDIS quality measure tracking for value-based care reporting</p>
-            {[
-              { measure: 'Controlling High Blood Pressure', id: 'CMS165', target: 90, current: 78 },
-              { measure: 'Diabetes: HbA1c Control', id: 'CMS122', target: 85, current: 72 },
-              { measure: 'Breast Cancer Screening', id: 'CMS125', target: 80, current: 65 },
-              { measure: 'Colorectal Cancer Screening', id: 'CMS130', target: 75, current: 58 },
-              { measure: 'Depression Screening', id: 'CMS002', target: 90, current: 85 },
-              { measure: 'BMI Screening & Follow-Up', id: 'CMS069', target: 85, current: 92 },
-            ].map(m => (
-              <div key={m.id} className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
-                <div className="flex items-center justify-between mb-2">
-                  <div><p className="text-xs font-medium text-white">{m.measure}</p><p className="text-[9px] text-gray-500">{m.id}</p></div>
-                  <span className={`text-sm font-bold ${m.current >= m.target ? 'text-green-400' : m.current >= m.target * 0.8 ? 'text-amber-400' : 'text-red-400'}`}>{m.current}%</span>
-                </div>
-                <div className="h-2 bg-[#1a3d3d] rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${m.current >= m.target ? 'bg-green-500' : m.current >= m.target * 0.8 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${m.current}%` }} />
-                </div>
-                <p className="text-[9px] text-gray-500 mt-1">Target: {m.target}%</p>
-              </div>
-            ))}
-          </div>
-        )}
+        {activeTab === 'overview' && <Overview d={data} />}
+        {activeTab === 'clinical' && <Clinical d={data} />}
+        {activeTab === 'financial' && <Financial d={data} />}
+        {activeTab === 'operational' && <Operational d={data} />}
+        {activeTab === 'quality' && <Quality d={data} />}
       </div>
     </div>
   )
+}
+
+function KG({ items }: { items: KPI[] }) {
+  return <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{items.map((k, i) => (
+    <div key={i} className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-lg p-3">
+      <k.icon className={`w-4 h-4 ${k.color} mb-2`} /><div className={`text-xl font-bold ${k.color}`}>{k.value}</div><div className="text-[11px] text-gray-500 mt-0.5">{k.label}</div>
+    </div>
+  ))}</div>
+}
+
+function Overview({ d }: { d: any }) {
+  return <div className="space-y-6">
+    <KG items={[
+      { label: 'Total Patients', value: `${d.totalPatients || 0}`, icon: Users, color: 'text-blue-400' },
+      { label: 'New Patients', value: `${d.newPatients || 0}`, icon: UserPlus, color: 'text-emerald-400' },
+      { label: 'Appointments', value: `${d.totalApts || 0}`, icon: Calendar, color: 'text-cyan-400' },
+      { label: 'Collection Rate', value: `${d.collectionRate || 0}%`, icon: TrendingUp, color: d.collectionRate >= 90 ? 'text-green-400' : 'text-amber-400' },
+      { label: 'Revenue', value: fmtMoney(d.totalCollected || 0), icon: DollarSign, color: 'text-green-400' },
+      { label: 'Outstanding', value: fmtMoney(d.outstanding || 0), icon: Clock, color: 'text-amber-400' },
+      { label: 'Denial Rate', value: `${d.denialRate || 0}%`, icon: XCircle, color: d.denialRate > 10 ? 'text-red-400' : 'text-green-400' },
+      { label: 'Unsigned Notes', value: `${d.unsignedNotes || 0}`, icon: FileText, color: d.unsignedNotes > 5 ? 'text-red-400' : 'text-emerald-400' },
+    ]} />
+    <Sec title="Quick Insights"><div className="space-y-2">
+      {d.unsignedNotes > 0 && <Ins icon={FileText} c="amber" t={`${d.unsignedNotes} clinical notes need signing`} />}
+      {d.pendingLabs > 0 && <Ins icon={FlaskConical} c="cyan" t={`${d.pendingLabs} lab orders pending results`} />}
+      {d.pendingRefs > 0 && <Ins icon={Building2} c="blue" t={`${d.pendingRefs} referrals awaiting response`} />}
+      {d.denialRate > 10 && <Ins icon={XCircle} c="red" t={`Denial rate ${d.denialRate}% — above 10% threshold`} />}
+      {d.noShowRate > 15 && <Ins icon={AlertCircle} c="amber" t={`No-show rate ${d.noShowRate}% — consider reminders`} />}
+      {!d.unsignedNotes && !d.pendingLabs && !d.pendingRefs && d.denialRate <= 10 && <Ins icon={CheckCircle} c="green" t="All metrics within normal ranges" />}
+    </div></Sec>
+  </div>
+}
+
+function Clinical({ d }: { d: any }) {
+  return <KG items={[
+    { label: 'Clinical Notes', value: `${d.notes || 0}`, icon: FileText, color: 'text-blue-400' },
+    { label: 'Signed Notes', value: `${d.signedNotes || 0}`, icon: CheckCircle, color: 'text-green-400' },
+    { label: 'Prescriptions', value: `${d.prescriptions || 0}`, icon: Pill, color: 'text-purple-400' },
+    { label: 'Controlled Rx', value: `${d.controlledRx || 0}`, icon: Pill, color: 'text-amber-400' },
+    { label: 'Lab Orders', value: `${d.labOrders || 0}`, icon: FlaskConical, color: 'text-cyan-400' },
+    { label: 'Pending Labs', value: `${d.pendingLabs || 0}`, icon: Clock, color: d.pendingLabs > 0 ? 'text-amber-400' : 'text-gray-500' },
+    { label: 'Referrals', value: `${d.referrals || 0}`, icon: Building2, color: 'text-teal-400' },
+    { label: 'Pending Referrals', value: `${d.pendingRefs || 0}`, icon: Clock, color: d.pendingRefs > 0 ? 'text-amber-400' : 'text-gray-500' },
+  ]} />
+}
+
+function Financial({ d }: { d: any }) {
+  return <KG items={[
+    { label: 'Total Charges', value: fmtMoney(d.totalCharges || 0), icon: DollarSign, color: 'text-blue-400' },
+    { label: 'Collected', value: fmtMoney(d.totalCollected || 0), icon: CheckCircle, color: 'text-green-400' },
+    { label: 'Outstanding', value: fmtMoney(d.outstanding || 0), icon: Clock, color: 'text-amber-400' },
+    { label: 'Collection Rate', value: `${d.collectionRate || 0}%`, icon: TrendingUp, color: d.collectionRate >= 90 ? 'text-green-400' : 'text-amber-400' },
+    { label: 'Claims Filed', value: `${d.claimCount || 0}`, icon: FileText, color: 'text-cyan-400' },
+    { label: 'Denied', value: `${d.deniedClaims || 0}`, icon: XCircle, color: d.deniedClaims > 0 ? 'text-red-400' : 'text-green-400' },
+    { label: 'Denial Rate', value: `${d.denialRate || 0}%`, icon: Target, color: d.denialRate > 10 ? 'text-red-400' : 'text-green-400' },
+    { label: 'Avg/Claim', value: d.claimCount > 0 ? fmtMoney(Math.round((d.totalCharges || 0) / d.claimCount)) : '$0', icon: Receipt, color: 'text-purple-400' },
+  ]} />
+}
+
+function Operational({ d }: { d: any }) {
+  return <KG items={[
+    { label: 'Appointments', value: `${d.totalApts || 0}`, icon: Calendar, color: 'text-blue-400' },
+    { label: 'Completed', value: `${d.completedApts || 0}`, icon: CheckCircle, color: 'text-green-400' },
+    { label: 'Cancelled', value: `${d.cancelledApts || 0}`, icon: XCircle, color: 'text-red-400' },
+    { label: 'No-Show Rate', value: `${d.noShowRate || 0}%`, icon: AlertCircle, color: d.noShowRate > 15 ? 'text-red-400' : 'text-green-400' },
+    { label: 'New Patients', value: `${d.newPatients || 0}`, icon: UserPlus, color: 'text-emerald-400' },
+    { label: 'Total Patients', value: `${d.totalPatients || 0}`, icon: Users, color: 'text-cyan-400' },
+  ]} />
+}
+
+function Quality({ d }: { d: any }) {
+  return <div className="space-y-6">
+    <KG items={[
+      { label: 'Note Completion', value: d.notes > 0 ? `${Math.round((d.signedNotes / d.notes) * 100)}%` : '—', icon: FileText, color: 'text-emerald-400' },
+      { label: 'Unsigned Notes', value: `${d.unsignedNotes || 0}`, icon: AlertCircle, color: d.unsignedNotes > 0 ? 'text-red-400' : 'text-green-400' },
+      { label: 'Clean Claims', value: d.claimCount > 0 ? `${100 - (d.denialRate || 0)}%` : '—', icon: CheckCircle, color: d.denialRate < 5 ? 'text-green-400' : 'text-amber-400' },
+      { label: 'Lab Follow-up', value: d.labOrders > 0 ? `${Math.round(((d.labOrders - d.pendingLabs) / d.labOrders) * 100)}%` : '—', icon: FlaskConical, color: 'text-cyan-400' },
+    ]} />
+    <Sec title="Quality Indicators"><div className="space-y-2">
+      <QBar label="Note Sign Rate" value={d.notes > 0 ? Math.round((d.signedNotes / d.notes) * 100) : 100} target={95} />
+      <QBar label="Clean Claims" value={100 - (d.denialRate || 0)} target={95} />
+      <QBar label="Collection Rate" value={d.collectionRate || 0} target={90} />
+      <QBar label="Lab Completion" value={d.labOrders > 0 ? Math.round(((d.labOrders - d.pendingLabs) / d.labOrders) * 100) : 100} target={85} />
+    </div></Sec>
+  </div>
+}
+
+function Sec({ title, children }: { title: string; children: React.ReactNode }) { return <div><h3 className="text-sm font-semibold text-gray-300 mb-3">{title}</h3>{children}</div> }
+function Ins({ icon: I, c, t }: { icon: typeof FileText; c: string; t: string }) {
+  const cs: Record<string, string> = { amber: 'border-amber-500/30 text-amber-400', red: 'border-red-500/30 text-red-400', blue: 'border-blue-500/30 text-blue-400', cyan: 'border-cyan-500/30 text-cyan-400', green: 'border-green-500/30 text-green-400' }
+  return <div className={`flex items-center gap-2 p-2.5 bg-[#0a1f1f] border rounded-lg text-xs ${cs[c] || cs.amber}`}><I className="w-4 h-4 shrink-0" />{t}</div>
+}
+function QBar({ label, value, target }: { label: string; value: number; target: number }) {
+  const met = value >= target
+  return <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-lg p-3">
+    <div className="flex items-center justify-between mb-1.5"><span className="text-xs text-gray-300">{label}</span><div className="flex items-center gap-2"><span className={`text-xs font-bold ${met ? 'text-green-400' : 'text-amber-400'}`}>{value}%</span><span className="text-[10px] text-gray-500">Target: {target}%</span></div></div>
+    <div className="h-2 bg-[#061818] rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${met ? 'bg-emerald-500' : value >= target * 0.8 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${Math.min(value, 100)}%` }} /></div>
+  </div>
 }

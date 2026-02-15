@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { EMRDirectClient } from '@/lib/emrdirect';
@@ -28,6 +29,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
  * - Pharmacy data from appointment or prescription
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();
     const { appointmentId, prescriptionId, recipientAddress } = body as {

@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -14,6 +15,7 @@ const supabase = createClient(
 
 // POST — Register a push subscription
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { subscription, user_id, user_role, user_name } = await request.json();
 
@@ -58,6 +60,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE — Unregister a push subscription
 export async function DELETE(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { endpoint } = await request.json();
 

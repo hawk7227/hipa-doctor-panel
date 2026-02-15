@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId } from '../_shared'
+import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
@@ -36,21 +37,21 @@ export async function GET(req: NextRequest) {
     // Referrals
     let referrals: any[] = []
     try {
-      const { data } = await db.from('patient_referrals').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('referrals').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
       referrals = data || []
     } catch { /* table may not exist */ }
 
     // Amendments
     let amendments: any[] = []
     try {
-      const { data } = await db.from('chart_amendments').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('chart_addendums').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
       amendments = data || []
     } catch { /* table may not exist */ }
 
     // Tasks
     let tasks: any[] = []
     try {
-      const { data } = await db.from('patient_tasks').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('staff_tasks').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
       tasks = data || []
     } catch { /* table may not exist */ }
 
@@ -68,6 +69,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const contentType = req.headers.get('content-type') || ''
 
@@ -146,6 +148,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const document_id = req.nextUrl.searchParams.get('document_id')
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!document_id) return NextResponse.json({ error: 'document_id required' }, { status: 400 })
@@ -169,6 +172,7 @@ export async function DELETE(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { document_id, tags, description, document_type } = body

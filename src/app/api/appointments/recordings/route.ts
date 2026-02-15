@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from "@/lib/supabase";
 import { dailyService } from "@/lib/daily";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
   );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseAdmin = createClient(
@@ -8,6 +9,7 @@ const supabaseAdmin = createClient(
 
 // GET: Fetch notifications
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(req.url)
     const staffId = searchParams.get('staffId')
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
 
 // POST: Mark read, dismiss, create
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { action, staffId } = body

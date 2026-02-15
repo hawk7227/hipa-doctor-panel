@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 
 // Force Node.js runtime for better performance
 export const runtime = 'nodejs'

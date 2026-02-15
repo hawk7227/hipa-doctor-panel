@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -8,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 // ═══════════════════════════════════════════════════════════════════
 
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
 
     const syncId = req.nextUrl.searchParams.get('sync_id')

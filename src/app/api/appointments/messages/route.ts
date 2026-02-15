@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { supabase } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     // Authentication
     const cookieStore = await cookies()
@@ -132,6 +134,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     // Authentication
     const cookieStore = await cookies()

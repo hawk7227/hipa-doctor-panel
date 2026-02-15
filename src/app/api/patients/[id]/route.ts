@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 
 // ═══════════════════════════════════════════════════════════════

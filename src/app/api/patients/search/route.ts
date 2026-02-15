@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 import { drchronoFetch } from '@/lib/drchrono'
 
@@ -185,6 +186,7 @@ function normalizeResult(p: any, source: string) {
 
 // ─── HANDLER ──────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   const q = req.nextUrl.searchParams.get('q')?.trim()
   if (!q || q.length < 2) {
     return NextResponse.json({ results: [], query: q, error: 'Query must be at least 2 characters' })

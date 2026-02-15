@@ -1,253 +1,163 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { ShieldCheck, Plus, Search, Filter, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Phone, FileText, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { getCurrentUser } from '@/lib/auth'
+import { ShieldCheck, Plus, Search, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Phone, FileText, ChevronRight, X, Calendar, Building2, Send } from 'lucide-react'
 
 interface PriorAuth {
-  id: string; patient_id: string; patient_name?: string; auth_type: string; description: string;
-  insurance_name: string; insurance_phone: string; auth_number: string; urgency: string;
-  status: string; diagnosis_codes: string; requested_service: string; approved_units: number;
-  used_units: number; submission_date: string; expiration_date: string;
-  clinical_justification: string; notes: string; created_at: string;
+  id: string; patient_id: string; auth_type: string; service_description: string
+  cpt_codes: string[] | null; icd10_codes: string[] | null
+  payer_name: string | null; auth_number: string | null; status: string
+  submitted_at: string | null; approved_at: string | null; denied_at: string | null
+  effective_date: string | null; expiration_date: string | null
+  approved_units: number | null; used_units: number; denial_reason: string | null
+  appeal_deadline: string | null; notes: string | null; created_at: string
+  patients?: { first_name: string; last_name: string } | null
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-600/20 text-gray-400 border-gray-500/30',
-  submitted: 'bg-blue-600/20 text-blue-400 border-blue-500/30',
-  in_review: 'bg-cyan-600/20 text-cyan-400 border-cyan-500/30',
-  approved: 'bg-green-600/20 text-green-400 border-green-500/30',
-  denied: 'bg-red-600/20 text-red-400 border-red-500/30',
-  appealed: 'bg-amber-600/20 text-amber-400 border-amber-500/30',
-  expired: 'bg-gray-600/20 text-gray-400 border-gray-500/30',
-}
-const AUTH_TYPES = ['medication', 'procedure', 'imaging', 'referral', 'dme', 'inpatient', 'outpatient'] as const
-const STATUSES = ['draft', 'submitted', 'in_review', 'approved', 'denied', 'appealed', 'expired'] as const
+const STATUS_COLORS: Record<string, string> = { pending: 'bg-amber-600/20 text-amber-400 border-amber-500/30', submitted: 'bg-blue-600/20 text-blue-400 border-blue-500/30', approved: 'bg-green-600/20 text-green-400 border-green-500/30', denied: 'bg-red-600/20 text-red-400 border-red-500/30', expired: 'bg-gray-600/20 text-gray-400 border-gray-500/30' }
+const INP = "w-full px-2.5 py-1.5 bg-[#061818] border border-[#1a3d3d]/50 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500/50 placeholder:text-gray-600"
+const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString() : '—'
 
 export default function PriorAuthPage() {
-  const [auths, setAuths] = useState<PriorAuth[]>([])
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [auths, setAuths] = useState<PriorAuth[]>([])
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({
-    patient_id: '', auth_type: 'medication', description: '', insurance_name: '',
-    insurance_phone: '', urgency: 'routine', diagnosis_codes: '', requested_service: '',
-    clinical_justification: '', notes: ''
-  })
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [showNew, setShowNew] = useState(false)
 
-  const fetchAuths = useCallback(async () => {
+  useEffect(() => {
+    const init = async () => {
+      try { const au = await getCurrentUser(); if (!au?.doctor?.id) { router.push('/login'); return }; setDoctorId(au.doctor.id); await fetchAuths(au.doctor.id) } catch { router.push('/login') }
+    }; init()
+  }, [router]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchAuths = useCallback(async (docId: string) => {
     setLoading(true); setError(null)
     try {
-      // Fetch all prior auths (in production, this would be a dedicated endpoint)
-      const res = await fetch('/api/panels/prior-auth?patient_id=all')
-      const data = await res.json()
-      setAuths(data.data || [])
-    } catch (err: any) { setError(err.message) }
-    finally { setLoading(false) }
+      const { data, error: e } = await supabase.from('prior_authorizations').select('*, patients(first_name, last_name)').eq('doctor_id', docId).order('created_at', { ascending: false }).limit(200)
+      if (e) throw e
+      setAuths((data || []).map((a: any) => ({ ...a, patients: Array.isArray(a.patients) ? a.patients[0] : a.patients })) as PriorAuth[])
+    } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchAuths() }, [fetchAuths])
+  const updateStatus = async (id: string, status: string) => {
+    if (!doctorId) return
+    try {
+      const u: any = { status }
+      if (status === 'submitted') u.submitted_at = new Date().toISOString()
+      if (status === 'approved') u.approved_at = new Date().toISOString()
+      if (status === 'denied') u.denied_at = new Date().toISOString()
+      const { error: e } = await supabase.from('prior_authorizations').update(u).eq('id', id)
+      if (e) throw e
+      setSuccess(`Auth ${status}`); setTimeout(() => setSuccess(null), 3000)
+      await fetchAuths(doctorId)
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const createAuth = async (data: any) => {
+    if (!doctorId) return
+    try {
+      const { error: e } = await supabase.from('prior_authorizations').insert({ ...data, doctor_id: doctorId })
+      if (e) throw e
+      setSuccess('Prior auth created'); setShowNew(false); setTimeout(() => setSuccess(null), 3000)
+      await fetchAuths(doctorId)
+    } catch (e: any) { setError(e.message) }
+  }
 
   const filtered = useMemo(() => {
-    let items = auths
-    if (statusFilter !== 'all') items = items.filter(a => a.status === statusFilter)
-    if (typeFilter !== 'all') items = items.filter(a => a.auth_type === typeFilter)
-    if (search) {
-      const q = search.toLowerCase()
-      items = items.filter(a => a.description?.toLowerCase().includes(q) || a.insurance_name?.toLowerCase().includes(q) || a.auth_number?.toLowerCase().includes(q))
-    }
-    return items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [auths, statusFilter, typeFilter, search])
+    let list = auths
+    if (statusFilter !== 'all') list = list.filter(a => a.status === statusFilter)
+    if (search) { const q = search.toLowerCase(); list = list.filter(a => a.service_description.toLowerCase().includes(q) || a.payer_name?.toLowerCase().includes(q) || a.patients?.first_name?.toLowerCase().includes(q) || a.patients?.last_name?.toLowerCase().includes(q)) }
+    return list
+  }, [auths, statusFilter, search])
 
-  const counts = useMemo(() => ({
-    pending: auths.filter(a => ['draft', 'submitted', 'in_review'].includes(a.status)).length,
-    approved: auths.filter(a => a.status === 'approved').length,
-    denied: auths.filter(a => a.status === 'denied').length,
-    appealed: auths.filter(a => a.status === 'appealed').length,
-  }), [auths])
+  const pending = auths.filter(a => a.status === 'pending' || a.status === 'submitted').length
+  const expiringSoon = auths.filter(a => a.status === 'approved' && a.expiration_date && new Date(a.expiration_date) < new Date(Date.now() + 30 * 86400000)).length
 
-  const handleSubmit = async () => {
-    if (!form.description || !form.patient_id) return
-    try {
-      await fetch('/api/panels/prior-auth', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, status: 'submitted', submission_date: new Date().toISOString() })
-      })
-      setShowAdd(false)
-      setForm({ patient_id: '', auth_type: 'medication', description: '', insurance_name: '', insurance_phone: '', urgency: 'routine', diagnosis_codes: '', requested_service: '', clinical_justification: '', notes: '' })
-      fetchAuths()
-    } catch (err: any) { setError(err.message) }
-  }
-
-  const updateStatus = async (id: string, status: string) => {
-    try {
-      await fetch('/api/panels/prior-auth', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status })
-      })
-      fetchAuths()
-    } catch (err: any) { setError(err.message) }
-  }
+  if (loading) return <div className="min-h-screen bg-[#030f0f] flex items-center justify-center"><RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-[#030f0f] text-white">
-      {/* Header */}
-      <div className="border-b border-[#1a3d3d] px-6 py-4">
+      <div className="sticky top-0 z-20 bg-[#030f0f]/95 backdrop-blur-sm border-b border-[#1a3d3d]/50 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="w-6 h-6 text-amber-400" />
-            <div>
-              <h1 className="text-xl font-bold">Prior Authorizations</h1>
-              <p className="text-xs text-gray-500">Manage insurance pre-approvals for medications, procedures, and services</p>
+          <div className="flex items-center gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400" /><div><h1 className="text-lg font-bold">Prior Authorizations</h1><p className="text-xs text-gray-500">{pending} pending{expiringSoon > 0 ? ` • ${expiringSoon} expiring soon` : ''}</p></div></div>
+          <button onClick={() => doctorId && fetchAuths(doctorId)} className="p-2 hover:bg-[#0a1f1f] rounded-lg"><RefreshCw className="w-4 h-4 text-gray-400" /></button>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <div className="flex-1 relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search authorizations..." className={`${INP} pl-8`} /></div>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={`${INP} w-auto`}><option value="all">All Status</option>{['pending','submitted','approved','denied','expired'].map(s => <option key={s} value={s}>{s}</option>)}</select>
+          <button onClick={() => setShowNew(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs hover:bg-emerald-600/30 whitespace-nowrap"><Plus className="w-3.5 h-3.5" />New Auth</button>
+        </div>
+      </div>
+
+      {error && <div className="mx-4 mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{error}<button onClick={() => setError(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button></div>}
+      {success && <div className="mx-4 mt-3 p-3 bg-green-900/20 border border-green-500/30 rounded-lg text-xs text-green-400 flex items-center gap-2"><CheckCircle className="w-4 h-4" />{success}</div>}
+
+      <div className="p-4">
+        {filtered.length === 0 ? (
+          <div className="text-center py-16"><ShieldCheck className="w-10 h-10 text-gray-600 mx-auto mb-3" /><p className="text-gray-400 text-sm">No prior authorizations found</p></div>
+        ) : (
+          <div className="space-y-2">{filtered.map(a => (
+            <div key={a.id} className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-lg p-3 hover:border-[#1a3d3d] transition-colors">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium">{a.patients ? `${a.patients.first_name} ${a.patients.last_name}` : 'Patient'}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>{a.status}</span>
+                    {a.auth_number && <span className="text-[10px] text-gray-500 font-mono">#{a.auth_number}</span>}
+                  </div>
+                  <div className="text-[11px] text-gray-300 mt-1">{a.service_description}</div>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-500 flex-wrap">
+                    {a.payer_name && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{a.payer_name}</span>}
+                    <span>{a.auth_type}</span>
+                    {a.effective_date && <span>Eff: {fmtDate(a.effective_date)}</span>}
+                    {a.expiration_date && <span>Exp: {fmtDate(a.expiration_date)}</span>}
+                    {a.approved_units && <span>Units: {a.used_units}/{a.approved_units}</span>}
+                  </div>
+                  {a.denial_reason && <div className="text-[11px] text-red-400 mt-1">Denial: {a.denial_reason}</div>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#1a3d3d]/30">
+                {a.status === 'pending' && <button onClick={() => updateStatus(a.id, 'submitted')} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-cyan-400 hover:bg-cyan-600/10"><Send className="w-3 h-3" />Submit</button>}
+                {a.status === 'submitted' && <><button onClick={() => updateStatus(a.id, 'approved')} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-green-400 hover:bg-green-600/10"><CheckCircle className="w-3 h-3" />Approved</button><button onClick={() => updateStatus(a.id, 'denied')} className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-red-400 hover:bg-red-600/10"><XCircle className="w-3 h-3" />Denied</button></>}
+                {a.denial_reason && a.appeal_deadline && <span className="text-[10px] text-red-400 ml-auto">Appeal by: {fmtDate(a.appeal_deadline)}</span>}
+              </div>
             </div>
-          </div>
-          <button onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 text-sm font-medium">
-            <Plus className="w-4 h-4" />New Prior Auth
-          </button>
-        </div>
+          ))}</div>
+        )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 px-6 py-4">
-        {[
-          { label: 'Pending', count: counts.pending, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-          { label: 'Approved', count: counts.approved, color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' },
-          { label: 'Denied', count: counts.denied, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
-          { label: 'Appealed', count: counts.appealed, color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
-        ].map(s => (
-          <div key={s.label} className={`rounded-lg border p-4 ${s.bg}`}>
-            <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
-            <div className="text-xs text-gray-500">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-[#1a3d3d]">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by description, insurance, auth #..."
-            className="w-full pl-10 pr-4 py-2 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white text-sm" />
-        </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-          <option value="all">All Status</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-        </select>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-          <option value="all">All Types</option>
-          {AUTH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <button onClick={fetchAuths} className="p-2 text-gray-400 hover:text-white"><RefreshCw className="w-4 h-4" /></button>
-      </div>
-
-      {/* Add Form */}
-      {showAdd && (
-        <div className="mx-6 mt-4 bg-[#0a1f1f] border border-amber-500/30 rounded-lg p-5 space-y-3">
-          <h3 className="text-sm font-bold text-amber-400">New Prior Authorization Request</h3>
-          <div className="grid grid-cols-3 gap-3">
-            <input value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} placeholder="Patient ID *"
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm" />
-            <select value={form.auth_type} onChange={e => setForm({...form, auth_type: e.target.value})}
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-              {AUTH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={form.urgency} onChange={e => setForm({...form, urgency: e.target.value})}
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-              <option value="routine">Routine</option><option value="urgent">Urgent</option><option value="emergent">Emergent</option>
-            </select>
-          </div>
-          <input value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Service/medication requiring authorization *"
-            className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm" />
-          <div className="grid grid-cols-3 gap-3">
-            <input value={form.insurance_name} onChange={e => setForm({...form, insurance_name: e.target.value})} placeholder="Insurance company"
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm" />
-            <input value={form.diagnosis_codes} onChange={e => setForm({...form, diagnosis_codes: e.target.value})} placeholder="ICD-10 codes"
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm" />
-            <input value={form.requested_service} onChange={e => setForm({...form, requested_service: e.target.value})} placeholder="CPT/service code"
-              className="bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm" />
-          </div>
-          <textarea value={form.clinical_justification} onChange={e => setForm({...form, clinical_justification: e.target.value})}
-            placeholder="Clinical justification..." rows={3} className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm resize-y" />
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
-            <button onClick={handleSubmit} disabled={!form.description || !form.patient_id}
-              className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-500 disabled:opacity-50">Submit Request</button>
-          </div>
-        </div>
-      )}
-
-      {/* List */}
-      <div className="px-6 py-4 space-y-2">
-        {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">{error}</div>}
-        {loading && <div className="text-center py-8 text-gray-500">Loading...</div>}
-        {!loading && filtered.length === 0 && <div className="text-center py-8 text-gray-500">No prior authorizations found</div>}
-
-        {filtered.map(auth => (
-          <div key={auth.id} className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg overflow-hidden">
-            <div className="p-4 cursor-pointer hover:bg-[#0d2a2a] transition-colors flex items-center gap-4"
-              onClick={() => setExpandedId(expandedId === auth.id ? null : auth.id)}>
-              <div className="flex-shrink-0">
-                {expandedId === auth.id ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-white">{auth.description}</span>
-                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${STATUS_COLORS[auth.status] || ''}`}>{auth.status?.replace('_', ' ').toUpperCase()}</span>
-                  <span className="px-2 py-0.5 text-[10px] rounded bg-gray-600/20 text-gray-400 capitalize">{auth.auth_type}</span>
-                  {auth.urgency === 'emergent' && <span className="px-2 py-0.5 text-[10px] rounded bg-red-600/20 text-red-400 font-bold">EMERGENT</span>}
-                  {auth.urgency === 'urgent' && <span className="px-2 py-0.5 text-[10px] rounded bg-amber-600/20 text-amber-400 font-bold">URGENT</span>}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {auth.auth_number && <span className="font-mono mr-3">#{auth.auth_number}</span>}
-                  {auth.insurance_name && <span className="mr-3">{auth.insurance_name}</span>}
-                  {auth.submission_date && <span>Submitted: {new Date(auth.submission_date).toLocaleDateString()}</span>}
-                  {auth.expiration_date && <span className="ml-3">Expires: {new Date(auth.expiration_date).toLocaleDateString()}</span>}
-                </div>
-              </div>
-              {auth.approved_units && (
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-bold text-white">{auth.used_units || 0}/{auth.approved_units}</div>
-                  <div className="text-[10px] text-gray-500">units used</div>
-                </div>
-              )}
-            </div>
-
-            {expandedId === auth.id && (
-              <div className="border-t border-[#1a3d3d] p-4 space-y-3">
-                {auth.clinical_justification && (
-                  <div><span className="text-[10px] text-gray-500 uppercase">Clinical Justification</span><p className="text-sm text-gray-300 mt-1">{auth.clinical_justification}</p></div>
-                )}
-                {auth.diagnosis_codes && <div className="text-xs"><span className="text-gray-500">ICD-10:</span> <span className="text-white font-mono">{auth.diagnosis_codes}</span></div>}
-                {auth.requested_service && <div className="text-xs"><span className="text-gray-500">Service:</span> <span className="text-white font-mono">{auth.requested_service}</span></div>}
-                {auth.notes && <div className="text-xs"><span className="text-gray-500">Notes:</span> <span className="text-gray-300">{auth.notes}</span></div>}
-
-                <div className="flex gap-2 pt-2">
-                  {auth.status === 'submitted' && (
-                    <button onClick={() => updateStatus(auth.id, 'approved')} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-500">Approve</button>
-                  )}
-                  {auth.status === 'submitted' && (
-                    <button onClick={() => updateStatus(auth.id, 'denied')} className="px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-500">Deny</button>
-                  )}
-                  {auth.status === 'denied' && (
-                    <button onClick={() => updateStatus(auth.id, 'appealed')} className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-500"><RefreshCw className="w-3 h-3 inline mr-1" />Appeal</button>
-                  )}
-                  {auth.insurance_phone && (
-                    <a href={`tel:${auth.insurance_phone}`} className="px-3 py-1.5 text-xs bg-blue-600/20 text-blue-400 rounded border border-blue-500/30 hover:bg-blue-600/30">
-                      <Phone className="w-3 h-3 inline mr-1" />Call Insurance
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {showNew && <NewAuthModal doctorId={doctorId!} onSave={createAuth} onClose={() => setShowNew(false)} />}
     </div>
+  )
+}
+
+function NewAuthModal({ doctorId, onSave, onClose }: { doctorId: string; onSave: (d: any) => void; onClose: () => void }) {
+  const [pts, setPts] = useState<any[]>([])
+  const [f, setF] = useState({ patient_id: '', auth_type: 'procedure', service_description: '', payer_name: '', cpt_codes: '', icd10_codes: '', notes: '' })
+  useEffect(() => { supabase.from('patients').select('id,first_name,last_name').eq('doctor_id', doctorId).order('last_name').then(({ data }) => setPts(data || [])) }, [doctorId])
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}><div className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-xl p-5 w-full max-w-lg space-y-3" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center justify-between"><h3 className="text-sm font-bold">New Prior Authorization</h3><button onClick={onClose}><X className="w-4 h-4 text-gray-500 hover:text-white" /></button></div>
+      <div><label className="block text-[11px] text-gray-400 mb-1">Patient *</label><select value={f.patient_id} onChange={e => setF({...f, patient_id: e.target.value})} className={INP}><option value="">Select...</option>{pts.map(p => <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}</option>)}</select></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="block text-[11px] text-gray-400 mb-1">Type</label><select value={f.auth_type} onChange={e => setF({...f, auth_type: e.target.value})} className={INP}><option value="procedure">Procedure</option><option value="medication">Medication</option><option value="imaging">Imaging</option><option value="dme">DME</option><option value="referral">Referral</option></select></div>
+        <div><label className="block text-[11px] text-gray-400 mb-1">Payer</label><input value={f.payer_name} onChange={e => setF({...f, payer_name: e.target.value})} className={INP} placeholder="Insurance company" /></div>
+      </div>
+      <div><label className="block text-[11px] text-gray-400 mb-1">Service Description *</label><input value={f.service_description} onChange={e => setF({...f, service_description: e.target.value})} className={INP} placeholder="MRI Lumbar Spine" /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="block text-[11px] text-gray-400 mb-1">CPT Codes</label><input value={f.cpt_codes} onChange={e => setF({...f, cpt_codes: e.target.value})} className={INP} placeholder="72148, 72149" /></div>
+        <div><label className="block text-[11px] text-gray-400 mb-1">ICD-10 Codes</label><input value={f.icd10_codes} onChange={e => setF({...f, icd10_codes: e.target.value})} className={INP} placeholder="M54.5, G89.29" /></div>
+      </div>
+      <div><label className="block text-[11px] text-gray-400 mb-1">Notes</label><textarea value={f.notes} onChange={e => setF({...f, notes: e.target.value})} className={`${INP} h-16 resize-none`} /></div>
+      <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-400">Cancel</button><button onClick={() => { if (f.patient_id && f.service_description) onSave({ ...f, status: 'pending', cpt_codes: f.cpt_codes ? f.cpt_codes.split(',').map(c => c.trim()) : null, icd10_codes: f.icd10_codes ? f.icd10_codes.split(',').map(c => c.trim()) : null }) }} disabled={!f.patient_id || !f.service_description} className="px-4 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 disabled:opacity-40">Create</button></div>
+    </div></div>
   )
 }

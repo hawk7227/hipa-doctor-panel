@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId } from '../_shared'
+import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const { patient_id, allergen, reaction, severity, status, onset_date, notes } = await req.json()
     if (!patient_id || !allergen) return NextResponse.json({ error: 'patient_id and allergen required' }, { status: 400 })
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const { id, ...updates } = await req.json()
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
@@ -40,6 +43,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await db.from('patient_allergies').delete().eq('id', id)

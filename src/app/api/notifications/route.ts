@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const currentUser = await getCurrentUser()
     if (!currentUser) {
@@ -28,6 +30,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const currentUser = await getCurrentUser()
     if (!currentUser) {

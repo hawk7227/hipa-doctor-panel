@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db, authenticateDoctor } from '../_shared'
 
 export const dynamic = 'force-dynamic'
-const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function GET(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
 
@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { patient_id, appointment_id, systolic, diastolic, heart_rate, temperature, respiratory_rate, oxygen_saturation, weight, height, bmi, pain_level, notes } = body
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { id, ...updates } = body
@@ -60,6 +62,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await db.from('patient_vitals').delete().eq('id', id)

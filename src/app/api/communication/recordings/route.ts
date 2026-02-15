@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { supabase } from '@/lib/supabase'
@@ -12,6 +13,7 @@ import { AxiosError } from 'axios'
  * GET /api/communication/recordings?meetingId={meetingId} - For Zoom meeting recordings
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     // Get call SID or meeting ID from query params
     const { searchParams } = new URL(request.url)

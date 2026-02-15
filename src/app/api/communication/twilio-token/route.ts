@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { twilioService } from '@/lib/twilio'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   // CRITICAL FIX: Check Twilio config FIRST before doing expensive auth operations
   // This prevents 27-second delays when Twilio is not configured
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_TWIML_APP_SID) {

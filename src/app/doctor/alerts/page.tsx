@@ -1,223 +1,132 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Bell, Search, Filter, RefreshCw, ShieldAlert, CheckCircle, AlertTriangle, Pill, FlaskConical, Syringe, Heart, Clock, XCircle } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { getCurrentUser } from '@/lib/auth'
+import { Bell, Search, RefreshCw, ShieldAlert, CheckCircle, AlertTriangle, Pill, FlaskConical, Heart, Clock, XCircle, X, Filter, Eye } from 'lucide-react'
 
 interface ClinicalAlert {
-  id: string; patient_id: string; patient_name?: string; alert_type: string;
-  title: string; message: string; severity: string; recommendation: string;
-  is_active: boolean; acknowledged_at: string; acknowledged_by: string;
-  override_reason: string; created_at: string;
+  id: string; patient_id: string; alert_type: string; severity: string
+  title: string; description: string | null; recommendation: string | null
+  evidence_source: string | null; status: string
+  acknowledged_by: string | null; acknowledged_at: string | null
+  overridden: boolean; override_reason: string | null; created_at: string
+  patients?: { first_name: string; last_name: string } | null
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  low: 'bg-blue-600/20 text-blue-400 border-blue-500/30',
-  medium: 'bg-amber-600/20 text-amber-400 border-amber-500/30',
-  high: 'bg-orange-600/20 text-orange-400 border-orange-500/30',
-  critical: 'bg-red-600/20 text-red-400 border-red-500/30',
-}
-const TYPE_ICONS: Record<string, React.ElementType> = {
-  drug_interaction: Pill, allergy_alert: ShieldAlert, duplicate_therapy: Pill,
-  lab_critical: FlaskConical, overdue_screening: Clock, immunization_due: Syringe,
-  care_gap: Heart, abnormal_result: AlertTriangle,
-}
-const ALERT_TYPES = ['drug_interaction', 'allergy_alert', 'duplicate_therapy', 'lab_critical', 'overdue_screening', 'immunization_due', 'care_gap', 'abnormal_result'] as const
-const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
+const SEV_COLORS: Record<string, string> = { info: 'bg-blue-600/20 text-blue-400 border-blue-500/30', low: 'bg-cyan-600/20 text-cyan-400 border-cyan-500/30', medium: 'bg-amber-600/20 text-amber-400 border-amber-500/30', high: 'bg-orange-600/20 text-orange-400 border-orange-500/30', critical: 'bg-red-600/20 text-red-400 border-red-500/30' }
+const TYPE_ICONS: Record<string, typeof Pill> = { drug_interaction: Pill, allergy_alert: ShieldAlert, duplicate_therapy: Pill, lab_critical: FlaskConical, vital_abnormal: Heart, preventive_care: Clock, default: AlertTriangle }
+const INP = "w-full px-2.5 py-1.5 bg-[#061818] border border-[#1a3d3d]/50 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500/50 placeholder:text-gray-600"
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<ClinicalAlert[]>([])
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [alerts, setAlerts] = useState<ClinicalAlert[]>([])
   const [search, setSearch] = useState('')
-  const [severityFilter, setSeverityFilter] = useState<string>('all')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [showDismissed, setShowDismissed] = useState(false)
+  const [sevFilter, setSevFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const fetchAlerts = useCallback(async () => {
+  useEffect(() => {
+    const init = async () => {
+      try { const au = await getCurrentUser(); if (!au?.doctor?.id) { router.push('/login'); return }; setDoctorId(au.doctor.id); await fetchAlerts(au.doctor.id) } catch { router.push('/login') }
+    }; init()
+  }, [router]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchAlerts = useCallback(async (docId: string) => {
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/panels/alerts?patient_id=all')
-      const data = await res.json()
-      setAlerts(data.data || [])
-    } catch (err: any) { setError(err.message) }
-    finally { setLoading(false) }
+      const { data, error: e } = await supabase.from('cdss_alerts').select('*, patients(first_name, last_name)').eq('doctor_id', docId).order('created_at', { ascending: false }).limit(200)
+      if (e) throw e
+      setAlerts((data || []).map((a: any) => ({ ...a, patients: Array.isArray(a.patients) ? a.patients[0] : a.patients })) as ClinicalAlert[])
+    } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchAlerts() }, [fetchAlerts])
+  const acknowledgeAlert = async (id: string) => {
+    if (!doctorId) return
+    try {
+      const { error: e } = await supabase.from('cdss_alerts').update({ status: 'acknowledged', acknowledged_at: new Date().toISOString(), acknowledged_by: 'doctor' }).eq('id', id)
+      if (e) throw e
+      setSuccess('Alert acknowledged'); setTimeout(() => setSuccess(null), 3000)
+      await fetchAlerts(doctorId)
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const overrideAlert = async (id: string, reason: string) => {
+    if (!doctorId) return
+    try {
+      const { error: e } = await supabase.from('cdss_alerts').update({ status: 'overridden', overridden: true, override_reason: reason, acknowledged_at: new Date().toISOString() }).eq('id', id)
+      if (e) throw e
+      setSuccess('Alert overridden'); setTimeout(() => setSuccess(null), 3000)
+      await fetchAlerts(doctorId)
+    } catch (e: any) { setError(e.message) }
+  }
 
   const filtered = useMemo(() => {
-    let items = alerts
-    if (!showDismissed) items = items.filter(a => a.is_active && !a.acknowledged_at)
-    if (severityFilter !== 'all') items = items.filter(a => a.severity === severityFilter)
-    if (typeFilter !== 'all') items = items.filter(a => a.alert_type === typeFilter)
-    if (search) {
-      const q = search.toLowerCase()
-      items = items.filter(a => a.title?.toLowerCase().includes(q) || a.message?.toLowerCase().includes(q) || a.patient_name?.toLowerCase().includes(q))
-    }
-    // Sort: critical first, then high, medium, low
-    const order = { critical: 0, high: 1, medium: 2, low: 3 }
-    return items.sort((a, b) => (order[a.severity as keyof typeof order] ?? 4) - (order[b.severity as keyof typeof order] ?? 4))
-  }, [alerts, severityFilter, typeFilter, search, showDismissed])
+    let list = alerts
+    if (statusFilter !== 'all') list = list.filter(a => statusFilter === 'active' ? a.status === 'active' : a.status !== 'active')
+    if (sevFilter !== 'all') list = list.filter(a => a.severity === sevFilter)
+    if (search) { const q = search.toLowerCase(); list = list.filter(a => a.title.toLowerCase().includes(q) || a.patients?.first_name?.toLowerCase().includes(q) || a.patients?.last_name?.toLowerCase().includes(q)) }
+    return list
+  }, [alerts, statusFilter, sevFilter, search])
 
-  const counts = useMemo(() => ({
-    critical: alerts.filter(a => a.is_active && a.severity === 'critical' && !a.acknowledged_at).length,
-    high: alerts.filter(a => a.is_active && a.severity === 'high' && !a.acknowledged_at).length,
-    active: alerts.filter(a => a.is_active && !a.acknowledged_at).length,
-    total: alerts.length,
-  }), [alerts])
+  const activeCount = alerts.filter(a => a.status === 'active').length
+  const criticalCount = alerts.filter(a => a.status === 'active' && (a.severity === 'critical' || a.severity === 'high')).length
 
-  const handleAcknowledge = async (id: string) => {
-    try {
-      await fetch('/api/panels/alerts', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, acknowledged_at: new Date().toISOString(), acknowledged_by: 'Provider' })
-      })
-      fetchAlerts()
-    } catch (err: any) { setError(err.message) }
-  }
-
-  const handleDismiss = async (id: string) => {
-    try {
-      await fetch('/api/panels/alerts', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, is_active: false, acknowledged_at: new Date().toISOString(), acknowledged_by: 'Provider' })
-      })
-      fetchAlerts()
-    } catch (err: any) { setError(err.message) }
-  }
+  if (loading) return <div className="min-h-screen bg-[#030f0f] flex items-center justify-center"><RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-[#030f0f] text-white">
-      {/* Header */}
-      <div className="border-b border-[#1a3d3d] px-6 py-4">
+      <div className="sticky top-0 z-20 bg-[#030f0f]/95 backdrop-blur-sm border-b border-[#1a3d3d]/50 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Bell className="w-6 h-6 text-red-400" />
-            <div>
-              <h1 className="text-xl font-bold">Clinical Alerts</h1>
-              <p className="text-xs text-gray-500">Drug interactions, critical labs, care gaps, and clinical decision support</p>
-            </div>
-          </div>
-          <button onClick={fetchAlerts} className="flex items-center gap-2 px-4 py-2 bg-[#0a1f1f] border border-[#1a3d3d] text-white rounded-lg hover:bg-[#0d2a2a] text-sm">
-            <RefreshCw className="w-4 h-4" />Refresh
-          </button>
+          <div className="flex items-center gap-3"><Bell className="w-5 h-5 text-emerald-400" /><div><h1 className="text-lg font-bold">Clinical Alerts (CDSS)</h1><p className="text-xs text-gray-500">{activeCount} active{criticalCount > 0 ? ` • ${criticalCount} critical/high` : ''}</p></div></div>
+          <button onClick={() => doctorId && fetchAlerts(doctorId)} className="p-2 hover:bg-[#0a1f1f] rounded-lg"><RefreshCw className="w-4 h-4 text-gray-400" /></button>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <div className="flex-1 relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search alerts..." className={`${INP} pl-8`} /></div>
+          <select value={sevFilter} onChange={e => setSevFilter(e.target.value)} className={`${INP} w-auto`}><option value="all">All Severity</option>{['critical','high','medium','low','info'].map(s => <option key={s} value={s}>{s}</option>)}</select>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={`${INP} w-auto`}><option value="active">Active</option><option value="resolved">Resolved</option><option value="all">All</option></select>
         </div>
       </div>
 
-      {/* Critical Banner */}
-      {counts.critical > 0 && (
-        <div className="mx-6 mt-4 bg-red-500/10 border border-red-500/40 rounded-lg p-4 flex items-center gap-3">
-          <ShieldAlert className="w-6 h-6 text-red-400 animate-pulse flex-shrink-0" />
-          <div>
-            <div className="text-sm font-bold text-red-400">{counts.critical} CRITICAL ALERT{counts.critical > 1 ? 'S' : ''} REQUIRE IMMEDIATE ATTENTION</div>
-            <div className="text-xs text-red-400/70 mt-0.5">These alerts indicate potentially dangerous conditions that need provider review</div>
-          </div>
-        </div>
-      )}
+      {error && <div className="mx-4 mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{error}<button onClick={() => setError(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button></div>}
+      {success && <div className="mx-4 mt-3 p-3 bg-green-900/20 border border-green-500/30 rounded-lg text-xs text-green-400 flex items-center gap-2"><CheckCircle className="w-4 h-4" />{success}</div>}
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 px-6 py-4">
-        {[
-          { label: 'Critical', count: counts.critical, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
-          { label: 'High Priority', count: counts.high, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' },
-          { label: 'Active Alerts', count: counts.active, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-          { label: 'Total', count: counts.total, color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' },
-        ].map(s => (
-          <div key={s.label} className={`rounded-lg border p-4 ${s.bg}`}>
-            <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
-            <div className="text-xs text-gray-500">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-[#1a3d3d]">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search alerts..."
-            className="w-full pl-10 pr-4 py-2 bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white text-sm" />
-        </div>
-        <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}
-          className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-          <option value="all">All Severity</option>
-          {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-white text-sm">
-          <option value="all">All Types</option>
-          {ALERT_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-        </select>
-        <label className="flex items-center gap-2 text-xs text-gray-400">
-          <input type="checkbox" checked={showDismissed} onChange={e => setShowDismissed(e.target.checked)} />
-          Show dismissed
-        </label>
-      </div>
-
-      {/* Alert List */}
-      <div className="px-6 py-4 space-y-2">
-        {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">{error}</div>}
-        {loading && <div className="text-center py-8 text-gray-500">Loading alerts...</div>}
-        {!loading && filtered.length === 0 && (
-          <div className="flex flex-col items-center py-12">
-            <CheckCircle className="w-12 h-12 text-green-400 mb-3" />
-            <div className="text-lg font-semibold text-green-400">All Clear</div>
-            <div className="text-xs text-gray-500 mt-1">{showDismissed ? 'No alerts match your filters' : 'No active clinical alerts requiring attention'}</div>
-          </div>
-        )}
-
-        {filtered.map(alert => {
-          const Icon = TYPE_ICONS[alert.alert_type] || AlertTriangle
-          const isDismissed = !alert.is_active || !!alert.acknowledged_at
-          return (
-            <div key={alert.id} className={`border rounded-lg overflow-hidden transition-all ${
-              alert.severity === 'critical' ? 'bg-red-500/5 border-red-500/40' :
-              alert.severity === 'high' ? 'bg-orange-500/5 border-orange-500/30' :
-              isDismissed ? 'bg-[#0a1f1f] border-[#1a3d3d] opacity-60' : 'bg-[#0a1f1f] border-[#1a3d3d]'
-            }`}>
-              <div className="p-4 flex items-start gap-4">
-                <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                  alert.severity === 'critical' ? 'text-red-400 animate-pulse' :
-                  alert.severity === 'high' ? 'text-orange-400' :
-                  alert.severity === 'medium' ? 'text-amber-400' : 'text-blue-400'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-white">{alert.title || alert.message}</span>
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${SEVERITY_COLORS[alert.severity] || ''}`}>{alert.severity?.toUpperCase()}</span>
-                    <span className="text-[10px] text-gray-600 capitalize">{alert.alert_type?.replace('_', ' ')}</span>
-                    {isDismissed && <span className="px-2 py-0.5 text-[10px] rounded bg-gray-600/20 text-gray-500">ACKNOWLEDGED</span>}
-                  </div>
-                  {alert.message && alert.title && <p className="text-sm text-gray-400 mt-1">{alert.message}</p>}
-                  {alert.recommendation && (
-                    <div className="flex items-start gap-1.5 mt-2 text-sm text-teal-400">
-                      <span className="font-bold">→</span>
-                      <span>{alert.recommendation}</span>
+      <div className="p-4">
+        {filtered.length === 0 ? (
+          <div className="text-center py-16"><Bell className="w-10 h-10 text-gray-600 mx-auto mb-3" /><p className="text-gray-400 text-sm">{statusFilter === 'active' ? 'No active alerts' : 'No alerts found'}</p><p className="text-gray-600 text-xs mt-1">CDSS alerts appear when clinical decision support detects issues</p></div>
+        ) : (
+          <div className="space-y-2">{filtered.map(a => {
+            const Icon = TYPE_ICONS[a.alert_type] || TYPE_ICONS.default
+            return (
+              <div key={a.id} className={`bg-[#0a1f1f] border rounded-lg p-3 transition-colors ${a.status === 'active' ? 'border-[#1a3d3d]/50 hover:border-[#1a3d3d]' : 'border-[#1a3d3d]/20 opacity-60'}`}>
+                <div className="flex items-start gap-3">
+                  <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${a.severity === 'critical' ? 'text-red-400' : a.severity === 'high' ? 'text-orange-400' : a.severity === 'medium' ? 'text-amber-400' : 'text-blue-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{a.title}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${SEV_COLORS[a.severity] || SEV_COLORS.info}`}>{a.severity}</span>
+                      {a.status !== 'active' && <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-600/20 text-gray-400 border border-gray-500/30">{a.status}</span>}
                     </div>
-                  )}
-                  {alert.patient_name && <div className="text-xs text-gray-600 mt-1">Patient: {alert.patient_name}</div>}
-                  {alert.acknowledged_at && (
-                    <div className="text-[10px] text-gray-600 mt-1">
-                      Acknowledged {new Date(alert.acknowledged_at).toLocaleString()} by {alert.acknowledged_by}
-                      {alert.override_reason && <span className="ml-2 text-amber-400">Override: {alert.override_reason}</span>}
+                    <div className="text-[11px] text-gray-400 mt-0.5">{a.patients ? `${a.patients.first_name} ${a.patients.last_name}` : 'Patient'} • {a.alert_type.replace(/_/g, ' ')}</div>
+                    {a.description && <div className="text-[11px] text-gray-300 mt-1">{a.description}</div>}
+                    {a.recommendation && <div className="text-[11px] text-emerald-400 mt-1">Recommendation: {a.recommendation}</div>}
+                    {a.overridden && a.override_reason && <div className="text-[10px] text-amber-400 mt-1">Override reason: {a.override_reason}</div>}
+                  </div>
+                  {a.status === 'active' && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => acknowledgeAlert(a.id)} className="px-2 py-1 text-[11px] text-emerald-400 hover:bg-emerald-600/10 rounded flex items-center gap-1"><CheckCircle className="w-3 h-3" />Ack</button>
+                      <button onClick={() => { const r = prompt('Override reason:'); if (r) overrideAlert(a.id, r) }} className="px-2 py-1 text-[11px] text-amber-400 hover:bg-amber-600/10 rounded flex items-center gap-1"><XCircle className="w-3 h-3" />Override</button>
                     </div>
                   )}
                 </div>
-                {!isDismissed && (
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => handleAcknowledge(alert.id)}
-                      className="px-3 py-1.5 text-xs bg-green-600/20 text-green-400 rounded border border-green-500/30 hover:bg-green-600/30">
-                      <CheckCircle className="w-3 h-3 inline mr-1" />Acknowledge
-                    </button>
-                    <button onClick={() => handleDismiss(alert.id)}
-                      className="px-3 py-1.5 text-xs bg-gray-600/20 text-gray-400 rounded border border-gray-500/30 hover:bg-gray-600/30">
-                      <XCircle className="w-3 h-3 inline mr-1" />Dismiss
-                    </button>
-                  </div>
-                )}
               </div>
-            </div>
-          )
-        })}
+            )
+          })}</div>
+        )}
       </div>
     </div>
   )

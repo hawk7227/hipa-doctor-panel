@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
@@ -24,6 +25,7 @@ function createServiceRoleClient() {
 
 // GET - Fetch prescriptions for a patient or appointment
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(request.url)
     const patientId = searchParams.get('patientId')
@@ -99,6 +101,7 @@ export async function GET(request: NextRequest) {
 
 // POST - Create a new prescription
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     let body: any
     try {
@@ -583,6 +586,7 @@ export async function POST(request: NextRequest) {
 
 // PATCH - Update prescription (supports both full update and status-only update)
 export async function PATCH(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json()
     const { 
@@ -739,6 +743,7 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE - Delete a prescription
 export async function DELETE(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(request.url)
     const prescriptionId = searchParams.get('prescriptionId')

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from '@/lib/supabase'
 import { refundPayment } from '@/lib/payment'
 import { sendAppointmentStatusEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { appointmentId, reason } = await request.json()
 

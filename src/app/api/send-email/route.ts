@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from '@/lib/supabase'
 import { smtpEmailService } from '@/lib/smtp'
 
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
    
  const { to, subject, html, text } = await req.json()

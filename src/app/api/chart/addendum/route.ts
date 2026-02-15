@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 import { generateClinicalNotePDF } from '@/lib/generateClinicalNotePDF'
 import type { ClinicalNotePDFInput, SOAPNotes } from '@/lib/generateClinicalNotePDF'
@@ -11,6 +12,7 @@ const supabaseAdmin = createClient(
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
 
     const body = await req.json()

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { supabase } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     // Get user from cookies or Bearer token
     const cookieStore = await cookies()

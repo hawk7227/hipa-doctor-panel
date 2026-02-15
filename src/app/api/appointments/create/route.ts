@@ -1,11 +1,13 @@
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { NextRequest, NextResponse } from "next/server";
+import { requireDoctor } from '@/lib/api-auth'
 import { supabase } from "@/lib/supabase";
 import { zoomService } from "@/lib/zoom";
 import { sendAdminNotification } from "@/lib/email";
 import { dailyService } from "@/lib/daily";
 
 export async function POST(req: NextRequest) {
+  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   console.log("📋 Create appointment API called");
 
   try {

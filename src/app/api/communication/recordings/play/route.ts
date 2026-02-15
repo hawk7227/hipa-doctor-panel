@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDoctor } from '@/lib/api-auth'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { supabase } from '@/lib/supabase'
@@ -13,6 +14,7 @@ const authToken = process.env.TWILIO_AUTH_TOKEN || ''
  * This endpoint authenticates the request and streams the audio
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireDoctor(request); if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(request.url)
     const recordingSid = searchParams.get('recordingSid')
