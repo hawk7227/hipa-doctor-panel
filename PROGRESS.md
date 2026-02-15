@@ -16,7 +16,7 @@
 | — | Dashboard Buttons + Sidebar | ✅ COMPLETE | 4 files | 2 buttons, 2 cards, 2 sidebar links, 2 full pages |
 | A | Foundation | ✅ COMPLETE | 8 files | constants.ts, WorkspaceState, PanelRegistry, PanelShell, LayoutPersistence, SQL migration |
 | B | Calendar Enterprise Upgrade | ✅ COMPLETE | 15+ files | Full rebuild, notification system v2, extras, list view, keyboard/touch, print |
-| C | Calendar + Workspace Integration | 🟡 IN PROGRESS | 3 files | URL routing done. Workspace canvas deferred (needs react-grid-layout) |
+| C | Calendar + Workspace Integration | ✅ COMPLETE | 4 files | URL routing, workspace canvas, all 21 EHR panels as draggable grid items |
 | D | Data Layer | ✅ COMPLETE | 3 files | useFetch/useSync hooks, AbortController, SyncIndicator, Supabase query hook |
 | E | Port All Existing Panels | ✅ COMPLETE | 5 files | 24 wrapped panels, 7 skeleton types, PanelWrapper HOC, dynamic imports |
 | F | Polish | ✅ COMPLETE | 3 files | Error Boundary, skeleton loaders, sync indicator, panel wrappers |
@@ -49,14 +49,15 @@
 
 ---
 
-## NEXT PHASE: C — Calendar + Workspace Integration
+## ALL PHASES COMPLETE
 
-### Plan:
-1. URL routing — appointment ID in URL params so refresh works, deep-links work
-2. Workspace canvas with react-grid-layout
-3. Default layout: Patient Snapshot + SOAP locked
-4. Mobile stacked card layout
-5. Toolbar with all panel buttons + active indicators
+### What was built (Phase C final piece):
+- ✅ URL routing with ?apt=&view=&date= query params
+- ✅ Workspace canvas with react-grid-layout (Patient Info + SOAP + Video as base grid)
+- ✅ All 21 EHR panels converted from modal overlays to draggable/resizable grid items
+- ✅ Dynamic layout computation — panels auto-position below existing content
+- ✅ Color-coded drag handles matching toolbar button colors
+- ✅ eRx stays as modal overlay (external popup flow)
 
 ---
 
