@@ -1,23 +1,43 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import {
-  ROLES, ROLE_CONFIG, ROLE_PERMISSIONS, PERMISSION_GROUPS,
+  ROLES, ROLE_CONFIG, ROLE_PERMISSIONS, PERMISSION_GROUPS, PERMISSIONS,
   type Role, type Permission, getPermissionsForRole,
 } from '@/lib/rbac'
 import {
   Users, Plus, Shield, X, ChevronDown, ChevronRight,
   Mail, RefreshCw, Search, MoreHorizontal, UserCheck,
-  UserX, Edit3, Trash2, Check
+  UserX, Edit3, Trash2, Check, Clock, BarChart3,
+  Calendar, Activity, FileText, AlertCircle
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════
+
+interface StaffAuditEntry {
+  id: string
+  action: string
+  resource_type: string
+  resource_id: string
+  description: string
+  staff_email: string
+  created_at: string
+}
+
+interface StaffScheduleEntry {
+  id?: string
+  staff_id: string
+  day_of_week: number // 0=Sun...6=Sat
+  start_time: string // "09:00"
+  end_time: string   // "17:00"
+  is_active: boolean
+}
 
 interface StaffMember {
   id: string
@@ -53,6 +73,17 @@ export default function StaffManagementPage() {
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [showPermissions, setShowPermissions] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'team' | 'schedule' | 'activity' | 'metrics'>('team')
+
+  // Audit log
+  const [auditLog, setAuditLog] = useState<StaffAuditEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
+
+  // Schedule
+  const [schedules, setSchedules] = useState<StaffScheduleEntry[]>([])
+  const [editingSchedule, setEditingSchedule] = useState<string | null>(null)
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState('')
@@ -93,6 +124,71 @@ export default function StaffManagementPage() {
     }
     init()
   }, [router, fetchStaff])
+
+  // Fetch audit log
+  const fetchAuditLog = useCallback(async () => {
+    setAuditLoading(true)
+    try {
+      const { data } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      setAuditLog((data || []) as StaffAuditEntry[])
+    } catch (err) {
+      console.error('Audit log fetch error:', err)
+    } finally {
+      setAuditLoading(false)
+    }
+  }, [])
+
+  // Fetch schedules
+  const fetchSchedules = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('staff_schedules')
+        .select('*')
+        .order('day_of_week', { ascending: true })
+      setSchedules((data || []) as StaffScheduleEntry[])
+    } catch (err) {
+      console.error('Schedule fetch error:', err)
+    }
+  }, [])
+
+  // Tab change handler
+  useEffect(() => {
+    if (activeTab === 'activity' && auditLog.length === 0) fetchAuditLog()
+    if (activeTab === 'schedule') fetchSchedules()
+  }, [activeTab, auditLog.length, fetchAuditLog, fetchSchedules])
+
+  // Save schedule
+  const handleSaveSchedule = async (staffId: string, dayOfWeek: number, startTime: string, endTime: string) => {
+    try {
+      const existing = schedules.find(s => s.staff_id === staffId && s.day_of_week === dayOfWeek)
+      if (existing?.id) {
+        await supabase.from('staff_schedules').update({ start_time: startTime, end_time: endTime, is_active: true }).eq('id', existing.id)
+      } else {
+        await supabase.from('staff_schedules').insert({ staff_id: staffId, day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, is_active: true })
+      }
+      fetchSchedules()
+    } catch (err) {
+      console.error('Schedule save error:', err)
+    }
+  }
+
+  // Staff metrics
+  const staffMetrics = useMemo(() => {
+    const total = staff.length
+    const active = staff.filter(s => s.active).length
+    const pending = staff.filter(s => !s.accepted_at).length
+    const byRole: Record<string, number> = {}
+    staff.forEach(s => { byRole[s.role] = (byRole[s.role] || 0) + 1 })
+    const recentLogins = staff.filter(s => {
+      if (!s.last_login_at) return false
+      return (Date.now() - new Date(s.last_login_at).getTime()) < 7 * 24 * 60 * 60 * 1000
+    }).length
+    return { total, active, pending, byRole, recentLogins }
+  }, [staff])
 
   const handleRefresh = async () => {
     if (!doctorId || refreshing) return
@@ -279,6 +375,26 @@ export default function StaffManagementPage() {
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-[#0a1f1f] rounded-lg p-1 border border-[#1a3d3d]">
+          {([
+            { key: 'team' as const, label: 'Team', icon: Users },
+            { key: 'schedule' as const, label: 'Schedule', icon: Calendar },
+            { key: 'activity' as const, label: 'Activity Log', icon: Activity },
+            { key: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
+          ]).map(({ key, label, icon: Icon }) => (
+            <button key={key} onClick={() => setActiveTab(key)}
+              className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-2 rounded-md text-xs font-bold transition-colors ${
+                activeTab === key ? 'bg-teal-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}>
+              <Icon className="w-3.5 h-3.5" /><span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ═══ TEAM TAB ═══ */}
+        {activeTab === 'team' && (<>
+
         {/* Role Legend */}
         <div className="flex flex-wrap gap-2">
           {(Object.keys(ROLE_CONFIG) as Role[]).map(role => {
@@ -443,6 +559,203 @@ export default function StaffManagementPage() {
             })
           )}
         </div>
+        </>)}
+
+        {/* ═══ SCHEDULE TAB ═══ */}
+        {activeTab === 'schedule' && (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-400">Set working hours for each staff member. This helps coordinate coverage and availability.</p>
+            {staff.filter(s => s.active).length === 0 ? (
+              <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] py-12 text-center">
+                <Calendar className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">No active staff to schedule</p>
+              </div>
+            ) : (
+              staff.filter(s => s.active).map(member => {
+                const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.assistant
+                const memberSchedules = schedules.filter(s => s.staff_id === member.id)
+                const isEditing = editingSchedule === member.id
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+                return (
+                  <div key={member.id} className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a3d3d]">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-8 h-8 rounded-lg ${roleConfig.bgColor} flex items-center justify-center`}>
+                          <span className={`text-xs font-bold ${roleConfig.color}`}>{member.first_name[0]}{member.last_name[0]}</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{member.first_name} {member.last_name}</p>
+                          <p className={`text-[10px] font-bold ${roleConfig.color}`}>{roleConfig.label}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setEditingSchedule(isEditing ? null : member.id)}
+                        className="text-xs text-teal-400 hover:text-teal-300 font-bold">
+                        {isEditing ? 'Done' : 'Edit'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-px bg-[#1a3d3d]">
+                      {days.map((day, idx) => {
+                        const sched = memberSchedules.find(s => s.day_of_week === idx)
+                        return (
+                          <div key={idx} className="bg-[#0d2626] p-2 text-center">
+                            <p className="text-[10px] font-bold text-gray-400 mb-1">{day}</p>
+                            {sched && sched.is_active ? (
+                              <div>
+                                <p className="text-[10px] text-teal-400 font-medium">{sched.start_time}</p>
+                                <p className="text-[8px] text-gray-500">to</p>
+                                <p className="text-[10px] text-teal-400 font-medium">{sched.end_time}</p>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-gray-600">Off</p>
+                            )}
+                            {isEditing && (
+                              <button
+                                onClick={() => {
+                                  if (sched && sched.is_active) {
+                                    // Remove day
+                                    if (sched.id) supabase.from('staff_schedules').update({ is_active: false }).eq('id', sched.id).then(() => fetchSchedules())
+                                  } else {
+                                    handleSaveSchedule(member.id, idx, '09:00', '17:00')
+                                  }
+                                }}
+                                className={`mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${sched && sched.is_active ? 'text-red-400 bg-red-500/10' : 'text-teal-400 bg-teal-500/10'}`}
+                              >
+                                {sched && sched.is_active ? 'Remove' : 'Add'}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )}
+
+        {/* ═══ ACTIVITY LOG TAB ═══ */}
+        {activeTab === 'activity' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-400">Recent actions by all staff members</p>
+              <button onClick={fetchAuditLog} disabled={auditLoading} className="text-xs text-teal-400 hover:text-teal-300 font-bold flex items-center space-x-1">
+                <RefreshCw className={`w-3 h-3 ${auditLoading ? 'animate-spin' : ''}`} /><span>Refresh</span>
+              </button>
+            </div>
+            {auditLoading ? (
+              <div className="flex items-center justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-gray-500" /></div>
+            ) : auditLog.length === 0 ? (
+              <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] py-12 text-center">
+                <Activity className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">No activity recorded yet</p>
+                <p className="text-xs text-gray-600 mt-1">Staff actions will appear here as they use the system</p>
+              </div>
+            ) : (
+              <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] overflow-hidden divide-y divide-[#1a3d3d]/50 max-h-[60vh] overflow-y-auto">
+                {auditLog.map(entry => (
+                  <div key={entry.id} className="px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                        entry.action.includes('CREATE') ? 'bg-green-500/20 text-green-400' :
+                        entry.action.includes('DELETE') || entry.action.includes('REMOVE') ? 'bg-red-500/20 text-red-400' :
+                        entry.action.includes('UPDATE') ? 'bg-blue-500/20 text-blue-400' :
+                        entry.action.includes('SIGN') ? 'bg-purple-500/20 text-purple-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>{entry.action.replace(/_/g, ' ')}</span>
+                      <span className="text-[10px] text-gray-500">{new Date(entry.created_at).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-gray-300">{entry.description}</p>
+                    {entry.staff_email && <p className="text-[10px] text-gray-500 mt-0.5">by {entry.staff_email}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ METRICS TAB ═══ */}
+        {activeTab === 'metrics' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Total Staff', value: staffMetrics.total, icon: Users, color: 'text-teal-400' },
+                { label: 'Active', value: staffMetrics.active, icon: UserCheck, color: 'text-green-400' },
+                { label: 'Pending Invite', value: staffMetrics.pending, icon: Mail, color: 'text-amber-400' },
+                { label: 'Active This Week', value: staffMetrics.recentLogins, icon: Activity, color: 'text-blue-400' },
+              ].map(({ label, value, icon: Icon, color }, i) => (
+                <div key={i} className="bg-[#0d2626] rounded-lg p-4 border border-[#1a3d3d]">
+                  <div className="flex items-center space-x-2 mb-2"><Icon className={`w-4 h-4 ${color}`} /><span className="text-[10px] uppercase tracking-widest font-bold text-gray-500">{label}</span></div>
+                  <p className="text-2xl font-bold text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Role Distribution */}
+            <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4">
+              <h3 className="text-sm font-bold text-white mb-3">Role Distribution</h3>
+              <div className="space-y-2">
+                {(Object.keys(ROLE_CONFIG) as Role[]).map(role => {
+                  const config = ROLE_CONFIG[role]
+                  const count = staffMetrics.byRole[role] || 0
+                  const pct = staffMetrics.total > 0 ? Math.round((count / staffMetrics.total) * 100) : 0
+                  return (
+                    <div key={role} className="flex items-center space-x-3">
+                      <span className={`text-xs font-bold w-20 ${config.color}`}>{config.label}</span>
+                      <div className="flex-1 bg-[#0a1f1f] rounded-full h-2 overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: config.color.includes('teal') ? '#2dd4bf' : config.color.includes('blue') ? '#60a5fa' : config.color.includes('purple') ? '#c084fc' : '#fbbf24' }} />
+                      </div>
+                      <span className="text-xs text-gray-400 w-12 text-right">{count} ({pct}%)</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Staff Status Table */}
+            <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-[#1a3d3d] bg-[#0a1f1f]/50">
+                <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">Staff Performance Overview</p>
+              </div>
+              <div className="divide-y divide-[#1a3d3d]/50">
+                {staff.map(member => {
+                  const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.assistant
+                  const lastActive = member.last_login_at ? new Date(member.last_login_at) : null
+                  const daysSinceLogin = lastActive ? Math.round((Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24)) : null
+                  const permCount = member.permissions?.length || 0
+                  const maxPerms = Object.values(PERMISSIONS).length
+                  return (
+                    <div key={member.id} className="px-4 py-3 flex items-center space-x-3">
+                      <div className={`w-8 h-8 rounded-lg ${roleConfig.bgColor} flex items-center justify-center flex-shrink-0`}>
+                        <span className={`text-xs font-bold ${roleConfig.color}`}>{member.first_name[0]}{member.last_name[0]}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{member.first_name} {member.last_name}</p>
+                        <p className={`text-[10px] ${roleConfig.color} font-bold`}>{roleConfig.label}</p>
+                      </div>
+                      <div className="text-right space-y-0.5">
+                        <p className="text-[10px] text-gray-400">{permCount}/{maxPerms} perms</p>
+                        <p className={`text-[10px] font-bold ${
+                          !member.active ? 'text-red-400' :
+                          daysSinceLogin === null ? 'text-gray-500' :
+                          daysSinceLogin <= 1 ? 'text-green-400' :
+                          daysSinceLogin <= 7 ? 'text-amber-400' :
+                          'text-red-400'
+                        }`}>
+                          {!member.active ? 'Inactive' :
+                           daysSinceLogin === null ? 'Never logged in' :
+                           daysSinceLogin === 0 ? 'Active today' :
+                           `${daysSinceLogin}d ago`}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ═══ INVITE MODAL ═══ */}
