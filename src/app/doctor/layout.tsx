@@ -14,7 +14,7 @@ import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/K
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
-  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search
+  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search, Radio
 } from 'lucide-react'
 
 // ─── NAV ITEMS ───────────────────────────────────────────────
@@ -33,6 +33,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: '/doctor/settings', label: 'Settings', icon: Settings },
   { href: '/doctor/settings/staff', label: 'Staff Management', icon: UsersRound },
+  { href: '/doctor/staff-hub', label: 'Staff Hub', icon: Radio },
   { href: '/doctor/chart-management', label: 'Chart Management', icon: Shield },
   { href: '/doctor/settings/audit', label: 'Audit Log', icon: ClipboardList },
 ] as const

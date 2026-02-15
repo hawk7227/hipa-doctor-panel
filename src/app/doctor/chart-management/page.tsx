@@ -106,6 +106,7 @@ export default function ChartManagementPage() {
   const [records, setRecords] = useState<ChartRecord[]>([])
   const [doctorId, setDoctorId] = useState<string | null>(null)
   const [doctorName, setDoctorName] = useState('')
+  const [actorRole, setActorRole] = useState<string>('provider') // who is actually using the system
   const [filter, setFilter] = useState<ChartFilter>('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -145,7 +146,21 @@ export default function ChartManagementPage() {
         const authUser = await getCurrentUser()
         if (!authUser?.doctor) { router.push('/login'); return }
         setDoctorId(authUser.doctor.id)
-        setDoctorName(`Dr. ${authUser.doctor.first_name || ''} ${authUser.doctor.last_name || ''}`.trim())
+        // Check if this user is actually a staff member viewing doctor's panel
+        const { data: staffRecord } = await supabase
+          .from('doctor_staff')
+          .select('id, first_name, last_name, role')
+          .eq('email', authUser.email)
+          .eq('doctor_id', authUser.doctor.id)
+          .eq('active', true)
+          .maybeSingle()
+        if (staffRecord) {
+          setDoctorName(`${staffRecord.first_name || ''} ${staffRecord.last_name || ''}`.trim() || authUser.email)
+          setActorRole(staffRecord.role || 'assistant')
+        } else {
+          setDoctorName(`Dr. ${authUser.doctor.first_name || ''} ${authUser.doctor.last_name || ''}`.trim())
+          setActorRole('provider')
+        }
         await fetchRecords(authUser.doctor.id)
       } catch (err) {
         console.error('Chart management init error:', err)
@@ -193,7 +208,7 @@ export default function ChartManagementPage() {
       const res = await fetch('/api/chart/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: 'provider' }),
+        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Sign failed')
@@ -213,7 +228,7 @@ export default function ChartManagementPage() {
       const res = await fetch('/api/chart/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: 'provider' }),
+        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Close failed')
@@ -236,7 +251,7 @@ export default function ChartManagementPage() {
         body: JSON.stringify({
           appointmentId: addendumModal.id, text: addendumText.trim(),
           addendumType, reason: addendumReason.trim() || undefined,
-          authorName: doctorName, authorRole: 'provider',
+          authorName: doctorName, authorRole: actorRole,
         }),
       })
       const data = await res.json()
@@ -264,7 +279,7 @@ export default function ChartManagementPage() {
         const res = await fetch('/api/chart/sign', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: 'provider' }),
+          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
         })
         if (res.ok) {
           success++
@@ -295,7 +310,7 @@ export default function ChartManagementPage() {
       const res = await fetch('/api/chart/unlock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: unlockModal.id, providerName: doctorName, providerRole: 'provider', reason: unlockReason.trim(), forceReset: true }),
+        body: JSON.stringify({ appointmentId: unlockModal.id, providerName: doctorName, providerRole: actorRole, reason: unlockReason.trim(), forceReset: true }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Unlock failed')
@@ -315,7 +330,7 @@ export default function ChartManagementPage() {
       const { error } = await supabase.from('appointments').update({ cosigned_by: doctorName, cosigned_at: now, needs_cosign: false }).eq('id', record.id)
       if (error) throw new Error(error.message)
       // Audit log
-      await supabase.from('chart_audit_log').insert({ appointment_id: record.id, action: 'cosigned', performed_by_name: doctorName, performed_by_role: 'provider', details: { cosigned_at: now } })
+      await supabase.from('chart_audit_log').insert({ appointment_id: record.id, action: 'cosigned', performed_by_name: doctorName, performed_by_role: actorRole, details: { cosigned_at: now } })
       setRecords(prev => prev.map(r => r.id === record.id ? { ...r, cosigned_by: doctorName, cosigned_at: now, needs_cosign: false } : r))
       showNotification('success', `Chart co-signed for ${record.patients?.first_name || 'patient'}`)
     } catch (err: any) { showNotification('error', err.message) }
@@ -333,7 +348,7 @@ export default function ChartManagementPage() {
         const res = await fetch('/api/chart/close', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: 'provider' }),
+          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
         })
         if (res.ok) {
           success++
