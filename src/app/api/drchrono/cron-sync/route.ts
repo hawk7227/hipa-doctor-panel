@@ -4,13 +4,18 @@ import { createClient } from '@supabase/supabase-js'
 // ═══════════════════════════════════════════════════════════════
 // POST /api/drchrono/cron-sync
 // Full background sync — pages through ALL entities from DrChrono
-// Designed for scheduled cron (every 4-6 hours)
+// Designed for scheduled cron (every 1 hour)
 //
-// Syncs: patients, medications, allergies, problems,
-//        lab_results, clinical_notes, vaccines
+// Syncs 26 entities:
+//   CLINICAL: patients, medications, allergies, problems,
+//     lab_results, lab_orders, lab_tests, clinical_notes, vaccines,
+//     documents, amendments, patient_communications
+//   BILLING: line_items, transactions, patient_payments
+//   PRACTICE: offices, doctors, users, tasks, task_categories,
+//     appointment_profiles, appointments, messages,
+//     reminder_profiles, custom_demographics
 //
-// To set up Vercel cron, add to vercel.json:
-// { "crons": [{ "path": "/api/drchrono/cron-sync", "schedule": "0 */4 * * *" }] }
+// Vercel cron: { "crons": [{ "path": "/api/drchrono/cron-sync", "schedule": "0 */1 * * *" }] }
 // ═══════════════════════════════════════════════════════════════
 
 export const maxDuration = 300 // 5 minutes (Vercel Pro)
@@ -321,6 +326,302 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
       lab_type: lo.sublab || null,
       drchrono_created_at: lo.created_at || null,
       drchrono_updated_at: lo.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  // ── BILLING ─────────────────────────────────────────────────
+  line_items: {
+    url: 'https://app.drchrono.com/api/line_items?page_size=250',
+    table: 'drchrono_line_items',
+    conflict: 'drchrono_line_item_id',
+    map: (li: any) => ({
+      drchrono_line_item_id: li.id,
+      drchrono_appointment_id: li.appointment || null,
+      drchrono_patient_id: li.patient || null,
+      doctor: li.doctor || null,
+      code: li.code || null,
+      procedure_type: li.procedure_type || null,
+      description: li.description || null,
+      quantity: li.quantity || null,
+      units: li.units || null,
+      price: li.price || null,
+      allowed: li.allowed || null,
+      balance_ins: li.balance_ins || null,
+      balance_pt: li.balance_pt || null,
+      balance_total: li.balance_total || null,
+      paid_total: li.paid_total || null,
+      adjustment: li.adjustment || null,
+      ins1_paid: li.ins1_paid || null,
+      ins2_paid: li.ins2_paid || null,
+      ins3_paid: li.ins3_paid || null,
+      pt_paid: li.pt_paid || null,
+      billing_status: li.billing_status || null,
+      icd10_codes: li.icd10_codes || null,
+      posted_date: li.posted_date || null,
+      service_date: li.service_date || null,
+      drchrono_updated_at: li.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  transactions: {
+    url: 'https://app.drchrono.com/api/transactions?page_size=250',
+    table: 'drchrono_transactions',
+    conflict: 'drchrono_transaction_id',
+    map: (t: any) => ({
+      drchrono_transaction_id: t.id,
+      drchrono_line_item_id: t.line_item || null,
+      drchrono_appointment_id: t.appointment || null,
+      drchrono_patient_id: t.patient || null,
+      doctor: t.doctor || null,
+      posted_date: t.posted_date || null,
+      adjustment: t.adjustment || null,
+      adjustment_reason: t.adjustment_reason || null,
+      ins_paid: t.ins_paid || null,
+      ins_name: t.ins_name || null,
+      check_date: t.check_date || null,
+      check_number: t.check_number || null,
+      claim_status: t.claim_status || null,
+      trace_number: t.trace_number || null,
+      drchrono_updated_at: t.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  patient_payments: {
+    url: 'https://app.drchrono.com/api/patient_payments?page_size=250',
+    table: 'drchrono_patient_payments',
+    conflict: 'drchrono_payment_id',
+    map: (pp: any) => ({
+      drchrono_payment_id: pp.id,
+      drchrono_patient_id: pp.patient || null,
+      drchrono_appointment_id: pp.appointment || null,
+      doctor: pp.doctor || null,
+      amount: pp.amount || null,
+      payment_method: pp.payment_method || null,
+      payment_transaction_type: pp.payment_transaction_type || null,
+      notes: pp.notes || null,
+      posted_date: pp.posted_date || null,
+      trace_number: pp.trace_number || null,
+      drchrono_created_at: pp.created_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  // ── PRACTICE MANAGEMENT ─────────────────────────────────────
+  offices: {
+    url: 'https://app.drchrono.com/api/offices?page_size=100',
+    table: 'drchrono_offices',
+    conflict: 'drchrono_office_id',
+    map: (o: any) => ({
+      drchrono_office_id: o.id,
+      name: o.name || '',
+      address: o.address || null,
+      city: o.city || null,
+      state: o.state || null,
+      zip_code: o.zip_code || null,
+      phone_number: o.phone_number || null,
+      fax_number: o.fax_number || null,
+      country: o.country || null,
+      exam_rooms: o.exam_rooms || null,
+      online_scheduling: o.online_scheduling || false,
+      online_timeslots: o.online_timeslots || null,
+      start_time: o.start_time || null,
+      end_time: o.end_time || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  doctors: {
+    url: 'https://app.drchrono.com/api/doctors?page_size=100',
+    table: 'drchrono_doctors',
+    conflict: 'drchrono_doctor_id',
+    map: (d: any) => ({
+      drchrono_doctor_id: d.id,
+      first_name: d.first_name || '',
+      last_name: d.last_name || '',
+      suffix: d.suffix || null,
+      specialty: d.specialty || null,
+      email: d.email || null,
+      cell_phone: d.cell_phone || null,
+      home_phone: d.home_phone || null,
+      office_phone: d.office_phone || null,
+      job_title: d.job_title || null,
+      practice_group: d.practice_group || null,
+      practice_group_name: d.practice_group_name || null,
+      profile_picture: d.profile_picture || null,
+      website: d.website || null,
+      npi_number: d.npi_number || null,
+      is_account_suspended: d.is_account_suspended || false,
+      timezone: d.timezone || null,
+      country: d.country || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  users: {
+    url: 'https://app.drchrono.com/api/users?page_size=100',
+    table: 'drchrono_users',
+    conflict: 'drchrono_user_id',
+    map: (u: any) => ({
+      drchrono_user_id: u.id,
+      username: u.username || null,
+      first_name: u.first_name || '',
+      last_name: u.last_name || '',
+      email: u.email || null,
+      is_doctor: u.is_doctor || false,
+      is_staff: u.is_staff || false,
+      practice_group: u.practice_group || null,
+      doctor: u.doctor || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  tasks: {
+    url: 'https://app.drchrono.com/api/tasks?page_size=100',
+    table: 'drchrono_tasks',
+    conflict: 'drchrono_task_id',
+    map: (t: any) => ({
+      drchrono_task_id: t.id,
+      title: t.title || '',
+      status: t.status || null,
+      category: t.category || null,
+      assignee_user: t.assignee_user || null,
+      due_date: t.due_date || null,
+      notes: t.notes || null,
+      associated_items: t.associated_items || null,
+      drchrono_created_at: t.created_at || null,
+      drchrono_updated_at: t.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  task_categories: {
+    url: 'https://app.drchrono.com/api/task_categories?page_size=100',
+    table: 'drchrono_task_categories',
+    conflict: 'drchrono_category_id',
+    map: (tc: any) => ({
+      drchrono_category_id: tc.id,
+      name: tc.name || '',
+      since: tc.since || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  amendments: {
+    url: 'https://app.drchrono.com/api/amendments?page_size=100',
+    table: 'drchrono_amendments',
+    conflict: 'drchrono_amendment_id',
+    map: (a: any) => ({
+      drchrono_amendment_id: a.id,
+      drchrono_patient_id: a.patient || null,
+      drchrono_appointment_id: a.appointment || null,
+      notes: a.notes || null,
+      status: a.status || null,
+      requested_by: a.requested_by || null,
+      drchrono_created_at: a.created_at || null,
+      drchrono_updated_at: a.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  patient_communications: {
+    url: 'https://app.drchrono.com/api/patient_communications?page_size=100',
+    table: 'drchrono_communications',
+    conflict: 'drchrono_communication_id',
+    map: (c: any) => ({
+      drchrono_communication_id: c.id,
+      drchrono_patient_id: c.patient || null,
+      doctor: c.doctor || null,
+      type: c.type || null,
+      message: c.message || null,
+      subject: c.subject || null,
+      direction: c.direction || null,
+      status: c.status || null,
+      drchrono_created_at: c.created_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  appointment_profiles: {
+    url: 'https://app.drchrono.com/api/appointment_profiles?page_size=100',
+    table: 'drchrono_appointment_profiles',
+    conflict: 'drchrono_profile_id',
+    map: (ap: any) => ({
+      drchrono_profile_id: ap.id,
+      name: ap.name || '',
+      color: ap.color || null,
+      duration: ap.duration || null,
+      online_scheduling: ap.online_scheduling || false,
+      reason: ap.reason || null,
+      sort_order: ap.sort_order || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  lab_tests: {
+    url: 'https://app.drchrono.com/api/lab_tests?page_size=100',
+    table: 'drchrono_lab_tests',
+    conflict: 'drchrono_lab_test_id',
+    map: (lt: any) => ({
+      drchrono_lab_test_id: lt.id,
+      drchrono_lab_order_id: lt.order || null,
+      drchrono_patient_id: lt.patient || null,
+      code: lt.code || null,
+      name: lt.name || null,
+      status: lt.status || null,
+      abn_document: lt.abn_document || null,
+      notes: lt.notes || null,
+      drchrono_created_at: lt.created_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  messages: {
+    url: 'https://app.drchrono.com/api/messages?page_size=100',
+    table: 'drchrono_messages',
+    conflict: 'drchrono_message_id',
+    map: (m: any) => ({
+      drchrono_message_id: m.id,
+      drchrono_patient_id: m.patient || null,
+      doctor: m.doctor || null,
+      owner: m.owner || null,
+      type: m.type || null,
+      title: m.title || m.subject || '',
+      body: m.body || m.message || null,
+      read: m.read || false,
+      starred: m.starred || false,
+      archived: m.archived || false,
+      responsible_user: m.responsible_user || null,
+      drchrono_created_at: m.created_at || null,
+      drchrono_updated_at: m.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  reminder_profiles: {
+    url: 'https://app.drchrono.com/api/reminder_profiles?page_size=100',
+    table: 'drchrono_reminder_profiles',
+    conflict: 'drchrono_reminder_profile_id',
+    map: (rp: any) => ({
+      drchrono_reminder_profile_id: rp.id,
+      name: rp.name || '',
+      reminders: rp.reminders || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  custom_demographics: {
+    url: 'https://app.drchrono.com/api/custom_demographics?page_size=100',
+    table: 'drchrono_custom_demographics',
+    conflict: 'drchrono_field_id',
+    map: (cd: any) => ({
+      drchrono_field_id: cd.id,
+      name: cd.name || '',
+      description: cd.description || null,
+      field_type: cd.field_type || null,
+      allowed_values: cd.allowed_values || null,
       last_synced_at: new Date().toISOString(),
     }),
   },
