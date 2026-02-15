@@ -198,7 +198,7 @@ export default function AppointmentsPage() {
   const datesWithAppointments = useMemo(() => {
     const dates = new Set<string>()
     appointments.forEach(apt => {
-      if (apt.scheduled_time) dates.add(formatDateKey(new Date(apt.scheduled_time)))
+      if ((apt.scheduled_time || apt.requested_date_time)) dates.add(formatDateKey(new Date((apt.scheduled_time || apt.requested_date_time)!)))
     })
     return dates
   }, [appointments])
@@ -219,8 +219,8 @@ export default function AppointmentsPage() {
   // ── Appointment lookup ──
   const getAppointmentForSlot = useCallback((date: Date, slot: Date): CalendarAppointment | null => {
     return appointments.find(apt => {
-      if (!apt.scheduled_time) return false
-      const aptDate = new Date(apt.scheduled_time)
+      if (!(apt.scheduled_time || apt.requested_date_time)) return false
+      const aptDate = new Date((apt.scheduled_time || apt.requested_date_time)!)
       return isSameDay(aptDate, date) && aptDate.getHours() === slot.getHours() && aptDate.getMinutes() === slot.getMinutes()
     }) || null
   }, [appointments])
@@ -376,8 +376,11 @@ export default function AppointmentsPage() {
   }, [])
 
   const getAppointmentsForDate = useCallback((date: Date): CalendarAppointment[] => {
-    return appointments.filter(apt => apt.scheduled_time && isSameDay(new Date(apt.scheduled_time), date))
-      .sort((a, b) => new Date(a.scheduled_time!).getTime() - new Date(b.scheduled_time!).getTime())
+    return appointments.filter(apt => {
+      const aptTime = (apt.scheduled_time || apt.requested_date_time) || apt.requested_date_time
+      return aptTime && isSameDay(new Date(aptTime), date)
+    })
+      .sort((a, b) => new Date(a.scheduled_time || a.requested_date_time || 0).getTime() - new Date(b.scheduled_time || b.requested_date_time || 0).getTime())
   }, [appointments])
 
   // List view: appointments for visible date range
@@ -670,7 +673,7 @@ export default function AppointmentsPage() {
           <div className="mt-4 space-y-1.5">
             <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold px-1">Today&apos;s Summary</p>
             {(() => {
-              const todayApts = appointments.filter(apt => apt.scheduled_time && isSameDay(new Date(apt.scheduled_time), today))
+              const todayApts = appointments.filter(apt => (apt.scheduled_time || apt.requested_date_time) && isSameDay(new Date((apt.scheduled_time || apt.requested_date_time)!), today))
               const completed = todayApts.filter(a => a.status === 'completed').length
               const pending = todayApts.filter(a => a.status === 'pending').length
               const accepted = todayApts.filter(a => a.status === 'accepted').length
@@ -726,7 +729,7 @@ export default function AppointmentsPage() {
                       {/* Appointment cards */}
                       <div className="space-y-1.5">
                         {dayApts.map(apt => {
-                          const aptTime = apt.scheduled_time ? new Date(apt.scheduled_time) : null
+                          const aptTime = (apt.scheduled_time || apt.requested_date_time) ? new Date((apt.scheduled_time || apt.requested_date_time)!) : null
                           const timeStr = aptTime ? formatSlotTime(aptTime) : ''
                           const reason = getAppointmentReason(apt)
                           const chartStatus = deriveChartStatus(apt)
