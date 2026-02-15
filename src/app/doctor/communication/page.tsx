@@ -1,938 +1,523 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { 
-  Phone, MessageSquare, Send, Clock, PhoneCall, 
-  Play, Pause, Download, X, Mic, MicOff,
-  PhoneOff, RefreshCw, ArrowLeft
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import {
+  Phone, MessageSquare, Send, Clock, PhoneCall, Video,
+  Play, Pause, Download, X, Mic, MicOff, PhoneOff, RefreshCw,
+  ArrowLeft, Users, Shield, Search, Plus, Check, CheckCheck,
+  Mail, Hash, Smile, Paperclip, MoreHorizontal, ChevronRight,
+  Bell, Archive, Pin, Star, Filter, CircleDot, UserPlus,
+  PhoneForwarded, PhoneIncoming, PhoneMissed, MessageCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import type { Device, Call } from '@twilio/voice-sdk'
-import Dialog from '@/components/Dialog'
 import PatientSearchBar, { type PatientSearchResult } from '@/components/PatientSearchBarInline'
-import Link from 'next/link'
 
-// ─── Types ───────────────────────────────────────────────────────────
-
+// ═══ TYPES ═══
 interface HistoryItem {
-  id: string
-  type: 'call' | 'sms' | 'video' | 'email'
-  direction: 'inbound' | 'outbound'
-  to_number?: string
-  from_number?: string
-  message?: string
-  status?: string
-  duration?: number
-  twilio_sid?: string
-  meeting_url?: string
-  meeting_id?: string
-  recording_url?: string
-  created_at: string
+  id: string; type: 'call' | 'sms' | 'video' | 'email'; direction: 'inbound' | 'outbound'
+  to_number?: string; from_number?: string; message?: string; status?: string
+  duration?: number; twilio_sid?: string; recording_url?: string; created_at: string
   patients?: { id: string; first_name: string; last_name: string; phone: string }
 }
+interface PatientMsg { id: string; patient_id: string; direction: string; subject: string | null; body: string; is_read: boolean; created_at: string; patients?: { first_name: string; last_name: string } }
+interface AdminConv { id: string; doctor_name: string; last_message: string; last_message_at: string; unread_count: number; status: string }
+interface AdminMsg { id: string; sender_type: string; sender_name: string; content: string; is_read: boolean; created_at: string }
+interface StaffConv { id: string; type: string; name: string | null; last_message_preview: string | null; last_message_at: string | null; staff_conversation_participants: any[] }
+interface StaffMsg { id: string; content: string; message_type: string; created_at: string; sender: { first_name: string; last_name: string; role: string } | null }
 
-// ─── Component ───────────────────────────────────────────────────────
-export default function CommunicationPage() {
-  // Patient state
+type MainTab = 'calls' | 'sms' | 'patient_msgs' | 'staff_chat' | 'admin'
+const TAB_CONFIG: { key: MainTab; label: string; icon: typeof Phone }[] = [
+  { key: 'calls', label: 'Calls', icon: Phone },
+  { key: 'sms', label: 'SMS', icon: MessageSquare },
+  { key: 'patient_msgs', label: 'Patient Portal', icon: Mail },
+  { key: 'staff_chat', label: 'Staff Chat', icon: Users },
+  { key: 'admin', label: 'Admin', icon: Shield },
+]
+
+const INP = "w-full px-3 py-2 bg-[#061818] border border-[#1a3d3d]/50 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500/50 placeholder:text-gray-600"
+const fmtTime = (d: string) => { const dt = new Date(d); return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
+const fmtDate = (d: string) => { const dt = new Date(d); const now = new Date(); const diff = now.getTime() - dt.getTime(); if (diff < 86400000) return fmtTime(d); if (diff < 172800000) return 'Yesterday'; return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
+const fmtDuration = (s: number) => { const m = Math.floor(s / 60); const sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}` }
+
+export default function CommunicationCenter() {
+  const [loading, setLoading] = useState(true)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [doctorEmail, setDoctorEmail] = useState('')
+  const [doctorName, setDoctorName] = useState('')
+  const [activeTab, setActiveTab] = useState<MainTab>('calls')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  // Patient search
   const [selectedPatient, setSelectedPatient] = useState<PatientSearchResult | null>(null)
 
-  // Active tab
-  const [activeTab, setActiveTab] = useState<'call' | 'sms'>('call')
-
-  // Call state
+  // Calls
   const [phoneNumber, setPhoneNumber] = useState('')
   const [isCalling, setIsCalling] = useState(false)
   const [callStatus, setCallStatus] = useState('Initializing...')
   const [isMuted, setIsMuted] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
   const [isDeviceReady, setIsDeviceReady] = useState(false)
-  const [isCallLoading, setIsCallLoading] = useState(false)
+  const deviceRef = useRef<Device | null>(null)
+  const activeCallRef = useRef<Call | null>(null)
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // SMS state
+  // SMS
   const [smsTo, setSmsTo] = useState('')
   const [smsMessage, setSmsMessage] = useState('')
   const [isSendingSMS, setIsSendingSMS] = useState(false)
 
-  // History state
+  // History
   const [history, setHistory] = useState<HistoryItem[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(true)
   const [historyFilter, setHistoryFilter] = useState<'all' | 'call' | 'sms'>('all')
 
-  // Audio device state
-  const [mics, setMics] = useState<MediaDeviceInfo[]>([])
-  const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([])
-  const [selectedMic, setSelectedMic] = useState('default')
-  const [selectedSpeaker, setSelectedSpeaker] = useState('default')
-  const [micGranted, setMicGranted] = useState(false)
+  // Patient Messages
+  const [patientMsgs, setPatientMsgs] = useState<PatientMsg[]>([])
+  const [selectedPtMsg, setSelectedPtMsg] = useState<PatientMsg | null>(null)
+  const [ptReply, setPtReply] = useState('')
 
-  // Playback state
-  const [playingId, setPlayingId] = useState<string | null>(null)
-  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
-  const recordingCache = useRef<Record<string, string>>({})
-  const fetchingRecordings = useRef<Set<string>>(new Set())
+  // Staff Chat
+  const [staffConvs, setStaffConvs] = useState<StaffConv[]>([])
+  const [activeStaffConv, setActiveStaffConv] = useState<StaffConv | null>(null)
+  const [staffMsgs, setStaffMsgs] = useState<StaffMsg[]>([])
+  const [staffNewMsg, setStaffNewMsg] = useState('')
+  const [staffId, setStaffId] = useState<string | null>(null)
+  const staffEndRef = useRef<HTMLDivElement>(null)
 
-  // Dialog
-  const [dialog, setDialog] = useState<{
-    isOpen: boolean; title: string; message: string; type: 'success' | 'error' | 'warning' | 'info'
-  }>({ isOpen: false, title: '', message: '', type: 'info' })
+  // Admin
+  const [adminConv, setAdminConv] = useState<AdminConv | null>(null)
+  const [adminMsgs, setAdminMsgs] = useState<AdminMsg[]>([])
+  const [adminNewMsg, setAdminNewMsg] = useState('')
+  const adminEndRef = useRef<HTMLDivElement>(null)
 
-  // Twilio refs
-  const deviceRef = useRef<Device | null>(null)
-  const activeCallRef = useRef<Call | null>(null)
-  const callTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
+  // Badge counts
+  const [unreadPatient, setUnreadPatient] = useState(0)
+  const [unreadAdmin, setUnreadAdmin] = useState(0)
 
-  // ─── Init ────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchHistory()
-    initTwilioDevice()
-    loadAudioDevices()
+    const init = async () => {
+      setLoading(true)
+      try {
+        const user = await getCurrentUser()
+        if (!user?.doctor?.id) return
+        setDoctorId(user.doctor.id)
+        setDoctorEmail(user.email || '')
+        setDoctorName(`${user.doctor.first_name || ''} ${user.doctor.last_name || ''}`.trim())
 
-    const handleDeviceChange = () => loadAudioDevices()
-    navigator.mediaDevices?.addEventListener('devicechange', handleDeviceChange)
+        // Get staff record for this doctor (for staff chat)
+        const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).single()
+        if (staff) setStaffId(staff.id)
 
-    return () => {
-      deviceRef.current?.destroy()
-      navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange)
-      if (callTimerRef.current) clearInterval(callTimerRef.current)
+        await Promise.all([fetchHistory(user.doctor.id), fetchPatientMsgs(user.doctor.id), initTwilio(user.email || '')])
+        await fetchAdminConv(user.doctor.id, `Dr. ${user.doctor.first_name} ${user.doctor.last_name}`)
+        if (staff) await fetchStaffConvs(user.doctor.id, staff.id)
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
     }
-  }, [])
+    init()
+    return () => { if (callTimerRef.current) clearInterval(callTimerRef.current); deviceRef.current?.destroy() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Set phone/sms fields when patient selected
+  // ═══ TWILIO ═══
+  const initTwilio = async (email: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setCallStatus('No session'); return }
+      const res = await fetch('/api/twilio/token', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ identity: email }) })
+      if (!res.ok) { setCallStatus('Token failed'); return }
+      const { token } = await res.json()
+      if (!token) { setCallStatus('Invalid token'); return }
+      const { Device: TwilioDevice } = await import('@twilio/voice-sdk')
+      const device = new TwilioDevice(token, { edge: 'ashburn', closeProtection: true })
+      device.on('registered', () => { setCallStatus('Ready'); setIsDeviceReady(true) })
+      device.on('error', (e: any) => setCallStatus(`Error: ${e.message}`))
+      await device.register()
+      deviceRef.current = device
+    } catch { setCallStatus('Twilio unavailable') }
+  }
+
+  const makeCall = async () => {
+    if (!deviceRef.current || !phoneNumber) return
+    setIsCalling(true); setCallDuration(0); setCallStatus('Connecting...')
+    try {
+      const call = await deviceRef.current.connect({ params: { To: phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber.replace(/\D/g, '')}` } })
+      activeCallRef.current = call
+      call.on('accept', () => { setCallStatus('Connected'); callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000) })
+      call.on('disconnect', () => endCall('Ended'))
+      call.on('cancel', () => endCall('Cancelled'))
+      call.on('error', () => endCall('Error'))
+    } catch { endCall('Failed') }
+  }
+
+  const endCall = (status: string) => {
+    activeCallRef.current?.disconnect(); activeCallRef.current = null
+    if (callTimerRef.current) clearInterval(callTimerRef.current)
+    setIsCalling(false); setCallStatus(status)
+    if (doctorId) setTimeout(() => fetchHistory(doctorId), 2000)
+  }
+
+  // ═══ FETCH FUNCTIONS ═══
+  const fetchHistory = async (docId: string) => {
+    try {
+      const { data } = await supabase.from('communication_logs').select('*, patients(id, first_name, last_name, phone)').eq('doctor_id', docId).order('created_at', { ascending: false }).limit(100)
+      setHistory((data || []).map((h: any) => ({ ...h, patients: Array.isArray(h.patients) ? h.patients[0] : h.patients })))
+    } catch { /* table may not exist */ }
+  }
+
+  const fetchPatientMsgs = async (docId: string) => {
+    try {
+      const { data } = await supabase.from('patient_messages').select('*, patients(first_name, last_name)').eq('doctor_id', docId).order('created_at', { ascending: false }).limit(100)
+      const msgs = (data || []).map((m: any) => ({ ...m, patients: Array.isArray(m.patients) ? m.patients[0] : m.patients }))
+      setPatientMsgs(msgs)
+      setUnreadPatient(msgs.filter((m: PatientMsg) => !m.is_read && m.direction === 'incoming').length)
+    } catch { /* table may not exist */ }
+  }
+
+  const fetchAdminConv = async (docId: string, name: string) => {
+    try {
+      const res = await fetch('/api/admin/messaging?action=conversations')
+      const d = await res.json()
+      const myConv = (d.conversations || []).find((c: any) => c.doctor_id === docId)
+      if (myConv) { setAdminConv(myConv); setUnreadAdmin(myConv.unread_count || 0); await fetchAdminMsgs(myConv.id) }
+    } catch { /* ok */ }
+  }
+
+  const fetchAdminMsgs = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/admin/messaging?action=messages&conversationId=${convId}`)
+      const d = await res.json()
+      setAdminMsgs(d.messages || [])
+      setTimeout(() => adminEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    } catch {}
+  }
+
+  const fetchStaffConvs = async (docId: string, sId: string) => {
+    try {
+      const res = await fetch(`/api/staff-messages?action=conversations&doctorId=${docId}&staffId=${sId}`)
+      const d = await res.json()
+      setStaffConvs(d.conversations || [])
+    } catch {}
+  }
+
+  const fetchStaffMsgs = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/staff-messages?action=messages&doctorId=${doctorId}&conversationId=${convId}`)
+      const d = await res.json()
+      setStaffMsgs(d.messages || [])
+      setTimeout(() => staffEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    } catch {}
+  }
+
+  // ═══ SEND FUNCTIONS ═══
+  const sendSMS = async () => {
+    if (!smsTo || !smsMessage) return
+    setIsSendingSMS(true)
+    try {
+      const res = await fetch('/api/communication/sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: smsTo.startsWith('+') ? smsTo : `+1${smsTo.replace(/\D/g, '')}`, message: smsMessage, patientId: selectedPatient?.id, doctorId }) })
+      if (res.ok) { setSmsMessage(''); setSuccess('SMS sent'); setTimeout(() => setSuccess(null), 3000); if (doctorId) fetchHistory(doctorId) }
+      else { const e = await res.json(); setError(e.error || 'SMS failed') }
+    } catch { setError('SMS failed') }
+    finally { setIsSendingSMS(false) }
+  }
+
+  const sendPatientReply = async () => {
+    if (!selectedPtMsg || !ptReply || !doctorId) return
+    try {
+      await supabase.from('patient_messages').insert({ patient_id: selectedPtMsg.patient_id, doctor_id: doctorId, direction: 'outgoing', body: ptReply, message_type: 'reply', reply_to_id: selectedPtMsg.id, sent_via: 'portal' })
+      setPtReply(''); setSuccess('Reply sent'); setTimeout(() => setSuccess(null), 3000); fetchPatientMsgs(doctorId)
+    } catch { setError('Reply failed') }
+  }
+
+  const sendAdminMsg = async () => {
+    if (!adminConv || !adminNewMsg || !doctorId) return
+    try {
+      await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: adminConv.id, senderType: 'doctor', senderName: doctorName, content: adminNewMsg }) })
+      setAdminNewMsg(''); fetchAdminMsgs(adminConv.id)
+    } catch { setError('Send failed') }
+  }
+
+  const sendStaffMsg = async () => {
+    if (!activeStaffConv || !staffNewMsg || !staffId || !doctorId) return
+    try {
+      await fetch('/api/staff-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_message', doctorId, staffId, conversationId: activeStaffConv.id, content: staffNewMsg }) })
+      setStaffNewMsg(''); fetchStaffMsgs(activeStaffConv.id)
+    } catch { setError('Send failed') }
+  }
+
+  // Patient selection
   useEffect(() => {
     if (selectedPatient) {
-      let ph = selectedPatient.phone || ''
-      // Ensure +1 prefix for US numbers
-      if (ph) {
-        const digits = ph.replace(/[\s\-\(\)\+\.]/g, '')
-        if (digits.length === 10) {
-          ph = `+1${digits}`
-        } else if (digits.length === 11 && digits.startsWith('1')) {
-          ph = `+${digits}`
-        } else if (!ph.startsWith('+')) {
-          ph = `+${digits}`
-        }
-      }
-      setPhoneNumber(ph)
-      setSmsTo(ph)
+      const ph = selectedPatient.phone || ''
+      setPhoneNumber(ph); setSmsTo(ph)
     }
   }, [selectedPatient])
 
-  // ─── Data Fetching ───────────────────────────────────────────────
-  const fetchHistory = async () => {
-    setLoadingHistory(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/communication/history', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '',
-        },
-        credentials: 'include'
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      if (data.success && data.history) {
-        setHistory(data.history)
-        // Cache recording URLs
-        data.history.forEach((item: HistoryItem) => {
-          if (item.recording_url) {
-            const key = item.twilio_sid || item.meeting_id
-            if (key) recordingCache.current[key] = item.recording_url
-          }
-        })
-      }
-    } catch (err) {
-      console.error('Error fetching history:', err)
-    } finally {
-      setLoadingHistory(false)
-    }
-  }
+  const filteredHistory = useMemo(() => {
+    if (historyFilter === 'all') return history
+    return history.filter(h => h.type === historyFilter)
+  }, [history, historyFilter])
 
-  // ─── Twilio Device ───────────────────────────────────────────────
-  const initTwilioDevice = async () => {
-    try {
-      const { data: { user: supabaseUser }, error: authError } = await supabase.auth.getUser()
-      if (authError || !supabaseUser) { setCallStatus('Please login'); return }
+  if (loading) return <div className="min-h-screen bg-[#030f0f] flex items-center justify-center"><RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" /></div>
 
-      const user = await getCurrentUser()
-      if (!user) { setCallStatus('Doctor account not found'); return }
-
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-      if (!accessToken) { setCallStatus('Session expired'); return }
-
-      const res = await fetch('/api/communication/twilio-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-        credentials: 'include',
-        body: JSON.stringify({ identity: user.email })
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setCallStatus(res.status === 401 ? 'Auth failed — refresh page' : `Error: ${err.error || 'Token failed'}`)
-        return
-      }
-
-      const { token } = await res.json()
-      if (!token) { setCallStatus('Invalid token response'); return }
-
-      const TwilioSDK = await import('@twilio/voice-sdk')
-      const DeviceClass = TwilioSDK.Device || (TwilioSDK as any).default || TwilioSDK
-      if (typeof DeviceClass !== 'function') throw new Error('Device import failed')
-
-      const device = new DeviceClass(token, {
-        logLevel: 1,
-        codecPreferences: ['opus', 'pcmu'] as any,
-        enableRingtones: true,
-        allowIncomingWhileBusy: false
-      } as any)
-
-      device.on('registered', () => {
-        console.log('✅ Twilio device registered')
-        setCallStatus('Ready')
-        setIsDeviceReady(true)
-        applyAudioDevices()
-      })
-      device.on('registering', () => { setCallStatus('Registering...'); setIsDeviceReady(false) })
-      device.on('error', (e: any) => { console.error('Device error:', e); setCallStatus(`Error: ${e.message}`); setIsDeviceReady(false) })
-      device.on('unregistered', () => { setCallStatus('Disconnected'); setIsDeviceReady(false) })
-
-      device.on('tokenWillExpire', async () => {
-        try {
-          const r = await fetch('/api/communication/twilio-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-            credentials: 'include',
-            body: JSON.stringify({ identity: user.email })
-          })
-          const { token: newToken } = await r.json()
-          if (newToken) { device.updateToken(newToken); setCallStatus('Ready') }
-        } catch (err) { console.error('Token refresh failed:', err) }
-      })
-
-      device.on('incoming', (call: Call) => {
-        activeCallRef.current = call
-        setIsCalling(true)
-        setCallStatus('Incoming call...')
-        setupCallHandlers(call)
-      })
-
-      deviceRef.current = device
-      device.register()
-    } catch (error) {
-      console.error('Twilio init error:', error)
-      setCallStatus('Failed to initialize')
-    }
-  }
-
-  const setupCallHandlers = (call: Call) => {
-    call.on('accept', () => {
-      setCallStatus('Connected')
-      setIsCalling(true)
-      setCallDuration(0)
-
-      // Attach remote audio
-      try {
-        const remoteStream = (call as any).remoteStream
-        if (remoteStream) {
-          if (!remoteAudioRef.current) {
-            remoteAudioRef.current = new Audio()
-            remoteAudioRef.current.autoplay = true
-          }
-          remoteAudioRef.current.srcObject = remoteStream
-          if (selectedSpeaker !== 'default' && typeof remoteAudioRef.current.setSinkId === 'function') {
-            (remoteAudioRef.current as any).setSinkId(selectedSpeaker).catch(console.warn)
-          }
-          remoteAudioRef.current.play().catch((e: any) => {
-            setTimeout(() => remoteAudioRef.current?.play().catch(console.error), 500)
-          })
-        }
-      } catch (err) { console.error('Remote audio error:', err) }
-
-      // Enable all audio tracks
-      const local = (call as any).localStream?.getAudioTracks() || []
-      const remote = (call as any).remoteStream?.getAudioTracks() || []
-      local.forEach((t: MediaStreamTrack) => { t.enabled = true })
-      remote.forEach((t: MediaStreamTrack) => { t.enabled = true })
-
-      callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000)
-    })
-
-    call.on('sample', () => {
-      const remoteStream = (call as any).remoteStream
-      if (remoteStream && remoteAudioRef.current && !remoteAudioRef.current.srcObject) {
-        remoteAudioRef.current.srcObject = remoteStream
-        remoteAudioRef.current.play().catch(console.warn)
-      }
-    })
-
-    call.on('disconnect', () => {
-      setCallStatus('Call ended')
-      cleanupCall()
-      setTimeout(() => { if (!activeCallRef.current) setCallStatus('Ready') }, 2000)
-      fetchHistory()
-    })
-    call.on('cancel', () => { setCallStatus('Call cancelled'); cleanupCall() })
-    call.on('reject', () => { setCallStatus('Call rejected'); cleanupCall() })
-    call.on('error', (e: any) => { setCallStatus(`Error: ${e.message}`); cleanupCall() })
-  }
-
-  const cleanupCall = () => {
-    setIsCalling(false)
-    setIsCallLoading(false)
-    activeCallRef.current = null
-    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null }
-    setCallDuration(0)
-    setIsMuted(false)
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.pause()
-      remoteAudioRef.current.srcObject = null
-      remoteAudioRef.current = null
-    }
-  }
-
-  // ─── Call Actions ────────────────────────────────────────────────
-  const handleMakeCall = async () => {
-    if (isCallLoading || isCalling || !phoneNumber.trim()) return
-
-    // Validate number
-    const cleaned = phoneNumber.trim().replace(/[\s\-\(\)]/g, '')
-    const formatted = cleaned.startsWith('+') ? cleaned : `+${cleaned}`
-    const digits = formatted.substring(1)
-    if (!/^\d{10,15}$/.test(digits)) {
-      setDialog({ isOpen: true, title: 'Invalid Number', message: 'Enter a valid phone number with country code (e.g., +14805551234)', type: 'error' })
-      return
-    }
-
-    if (!deviceRef.current) {
-      setDialog({ isOpen: true, title: 'Not Ready', message: 'Twilio device not initialized. Please wait.', type: 'warning' })
-      return
-    }
-
-    // Request mic
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      stream.getTracks().forEach(t => t.stop())
-    } catch {
-      setDialog({ isOpen: true, title: 'Microphone Required', message: 'Allow microphone access to make calls.', type: 'error' })
-      return
-    }
-
-    setIsCallLoading(true)
-    setCallStatus('Connecting...')
-
-    try {
-      // Wait for device registration if needed
-      if (deviceRef.current.state !== 'registered') {
-        await new Promise<void>((resolve, reject) => {
-          const start = Date.now()
-          const check = () => {
-            if (deviceRef.current?.state === 'registered') resolve()
-            else if (Date.now() - start > 10000) reject(new Error('Registration timeout'))
-            else setTimeout(check, 100)
-          }
-          check()
-        })
-      }
-
-      setIsCalling(true)
-      applyAudioDevices()
-
-      const audioConstraints = selectedMic !== 'default' ? { deviceId: { exact: selectedMic } } : true
-      const call = await deviceRef.current.connect({
-        params: { To: formatted },
-        rtcConstraints: { audio: audioConstraints }
-      } as any)
-
-      activeCallRef.current = call
-      setupCallHandlers(call)
-      applyAudioDevices(call)
-
-      // Save to history
-      saveCallHistory(call, formatted)
-
-      setIsCallLoading(false)
-    } catch (error: any) {
-      console.error('Call error:', error)
-      setCallStatus(`Error: ${error.message}`)
-      setIsCallLoading(false)
-      setIsCalling(false)
-      setDialog({ isOpen: true, title: 'Call Failed', message: error.message || 'Failed to make call', type: 'error' })
-    }
-  }
-
-  const saveCallHistory = async (call: Call, formattedNumber: string) => {
-    try {
-      const user = await getCurrentUser()
-      if (!user) return
-      const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email!).single()
-      if (!doctor) return
-
-      const saveFn = async (sid: string, status: string) => {
-        const { data: existing } = await supabase
-          .from('communication_history').select('id')
-          .eq('twilio_sid', sid).eq('doctor_id', doctor.id).single()
-
-        const record: any = { doctor_id: doctor.id, type: 'call', direction: 'outbound', to_number: formattedNumber, status, twilio_sid: sid }
-        if (selectedPatient?.id) record.patient_id = selectedPatient.id
-
-        if (existing) {
-          await supabase.from('communication_history').update({ status, ...(selectedPatient?.id ? { patient_id: selectedPatient.id } : {}) })
-            .eq('twilio_sid', sid).eq('doctor_id', doctor.id)
-        } else {
-          await supabase.from('communication_history').insert(record)
-        }
-        fetchHistory()
-      }
-
-      // Get CallSid when available
-      let sid = (call as any).parameters?.CallSid || (call as any).sid
-      if (sid) await saveFn(sid, 'initiated')
-      else setTimeout(async () => {
-        sid = (call as any).parameters?.CallSid || (call as any).sid
-        if (sid) await saveFn(sid, 'initiated')
-      }, 500)
-
-      call.on('accept', async () => {
-        const s = (call as any).parameters?.CallSid || (call as any).sid || sid
-        if (s) { sid = s; await saveFn(s, 'connected') }
-      })
-
-      call.on('disconnect', async () => {
-        const s = (call as any).parameters?.CallSid || (call as any).sid || sid
-        if (s) {
-          const { data: rec } = await supabase.from('communication_history').select('status')
-            .eq('twilio_sid', s).eq('doctor_id', doctor.id).single()
-          const finalStatus = rec?.status === 'connected' ? 'completed' : 'ended'
-          await supabase.from('communication_history').update({ status: finalStatus, duration: callDuration })
-            .eq('twilio_sid', s).eq('doctor_id', doctor.id)
-          fetchHistory()
-        }
-      })
-    } catch (err) { console.error('Save history error:', err) }
-  }
-
-  const handleEndCall = () => {
-    activeCallRef.current?.disconnect()
-    cleanupCall()
-    setCallStatus('Call ended')
-    setTimeout(() => { if (!activeCallRef.current) setCallStatus('Ready') }, 2000)
-    fetchHistory()
-  }
-
-  const handleToggleMute = () => {
-    if (!activeCallRef.current) return
-    const next = !isMuted
-    activeCallRef.current.mute(next)
-    setIsMuted(next)
-  }
-
-  // ─── SMS ─────────────────────────────────────────────────────────
-  const handleSendSMS = async () => {
-    if (isSendingSMS || !smsTo.trim() || !smsMessage.trim()) {
-      if (!smsTo.trim() || !smsMessage.trim()) {
-        setDialog({ isOpen: true, title: 'Missing Info', message: 'Enter phone number and message', type: 'warning' })
-      }
-      return
-    }
-
-    let formatted = smsTo.trim()
-    if (!formatted.startsWith('+')) formatted = `+${formatted}`
-
-    setIsSendingSMS(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/communication/sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '' },
-        credentials: 'include',
-        body: JSON.stringify({ to: formatted, message: smsMessage.trim(), patientId: selectedPatient?.id })
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send SMS')
-
-      setDialog({ isOpen: true, title: 'Sent', message: 'SMS sent successfully!', type: 'success' })
-      setSmsMessage('')
-      fetchHistory()
-    } catch (err: any) {
-      setDialog({ isOpen: true, title: 'Error', message: err.message || 'Failed to send SMS', type: 'error' })
-    } finally {
-      setIsSendingSMS(false)
-    }
-  }
-
-  // ─── Audio Devices ───────────────────────────────────────────────
-  const loadAudioDevices = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach(t => t.stop())
-      setMicGranted(true)
-    } catch { /* permission denied */ }
-
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      setMics(devices.filter(d => d.kind === 'audioinput'))
-      setSpeakers(devices.filter(d => d.kind === 'audiooutput'))
-    } catch (err) { console.error('Audio devices error:', err) }
-  }
-
-  const applyAudioDevices = (call?: Call | null) => {
-    const device = deviceRef.current
-    if (!device) return
-    if (selectedMic !== 'default' && device.audio) {
-      try {
-        if (typeof (device.audio as any).setInputDevice === 'function')
-          (device.audio as any).setInputDevice(selectedMic).catch(console.warn)
-      } catch {}
-    }
-    if (selectedSpeaker !== 'default') {
-      try {
-        if (device.audio && typeof (device.audio as any).setOutputDevice === 'function')
-          (device.audio as any).setOutputDevice(selectedSpeaker).catch(console.warn)
-      } catch {}
-    }
-  }
-
-  // ─── Helpers ─────────────────────────────────────────────────────
-  const handleDialPad = (digit: string) => setPhoneNumber(p => p + digit)
-  const formatDuration = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
-  const formatDate = (d: string) => {
-    const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000)
-    if (diff === 0) return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-    if (diff === 1) return 'Yesterday'
-    if (diff < 7) return `${diff}d ago`
-    return new Date(d).toLocaleDateString()
-  }
-
-  const filteredHistory = history.filter(h => {
-    if (historyFilter !== 'all' && h.type !== historyFilter) return false
-    if (selectedPatient) {
-      const matchesPatient = h.patients?.id === selectedPatient.id
-      const matchesPhone = h.to_number === selectedPatient.phone || h.from_number === selectedPatient.phone
-      return matchesPatient || matchesPhone
-    }
-    return true
-  })
-
-  // Fetch recording from Twilio
-  const fetchRecording = async (item: HistoryItem) => {
-    const key = item.twilio_sid || item.meeting_id
-    if (!key || fetchingRecordings.current.has(key)) return
-    fetchingRecordings.current.add(key)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const param = item.twilio_sid ? `callSid=${item.twilio_sid}` : `meetingId=${item.meeting_id}`
-      const res = await fetch(`/api/communication/recordings?${param}`, {
-        headers: { 'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '' },
-        credentials: 'include'
-      })
-      const data = await res.json()
-      if (data.success && data.recordingUrl) {
-        recordingCache.current[key] = data.recordingUrl
-        setHistory(prev => prev.map(h => h.id === item.id ? { ...h, recording_url: data.recordingUrl } : h))
-        fetchHistory()
-      } else {
-        setDialog({ isOpen: true, title: 'No Recording', message: data.error || 'Recording not available yet.', type: 'warning' })
-      }
-    } catch {
-      setDialog({ isOpen: true, title: 'Error', message: 'Failed to fetch recording', type: 'error' })
-    } finally {
-      fetchingRecordings.current.delete(key!)
-    }
-  }
-
-  const togglePlayback = (id: string) => {
-    const audio = audioRefs.current[id]
-    if (!audio) return
-    if (playingId === id) { audio.pause(); setPlayingId(null) }
-    else {
-      Object.values(audioRefs.current).forEach(a => a?.pause())
-      audio.play().catch(console.error)
-      setPlayingId(id)
-    }
-  }
-
-  // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-b from-[#071515] to-[#0a1e1e] text-white overflow-hidden">
-
-      {/* ── Top Bar ── */}
-      <div className="flex-shrink-0 border-b border-[#1a3d3d]/60 bg-[#0a1a1a]/80 backdrop-blur-sm">
-        <div className="flex items-center justify-between px-4 py-2.5">
+    <div className="min-h-screen bg-[#030f0f] text-white flex flex-col">
+      {/* HEADER */}
+      <div className="bg-gradient-to-r from-[#061818] to-[#0a1f1f] border-b border-[#1a3d3d]/30 px-5 py-4">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <Link href="/doctor" className="p-1.5 rounded-lg hover:bg-[#164e4e]/50 transition-colors">
-              <ArrowLeft className="w-4 h-4 text-gray-400" />
-            </Link>
-            {/* Patient Search — EHR-standard unified search */}
-            <PatientSearchBar
-              onSelect={(patient) => setSelectedPatient(patient)}
-              onClear={() => { setSelectedPatient(null); setPhoneNumber(''); setSmsTo('') }}
-              selectedPatient={selectedPatient}
-              compact
-              showSelected
-              className="w-72"
-            />
-          </div>
-
-          <h1 className="text-base font-semibold text-white tracking-tight">Communication Center</h1>
-        </div>
-      </div>
-
-      {/* ── Main Content ── */}
-      <div className="flex-1 flex overflow-hidden">
-
-        {/* ── Left Panel: Dial Pad / SMS ── */}
-        <div className="w-[380px] flex-shrink-0 border-r border-[#1a3d3d]/40 flex flex-col bg-[#091818]/50">
-
-          {/* Tab Switcher */}
-          <div className="flex border-b border-[#1a3d3d]/40">
-            <button
-              onClick={() => setActiveTab('call')}
-              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'call' ? 'text-teal-400 border-b-2 border-teal-400 bg-teal-400/5' : 'text-gray-500 hover:text-gray-300'}`}
-            >
-              <Phone className="w-4 h-4" />Call
-            </button>
-            <button
-              onClick={() => setActiveTab('sms')}
-              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'sms' ? 'text-teal-400 border-b-2 border-teal-400 bg-teal-400/5' : 'text-gray-500 hover:text-gray-300'}`}
-            >
-              <MessageSquare className="w-4 h-4" />SMS
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {activeTab === 'call' ? (
-              /* ── CALL TAB ── */
-              <div className="space-y-4">
-                {/* Phone Input */}
-                <div>
-                  <input
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="+1 (480) 555-1234"
-                    disabled={isCalling}
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-4 py-3 text-white text-lg font-mono tracking-wide focus:outline-none focus:border-teal-500 disabled:opacity-50 placeholder-gray-600"
-                  />
-                  <div className="flex items-center justify-between mt-1.5 px-1">
-                    <p className={`text-xs ${isDeviceReady ? 'text-teal-500' : 'text-gray-500'}`}>
-                      {isCalling && callDuration > 0 ? (
-                        <span className="text-teal-400 font-mono font-bold text-sm">{formatDuration(callDuration)}</span>
-                      ) : callStatus}
-                    </p>
-                    {isDeviceReady && !isCalling && (
-                      <span className="flex items-center gap-1 text-xs text-teal-600">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
-                        Ready
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Audio Devices */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Mic</label>
-                    <select
-                      value={selectedMic}
-                      onChange={(e) => { setSelectedMic(e.target.value); applyAudioDevices() }}
-                      disabled={isCalling}
-                      className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
-                    >
-                      {mics.length === 0 ? <option>No mic found</option> : mics.map(m => (
-                        <option key={m.deviceId} value={m.deviceId}>{m.label || 'Microphone'}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Speaker</label>
-                    <select
-                      value={selectedSpeaker}
-                      onChange={(e) => { setSelectedSpeaker(e.target.value); applyAudioDevices() }}
-                      disabled={isCalling}
-                      className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
-                    >
-                      {speakers.length === 0 ? <option>Default</option> : speakers.map(s => (
-                        <option key={s.deviceId} value={s.deviceId}>{s.label || 'Speaker'}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Dial Pad */}
-                <div className="grid grid-cols-3 gap-2">
-                  {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
-                    <button
-                      key={d}
-                      onClick={() => handleDialPad(d)}
-                      disabled={isCalling}
-                      className="bg-[#0d2626] hover:bg-[#164e4e] border border-[#1a3d3d] rounded-lg py-3.5 text-white font-semibold text-lg transition-all active:scale-95 disabled:opacity-40"
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Call Controls */}
-                <div className="flex gap-2">
-                  {isCalling ? (
-                    <>
-                      <button
-                        onClick={handleToggleMute}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-colors ${isMuted ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#1a3d3d] hover:bg-[#225454]'} text-white`}
-                      >
-                        {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                        {isMuted ? 'Unmute' : 'Mute'}
-                      </button>
-                      <button
-                        onClick={handleEndCall}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium bg-red-600 hover:bg-red-700 text-white transition-colors"
-                      >
-                        <PhoneOff className="w-4 h-4" />End
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => { setPhoneNumber(''); }}
-                        className="px-4 py-3 rounded-lg font-medium bg-[#1a3d3d] hover:bg-[#225454] text-gray-300 transition-colors"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        onClick={handleMakeCall}
-                        disabled={!phoneNumber.trim() || !isDeviceReady || isCallLoading}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {isCallLoading ? (
-                          <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Connecting...</>
-                        ) : (
-                          <><Phone className="w-4 h-4" />Call</>
-                        )}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ) : (
-              /* ── SMS TAB ── */
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">To</label>
-                  <input
-                    type="tel"
-                    value={smsTo}
-                    onChange={(e) => setSmsTo(e.target.value)}
-                    placeholder="+14805551234"
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Message</label>
-                  <textarea
-                    value={smsMessage}
-                    onChange={(e) => setSmsMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    rows={8}
-                    className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500 resize-none placeholder-gray-600"
-                  />
-                  <p className="text-right text-[10px] text-gray-600 mt-1">{smsMessage.length}/1600</p>
-                </div>
-                <button
-                  onClick={handleSendSMS}
-                  disabled={isSendingSMS || !smsTo.trim() || !smsMessage.trim()}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold bg-teal-600 hover:bg-teal-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSendingSMS ? (
-                    <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Sending...</>
-                  ) : (
-                    <><Send className="w-4 h-4" />Send SMS</>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Right Panel: History ── */}
-        <div className="flex-1 flex flex-col min-w-0">
-
-          {/* History Header */}
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-[#1a3d3d]/40 bg-[#091818]/30">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-teal-500" />
-              <h2 className="text-sm font-semibold text-white">
-                History
-                {selectedPatient && <span className="text-gray-500 font-normal ml-1">— {selectedPatient.first_name} {selectedPatient.last_name}</span>}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Filter Tabs */}
-              {(['all', 'call', 'sms'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setHistoryFilter(f)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${historyFilter === f ? 'bg-teal-600/20 text-teal-400' : 'text-gray-500 hover:text-gray-300'}`}
-                >
-                  {f === 'all' ? 'All' : f === 'call' ? 'Calls' : 'SMS'}
-                </button>
-              ))}
-              <button onClick={fetchHistory} className="p-1.5 rounded hover:bg-[#164e4e]/50 transition-colors" title="Refresh">
-                <RefreshCw className={`w-3.5 h-3.5 text-gray-500 ${loadingHistory ? 'animate-spin' : ''}`} />
-              </button>
+            <MessageSquare className="w-6 h-6 text-emerald-400" />
+            <div>
+              <h1 className="text-lg font-bold">Communication Center</h1>
+              <p className="text-xs text-gray-500">Calls • SMS • Patient Portal • Staff Chat • Admin Messages</p>
             </div>
           </div>
-
-          {/* History List */}
-          <div className="flex-1 overflow-y-auto">
-            {loadingHistory ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin rounded-full h-6 w-6 border-2 border-teal-400/30 border-t-teal-400" />
-              </div>
-            ) : filteredHistory.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-600">
-                <Clock className="w-8 h-8 mb-2 opacity-40" />
-                <p className="text-sm">No communication history</p>
-                <p className="text-xs mt-1">Send an SMS or make a call to get started</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-[#1a3d3d]/30">
-                {filteredHistory.map(item => {
-                  const name = item.patients ? `${item.patients.first_name} ${item.patients.last_name}` : item.to_number || 'Unknown'
-                  const isCall = item.type === 'call'
-                  const isSMS = item.type === 'sms'
-                  const recUrl = item.recording_url || recordingCache.current[item.twilio_sid || item.meeting_id || '']
-
-                  return (
-                    <div key={item.id} className="px-4 py-3 hover:bg-[#0d2020]/50 transition-colors group">
-                      <div className="flex items-start gap-3">
-                        {/* Icon */}
-                        <div className={`mt-0.5 p-1.5 rounded-lg ${isCall ? 'bg-blue-500/10' : isSMS ? 'bg-green-500/10' : 'bg-purple-500/10'}`}>
-                          {isCall ? <PhoneCall className="w-3.5 h-3.5 text-blue-400" /> : <MessageSquare className="w-3.5 h-3.5 text-green-400" />}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm text-white font-medium truncate">{name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                              item.status === 'completed' || item.status === 'delivered' || item.status === 'sent' ? 'bg-green-500/10 text-green-400' :
-                              item.status === 'connected' ? 'bg-blue-500/10 text-blue-400' :
-                              item.status === 'failed' || item.status === 'error' ? 'bg-red-500/10 text-red-400' :
-                              'bg-gray-500/10 text-gray-400'
-                            }`}>
-                              {item.status || 'unknown'}
-                            </span>
-                            <span className="text-[10px] text-gray-600">{item.direction === 'outbound' ? '↗' : '↙'}</span>
-                          </div>
-
-                          {/* SMS message preview */}
-                          {item.message && (
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.message}</p>
-                          )}
-
-                          {/* Meta row */}
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <span className="text-[10px] text-gray-600">{formatDate(item.created_at)}</span>
-                            {item.duration && isCall && (
-                              <span className="text-[10px] text-gray-600">{formatDuration(item.duration)}</span>
-                            )}
-
-                            {/* Recording Controls */}
-                            {isCall && (
-                              <>
-                                {recUrl ? (
-                                  <div className="flex items-center gap-1">
-                                    <audio
-                                      ref={el => { if (el) audioRefs.current[item.id] = el }}
-                                      src={recUrl}
-                                      onEnded={() => setPlayingId(null)}
-                                      onPlay={() => setPlayingId(item.id)}
-                                      onPause={() => setPlayingId(null)}
-                                      preload="metadata"
-                                      crossOrigin="anonymous"
-                                    />
-                                    <button
-                                      onClick={() => togglePlayback(item.id)}
-                                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${playingId === item.id ? 'text-teal-300 bg-teal-900/30' : 'text-teal-500 hover:text-teal-400 hover:bg-teal-900/20'}`}
-                                    >
-                                      {playingId === item.id ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                                      {playingId === item.id ? 'Pause' : 'Play'}
-                                    </button>
-                                    <a href={recUrl} download className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-blue-500 hover:text-blue-400 hover:bg-blue-900/20 transition-colors">
-                                      <Download className="w-3 h-3" />
-                                    </a>
-                                  </div>
-                                ) : item.twilio_sid ? (
-                                  <button
-                                    onClick={() => fetchRecording(item)}
-                                    className="text-[10px] text-blue-500 hover:text-blue-400 transition-colors"
-                                  >
-                                    Fetch Recording
-                                  </button>
-                                ) : null}
-                              </>
-                            )}
-
-                            {/* Call patient from history */}
-                            {item.to_number && !isCalling && (
-                              <button
-                                onClick={() => { setPhoneNumber(item.to_number!); setActiveTab('call') }}
-                                className="opacity-0 group-hover:opacity-100 text-[10px] text-teal-600 hover:text-teal-400 transition-all"
-                              >
-                                Call back
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${isDeviceReady ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
+            <span className="text-xs text-gray-400">{callStatus}</span>
           </div>
         </div>
+        <PatientSearchBar onSelect={setSelectedPatient} placeholder="Search patient for call/message..." />
       </div>
 
-      {/* Dialog */}
-      <Dialog isOpen={dialog.isOpen} onClose={() => setDialog({ ...dialog, isOpen: false })} title={dialog.title} message={dialog.message} type={dialog.type} />
+      {/* TABS */}
+      <div className="flex border-b border-[#1a3d3d]/30 px-2 overflow-x-auto">
+        {TAB_CONFIG.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${activeTab === t.key ? 'text-emerald-400 border-emerald-400 bg-emerald-400/5' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
+            <t.icon className="w-4 h-4" />
+            {t.label}
+            {t.key === 'patient_msgs' && unreadPatient > 0 && <span className="px-1.5 py-0.5 bg-red-600 text-white text-[10px] rounded-full font-bold">{unreadPatient}</span>}
+            {t.key === 'admin' && unreadAdmin > 0 && <span className="px-1.5 py-0.5 bg-red-600 text-white text-[10px] rounded-full font-bold">{unreadAdmin}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ALERTS */}
+      {error && <div className="mx-4 mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2">{error}<button onClick={() => setError(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button></div>}
+      {success && <div className="mx-4 mt-3 p-3 bg-green-900/20 border border-green-500/30 rounded-lg text-xs text-green-400">{success}</div>}
+
+      {/* CONTENT */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'calls' && <CallsTab phoneNumber={phoneNumber} setPhoneNumber={setPhoneNumber} isCalling={isCalling} callStatus={callStatus} callDuration={callDuration} isMuted={isMuted} isDeviceReady={isDeviceReady} makeCall={makeCall} endCall={() => endCall('Ended')} toggleMute={() => { activeCallRef.current?.mute(!isMuted); setIsMuted(!isMuted) }} history={filteredHistory} historyFilter={historyFilter} setHistoryFilter={setHistoryFilter} selectedPatient={selectedPatient} />}
+        {activeTab === 'sms' && <SMSTab smsTo={smsTo} setSmsTo={setSmsTo} smsMessage={smsMessage} setSmsMessage={setSmsMessage} isSending={isSendingSMS} sendSMS={sendSMS} history={filteredHistory.filter(h => h.type === 'sms')} selectedPatient={selectedPatient} />}
+        {activeTab === 'patient_msgs' && <PatientMsgsTab msgs={patientMsgs} selected={selectedPtMsg} setSelected={setSelectedPtMsg} reply={ptReply} setReply={setPtReply} sendReply={sendPatientReply} />}
+        {activeTab === 'staff_chat' && <StaffChatTab convs={staffConvs} activeConv={activeStaffConv} setActiveConv={(c) => { setActiveStaffConv(c); if (c) fetchStaffMsgs(c.id) }} msgs={staffMsgs} newMsg={staffNewMsg} setNewMsg={setStaffNewMsg} send={sendStaffMsg} endRef={staffEndRef} doctorName={doctorName} />}
+        {activeTab === 'admin' && <AdminTab conv={adminConv} msgs={adminMsgs} newMsg={adminNewMsg} setNewMsg={setAdminNewMsg} send={sendAdminMsg} endRef={adminEndRef} doctorName={doctorName} />}
+      </div>
     </div>
   )
 }
 
+// ═══════════════════════════════════════════════════
+// TAB COMPONENTS
+// ═══════════════════════════════════════════════════
 
+function CallsTab({ phoneNumber, setPhoneNumber, isCalling, callStatus, callDuration, isMuted, isDeviceReady, makeCall, endCall, toggleMute, history, historyFilter, setHistoryFilter, selectedPatient }: any) {
+  const dialPad = ['1','2','3','4','5','6','7','8','9','*','0','#']
+  return (
+    <div className="flex h-full">
+      {/* Dialer */}
+      <div className="w-80 border-r border-[#1a3d3d]/30 p-5 flex flex-col">
+        {selectedPatient && <div className="mb-3 px-3 py-2 bg-emerald-600/10 border border-emerald-500/20 rounded-lg text-xs"><span className="text-emerald-400 font-medium">{selectedPatient.first_name} {selectedPatient.last_name}</span><span className="text-gray-500 ml-2">{selectedPatient.phone}</span></div>}
+        <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="Enter phone number" className={`${INP} text-center text-lg font-mono tracking-wider mb-3`} />
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {dialPad.map(d => <button key={d} onClick={() => setPhoneNumber((p: string) => p + d)} className="py-3 rounded-lg bg-[#0a1f1f] hover:bg-[#0c2828] text-lg font-semibold transition-colors">{d}</button>)}
+        </div>
+        {!isCalling ? (
+          <button onClick={makeCall} disabled={!isDeviceReady || !phoneNumber} className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"><Phone className="w-5 h-5" />Call</button>
+        ) : (
+          <div className="space-y-2">
+            <div className="text-center"><p className="text-emerald-400 font-bold text-lg">{fmtDuration(callDuration)}</p><p className="text-xs text-gray-500">{callStatus}</p></div>
+            <div className="flex gap-2">
+              <button onClick={toggleMute} className={`flex-1 py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${isMuted ? 'bg-amber-600/20 text-amber-400' : 'bg-[#0a1f1f] text-gray-300'}`}>{isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}{isMuted ? 'Unmute' : 'Mute'}</button>
+              <button onClick={endCall} className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-2"><PhoneOff className="w-4 h-4" />End</button>
+            </div>
+          </div>
+        )}
+      </div>
+      {/* History */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#1a3d3d]/30">
+          <h3 className="text-sm font-bold flex-1">Call History</h3>
+          {['all','call','sms'].map(f => <button key={f} onClick={() => setHistoryFilter(f)} className={`px-3 py-1 text-xs rounded-full ${historyFilter === f ? 'bg-emerald-600/20 text-emerald-400' : 'text-gray-500 hover:text-gray-300'}`}>{f === 'all' ? 'All' : f.toUpperCase()}</button>)}
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {history.length === 0 ? <p className="text-center text-gray-600 text-sm py-10">No call history</p> : history.map((h: HistoryItem) => (
+            <div key={h.id} className="flex items-center gap-3 p-3 bg-[#0a1f1f] rounded-lg hover:bg-[#0c2828] transition-colors">
+              <HistoryIcon type={h.type} direction={h.direction} status={h.status} />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium">{h.patients ? `${h.patients.first_name} ${h.patients.last_name}` : h.to_number || h.from_number || 'Unknown'}</div>
+                <div className="text-[10px] text-gray-500">{h.type === 'sms' ? (h.message || '').slice(0, 50) : h.duration ? fmtDuration(h.duration) : h.status || 'No answer'}</div>
+              </div>
+              <div className="text-[10px] text-gray-600">{fmtDate(h.created_at)}</div>
+              {h.type === 'call' && <button onClick={() => setPhoneNumber(h.to_number || h.from_number || '')} className="p-1.5 hover:bg-[#1a3d3d] rounded-lg"><Phone className="w-3.5 h-3.5 text-gray-500" /></button>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
+function SMSTab({ smsTo, setSmsTo, smsMessage, setSmsMessage, isSending, sendSMS, history, selectedPatient }: any) {
+  return (
+    <div className="flex h-full">
+      <div className="w-96 border-r border-[#1a3d3d]/30 p-5 flex flex-col">
+        <h3 className="text-sm font-bold mb-3">Send SMS</h3>
+        {selectedPatient && <div className="mb-3 px-3 py-2 bg-emerald-600/10 border border-emerald-500/20 rounded-lg text-xs"><span className="text-emerald-400 font-medium">{selectedPatient.first_name} {selectedPatient.last_name}</span></div>}
+        <input value={smsTo} onChange={e => setSmsTo(e.target.value)} placeholder="Recipient phone number" className={`${INP} mb-3`} />
+        <textarea value={smsMessage} onChange={e => setSmsMessage(e.target.value)} placeholder="Type your message..." className={`${INP} flex-1 resize-none min-h-[120px] mb-3`} />
+        <button onClick={sendSMS} disabled={isSending || !smsTo || !smsMessage} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold rounded-xl flex items-center justify-center gap-2"><Send className="w-4 h-4" />{isSending ? 'Sending...' : 'Send SMS'}</button>
+      </div>
+      <div className="flex-1 flex flex-col">
+        <div className="px-4 py-3 border-b border-[#1a3d3d]/30"><h3 className="text-sm font-bold">SMS History</h3></div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {history.length === 0 ? <p className="text-center text-gray-600 text-sm py-10">No SMS history</p> : history.map((h: HistoryItem) => (
+            <div key={h.id} className="flex items-start gap-3 p-3 bg-[#0a1f1f] rounded-lg">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${h.direction === 'outbound' ? 'bg-emerald-600/20' : 'bg-blue-600/20'}`}>
+                <MessageSquare className={`w-4 h-4 ${h.direction === 'outbound' ? 'text-emerald-400' : 'text-blue-400'}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2"><span className="text-xs font-medium">{h.patients ? `${h.patients.first_name} ${h.patients.last_name}` : h.to_number || 'Unknown'}</span><span className="text-[10px] text-gray-600">{fmtDate(h.created_at)}</span></div>
+                <p className="text-xs text-gray-400 mt-0.5">{h.message || '(no content)'}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
+function PatientMsgsTab({ msgs, selected, setSelected, reply, setReply, sendReply }: any) {
+  return (
+    <div className="flex h-full">
+      <div className="w-80 border-r border-[#1a3d3d]/30 flex flex-col">
+        <div className="px-4 py-3 border-b border-[#1a3d3d]/30"><h3 className="text-sm font-bold">Patient Messages</h3></div>
+        <div className="flex-1 overflow-y-auto">
+          {msgs.length === 0 ? <p className="text-center text-gray-600 text-sm py-10">No patient messages</p> : msgs.map((m: PatientMsg) => (
+            <div key={m.id} onClick={() => setSelected(m)} className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-[#1a3d3d]/20 ${selected?.id === m.id ? 'bg-emerald-600/10' : 'hover:bg-[#0a1f1f]'}`}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${!m.is_read && m.direction === 'incoming' ? 'bg-blue-400' : 'bg-transparent'}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between"><span className="text-xs font-medium">{m.patients?.first_name} {m.patients?.last_name}</span><span className="text-[10px] text-gray-600">{fmtDate(m.created_at)}</span></div>
+                <p className="text-[11px] text-gray-500 truncate">{m.subject || m.body.slice(0, 60)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col">
+        {selected ? (
+          <>
+            <div className="px-5 py-4 border-b border-[#1a3d3d]/30">
+              <div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${selected.direction === 'incoming' ? 'bg-blue-600/20 text-blue-400' : 'bg-emerald-600/20 text-emerald-400'}`}>{selected.direction}</span><h3 className="text-sm font-bold">{selected.patients?.first_name} {selected.patients?.last_name}</h3></div>
+              {selected.subject && <p className="text-xs text-gray-400 mt-1">{selected.subject}</p>}
+            </div>
+            <div className="flex-1 overflow-y-auto p-5"><div className="bg-[#0a1f1f] rounded-xl p-4 text-sm text-gray-300 leading-relaxed">{selected.body}</div></div>
+            <div className="p-4 border-t border-[#1a3d3d]/30 flex gap-2">
+              <input value={reply} onChange={e => setReply(e.target.value)} placeholder="Type reply..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && sendReply()} />
+              <button onClick={sendReply} disabled={!reply} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center"><div className="text-center"><Mail className="w-12 h-12 text-gray-700 mx-auto mb-3" /><p className="text-gray-500 text-sm">Select a message to view</p></div></div>
+        )}
+      </div>
+    </div>
+  )
+}
 
+function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: any) {
+  return (
+    <div className="flex h-full">
+      <div className="w-72 border-r border-[#1a3d3d]/30 flex flex-col">
+        <div className="px-4 py-3 border-b border-[#1a3d3d]/30 flex items-center justify-between"><h3 className="text-sm font-bold">Conversations</h3><span className="text-[10px] text-gray-500">{convs.length}</span></div>
+        <div className="flex-1 overflow-y-auto">
+          {convs.length === 0 ? <p className="text-center text-gray-600 text-xs py-10">No conversations yet<br /><span className="text-gray-700">Start one in Staff Hub</span></p> : convs.map((c: StaffConv) => {
+            const parts = (c.staff_conversation_participants || []).map((p: any) => Array.isArray(p.practice_staff) ? p.practice_staff[0] : p.practice_staff).filter(Boolean)
+            const name = c.name || parts.map((p: any) => `${p.first_name} ${p.last_name}`).join(', ') || 'Conversation'
+            return (
+              <div key={c.id} onClick={() => setActiveConv(c)} className={`px-4 py-3 cursor-pointer border-b border-[#1a3d3d]/20 transition-colors ${activeConv?.id === c.id ? 'bg-emerald-600/10' : 'hover:bg-[#0a1f1f]'}`}>
+                <div className="flex items-center justify-between"><span className="text-xs font-medium truncate">{name}</span>{c.last_message_at && <span className="text-[10px] text-gray-600 shrink-0">{fmtDate(c.last_message_at)}</span>}</div>
+                <p className="text-[10px] text-gray-500 truncate mt-0.5">{c.last_message_preview || 'No messages yet'}</p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col">
+        {activeConv ? (
+          <>
+            <div className="px-5 py-3 border-b border-[#1a3d3d]/30"><h3 className="text-sm font-bold">{activeConv.name || 'Chat'}</h3></div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {msgs.map((m: StaffMsg) => {
+                const isMe = m.sender?.first_name && doctorName.includes(m.sender.first_name)
+                return (
+                  <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[70%] rounded-xl px-3.5 py-2.5 ${m.message_type === 'system' ? 'bg-[#1a3d3d]/30 text-gray-500 text-[10px] text-center w-full max-w-full' : isMe ? 'bg-emerald-600/20 text-emerald-100' : 'bg-[#0a1f1f] text-gray-300'}`}>
+                      {!isMe && m.message_type !== 'system' && <div className="text-[10px] text-gray-500 mb-0.5">{m.sender?.first_name} {m.sender?.last_name}</div>}
+                      <p className="text-xs leading-relaxed">{m.content}</p>
+                      <div className={`text-[9px] mt-1 ${isMe ? 'text-emerald-500 text-right' : 'text-gray-600'}`}>{fmtTime(m.created_at)}</div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={endRef} />
+            </div>
+            <div className="p-3 border-t border-[#1a3d3d]/30 flex gap-2">
+              <input value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Type a message..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && send()} />
+              <button onClick={send} disabled={!newMsg} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center"><div className="text-center"><Users className="w-12 h-12 text-gray-700 mx-auto mb-3" /><p className="text-gray-500 text-sm">Select a conversation</p><p className="text-gray-700 text-xs mt-1">or start one in Staff Hub</p></div></div>
+        )}
+      </div>
+    </div>
+  )
+}
 
+function AdminTab({ conv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: any) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-5 py-3 border-b border-[#1a3d3d]/30 flex items-center gap-2"><Shield className="w-4 h-4 text-amber-400" /><h3 className="text-sm font-bold">Admin Messages</h3></div>
+      {!conv ? (
+        <div className="flex-1 flex items-center justify-center"><div className="text-center"><Shield className="w-12 h-12 text-gray-700 mx-auto mb-3" /><p className="text-gray-500 text-sm">No admin conversation yet</p><p className="text-gray-700 text-xs mt-1">Admin will reach out when needed</p></div></div>
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {msgs.length === 0 && <p className="text-center text-gray-600 text-xs py-10">No messages yet — send the first one</p>}
+            {msgs.map((m: AdminMsg) => {
+              const isMe = m.sender_type === 'doctor'
+              return (
+                <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[70%] rounded-xl px-3.5 py-2.5 ${isMe ? 'bg-emerald-600/20 text-emerald-100' : 'bg-amber-600/10 text-amber-100'}`}>
+                    <div className={`text-[10px] mb-0.5 ${isMe ? 'text-emerald-500' : 'text-amber-500'}`}>{isMe ? doctorName : m.sender_name || 'Admin'}</div>
+                    <p className="text-xs leading-relaxed">{m.content}</p>
+                    <div className={`text-[9px] mt-1 ${isMe ? 'text-emerald-500 text-right' : 'text-amber-600'}`}>{fmtTime(m.created_at)}</div>
+                  </div>
+                </div>
+              )
+            })}
+            <div ref={endRef} />
+          </div>
+          <div className="p-3 border-t border-[#1a3d3d]/30 flex gap-2">
+            <input value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Message admin..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && send()} />
+            <button onClick={send} disabled={!newMsg} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ═══ HELPER COMPONENTS ═══
+function HistoryIcon({ type, direction, status }: { type: string; direction: string; status?: string }) {
+  const missed = status === 'no-answer' || status === 'busy' || status === 'failed'
+  if (type === 'sms') return <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-purple-400" /></div>
+  if (missed) return <div className="w-8 h-8 rounded-full bg-red-600/20 flex items-center justify-center"><PhoneMissed className="w-4 h-4 text-red-400" /></div>
+  if (direction === 'inbound') return <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center"><PhoneIncoming className="w-4 h-4 text-blue-400" /></div>
+  return <div className="w-8 h-8 rounded-full bg-green-600/20 flex items-center justify-center"><PhoneForwarded className="w-4 h-4 text-green-400" /></div>
+}
