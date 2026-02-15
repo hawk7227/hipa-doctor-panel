@@ -40,7 +40,7 @@ export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patie
               <span className="text-[10px] text-gray-600 ml-auto">{n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
               {n._src === 'local' && <button onClick={() => remove(n.id)} className="p-0.5 text-gray-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>}
             </div>
-            <p className="text-sm text-gray-300 whitespace-pre-wrap">{n.content || n.notes || 'No content'}</p>
+            <p className="text-sm text-gray-300 whitespace-pre-wrap">{n.content || (n.clinical_note_sections ? (typeof n.clinical_note_sections === 'string' ? n.clinical_note_sections : JSON.stringify(n.clinical_note_sections, null, 2).slice(0, 500)) : n.notes || 'No content')}</p>
             {n.author && <p className="text-[10px] text-gray-600 mt-1">— {n.author}</p>}
           </div>
         ))}

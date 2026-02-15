@@ -26,7 +26,7 @@ export default function MedicationHistoryPanelV2({ isOpen, onClose, patientId, p
                 {m._src === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
               </div>
               <div className="flex gap-2 mt-0.5 text-xs text-gray-500">
-                {m.dosage && <span>{m.dosage}</span>}{m.frequency && <span>• {m.frequency}</span>}
+                {(m.dosage || m.dosage_quantity) && <span>{m.dosage || `${m.dosage_quantity || ''}${m.dosage_unit ? ' ' + m.dosage_unit : ''}`}</span>}{m.frequency && <span>• {m.frequency}</span>}
                 {(m.date_prescribed || m.created_at) && <span>• {new Date(m.date_prescribed || m.created_at).toLocaleDateString()}</span>}
               </div>
             </div>

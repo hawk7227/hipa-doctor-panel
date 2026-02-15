@@ -20,14 +20,14 @@ export default function LabResultsPanelV2({ isOpen, onClose, patientId, patientN
         {data.map((r: any, i: number) => (
           <div key={r.id || i} className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg p-2.5">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">{r.test_name || r.observation_name || 'Lab Test'}</span>
+              <span className="text-sm font-semibold text-white">{r.test_name || r.observation_description || 'Lab Test'}</span>
               {r.abnormal_flag && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-red-500/20 text-red-400 border border-red-500/30">ABNORMAL</span>}
             </div>
             <div className="flex gap-3 mt-1 text-xs text-gray-400">
-              {r.observation_value && <span>Value: <strong className="text-white">{r.observation_value}</strong> {r.units || ''}</span>}
+              {r.value && <span>Value: <strong className="text-white">{r.value}</strong> {r.unit || ''}</span>}
               {r.normal_range && <span>Range: {r.normal_range}</span>}
             </div>
-            {r.observation_date && <p className="text-[10px] text-gray-600 mt-1">{new Date(r.observation_date).toLocaleDateString()}</p>}
+            {(r.result_date || r.collection_date) && <p className="text-[10px] text-gray-600 mt-1">{new Date(r.result_date || r.collection_date).toLocaleDateString()}</p>}
           </div>
         ))}
         {drchronoData.length > 0 && <p className="text-[9px] text-gray-500 uppercase font-semibold mt-2">Lab Orders</p>}

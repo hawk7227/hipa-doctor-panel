@@ -22,7 +22,7 @@ export default function ImmunizationsPanelV2({ isOpen, onClose, patientId, patie
             </div>
             <div className="flex gap-3 mt-1 text-xs text-gray-500">
               {v.administered_date && <span>{new Date(v.administered_date).toLocaleDateString()}</span>}
-              {v.dose_number && <span>Dose #{v.dose_number}</span>}
+              {v.dose_quantity && <span>Dose: {v.dose_quantity}{v.dose_unit ? " " + v.dose_unit : ""}</span>}
               {v.site && <span>Site: {v.site}</span>}
               {v.route && <span>Route: {v.route}</span>}
             </div>

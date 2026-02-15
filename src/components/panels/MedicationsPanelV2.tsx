@@ -99,7 +99,7 @@ export default function MedicationsPanelV2({ isOpen, onClose, patientId, patient
                 )}
               </div>
               <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                {item.dosage && <span>{item.dosage}</span>}
+                {(item.dosage || item.dosage_quantity) && <span>{item.dosage || `${item.dosage_quantity || ''}${item.dosage_unit ? ' ' + item.dosage_unit : ''}`}</span>}
                 {item.frequency && <span>• {item.frequency}</span>}
                 {item.route && <span>• {item.route}</span>}
               </div>
