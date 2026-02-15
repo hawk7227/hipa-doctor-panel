@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, MedicalRecordWithUser } from '@/lib/supabase'
+import PatientSearchTrigger from '@/components/PatientSearchTrigger'
 
 export default function DoctorRecords() {
   const [records, setRecords] = useState<MedicalRecordWithUser[]>([])
@@ -74,6 +75,11 @@ export default function DoctorRecords() {
       <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] p-4 md:p-6">
         <h1 className="text-2xl md:text-3xl font-bold text-white">Medical Records</h1>
         <p className="text-gray-400 mt-2 text-sm md:text-base">Access and manage shared patient medical records</p>
+      </div>
+
+      {/* Patient Search */}
+      <div className="mb-4">
+        <PatientSearchTrigger placeholder="Search patient records — name, DOB, email, phone..." />
       </div>
 
       {/* Filters */}

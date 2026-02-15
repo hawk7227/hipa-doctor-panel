@@ -1355,6 +1355,13 @@ const handleSuggestionClick = (patient: Patient) => {
             >
               Search
             </button>
+            <button
+              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
+              className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-lg transition-colors whitespace-nowrap text-sm font-medium"
+              title="Search DrChrono + local (Ctrl+K)"
+            >
+              🔍 DrChrono
+            </button>
           </div>
         </div>
 

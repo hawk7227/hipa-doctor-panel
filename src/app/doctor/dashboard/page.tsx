@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ChevronRight, Calendar, Bell, X, UserPlus, Clock, BarChart3, Users, Shield } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import PatientSearchTrigger from '@/components/PatientSearchTrigger'
 
 interface DashboardStats {
   totalPatients: number
@@ -488,6 +489,11 @@ export default function DoctorDashboard() {
           >
               Chart Management
             </button>
+          </div>
+
+          {/* Patient Search */}
+          <div className="mb-4 sm:mb-6">
+            <PatientSearchTrigger placeholder="Search patients — name, DOB, email, phone..." />
           </div>
 
           {/* Stats Cards */}
