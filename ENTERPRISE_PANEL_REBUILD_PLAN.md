@@ -148,3 +148,22 @@ Separate systems, not traditional EHR panels.
 
 ### Phase 5: Communication & Video (7 panels, ~5820 lines)
 - These are separate systems, rebuild independently
+
+---
+
+## CRITICAL FIX: DrChrono Patient ID Resolution (LOCKED IN)
+
+**Problem:** `patients.drchrono_patient_id` is often NULL even when DrChrono data exists.
+The cron sync populates `drchrono_patients` but doesn't always backfill the
+`patients.drchrono_patient_id` column. Panels showed "No data" despite DrChrono having records.
+
+**Solution:** `src/app/api/panels/_shared.ts` → `getDrchronoPatientId()`
+1. Check `patients.drchrono_patient_id` (primary)
+2. Fallback: match by `email` in `drchrono_patients` table
+3. Returns numeric `drchrono_patient_id` or null
+
+**RULE:** ALL panel API routes that query DrChrono tables MUST use this helper.
+Never query DrChrono tables using only `patients.drchrono_patient_id` directly.
+
+**Applied to:** allergies, medications, problems, prescriptions
+**Must apply to future panels:** immunizations, lab_results, clinical_notes, billing, etc.
