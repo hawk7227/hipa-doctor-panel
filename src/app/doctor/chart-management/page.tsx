@@ -10,7 +10,8 @@ import {
   Shield, FileText, Clock, AlertTriangle, CheckCircle, Lock,
   RefreshCw, Search, ChevronRight, Edit3, Filter, Pen,
   X, FileSignature, CheckSquare, Square, Download,
-  BarChart3, Users, AlertCircle, Eye, History
+  BarChart3, Users, AlertCircle, Eye, History,
+  Unlock, UserCheck, GitBranch
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -33,6 +34,10 @@ interface ChartRecord {
   scheduled_time: string | null
   created_at: string
   updated_at: string | null
+  // Cosign / supervising
+  cosigned_by: string | null
+  cosigned_at: string | null
+  needs_cosign: boolean | null
   patients: {
     first_name: string
     last_name: string
@@ -58,7 +63,7 @@ interface AuditEntry {
   created_at: string
 }
 
-type ChartFilter = 'all' | 'draft' | 'preliminary' | 'signed' | 'closed' | 'amended' | 'overdue' | 'unsigned'
+type ChartFilter = 'all' | 'draft' | 'preliminary' | 'signed' | 'closed' | 'amended' | 'overdue' | 'unsigned' | 'needs_cosign'
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -117,6 +122,11 @@ export default function ChartManagementPage() {
   const [auditModal, setAuditModal] = useState<ChartRecord | null>(null)
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
+  const [unlockModal, setUnlockModal] = useState<ChartRecord | null>(null)
+  const [unlockReason, setUnlockReason] = useState('')
+  const [timelineModal, setTimelineModal] = useState<ChartRecord | null>(null)
+  const [timelineEntries, setTimelineEntries] = useState<AuditEntry[]>([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
 
   // Addendum form
   const [addendumText, setAddendumText] = useState('')
@@ -153,6 +163,7 @@ export default function ChartManagementPage() {
         id, patient_id, doctor_id, status, visit_type,
         chart_status, chart_locked, chart_signed_at, chart_signed_by,
         chart_closed_at, chart_closed_by, clinical_note_pdf_url,
+        cosigned_by, cosigned_at, needs_cosign,
         scheduled_time, created_at, updated_at,
         patients!appointments_patient_id_fkey(first_name, last_name, email),
         clinical_notes(id, note_type, content, created_at, updated_at)
@@ -276,6 +287,77 @@ export default function ChartManagementPage() {
     finally { setAuditLoading(false) }
   }
 
+  // ── Unlock/Reopen Chart ──
+  const handleUnlock = async () => {
+    if (!unlockModal || !unlockReason.trim()) return
+    setActionLoading(unlockModal.id)
+    try {
+      const res = await fetch('/api/chart/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: unlockModal.id, providerName: doctorName, providerRole: 'provider', reason: unlockReason.trim(), forceReset: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Unlock failed')
+      setRecords(prev => prev.map(r => r.id === unlockModal.id ? { ...r, chart_status: 'draft', chart_locked: false } : r))
+      showNotification('success', 'Chart unlocked and returned to draft')
+      setUnlockModal(null)
+      setUnlockReason('')
+    } catch (err: any) { showNotification('error', err.message) }
+    finally { setActionLoading(null) }
+  }
+
+  // ── Cosign (supervising provider signs off) ──
+  const handleCosign = async (record: ChartRecord) => {
+    setActionLoading(record.id)
+    try {
+      const now = new Date().toISOString()
+      const { error } = await supabase.from('appointments').update({ cosigned_by: doctorName, cosigned_at: now, needs_cosign: false }).eq('id', record.id)
+      if (error) throw new Error(error.message)
+      // Audit log
+      await supabase.from('chart_audit_log').insert({ appointment_id: record.id, action: 'cosigned', performed_by_name: doctorName, performed_by_role: 'provider', details: { cosigned_at: now } })
+      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, cosigned_by: doctorName, cosigned_at: now, needs_cosign: false } : r))
+      showNotification('success', `Chart co-signed for ${record.patients?.first_name || 'patient'}`)
+    } catch (err: any) { showNotification('error', err.message) }
+    finally { setActionLoading(null) }
+  }
+
+  // ── Bulk Close ──
+  const handleBulkClose = async () => {
+    const closeable = filtered.filter(r => selectedIds.has(r.id) && deriveChartStatus(r) === 'signed')
+    if (closeable.length === 0) { showNotification('error', 'No signed charts selected'); return }
+    setBulkLoading(true)
+    let success = 0, failed = 0
+    for (const record of closeable) {
+      try {
+        const res = await fetch('/api/chart/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: 'provider' }),
+        })
+        if (res.ok) {
+          success++
+          const data = await res.json()
+          setRecords(prev => prev.map(r => r.id === record.id ? { ...r, chart_status: 'closed', chart_closed_at: new Date().toISOString(), chart_closed_by: doctorName, chart_locked: true, clinical_note_pdf_url: data.pdf_url } : r))
+        } else { failed++ }
+      } catch { failed++ }
+    }
+    setSelectedIds(new Set())
+    setBulkLoading(false)
+    showNotification(failed === 0 ? 'success' : 'error', `Bulk close: ${success} closed${failed > 0 ? `, ${failed} failed` : ''}`)
+  }
+
+  // ── View Timeline ──
+  const handleViewTimeline = async (record: ChartRecord) => {
+    setTimelineModal(record)
+    setTimelineLoading(true)
+    try {
+      const { data } = await supabase.from('chart_audit_log').select('*').eq('appointment_id', record.id).order('created_at', { ascending: true })
+      setTimelineEntries((data || []) as AuditEntry[])
+    } catch (err) { console.error('Timeline fetch error:', err) }
+    finally { setTimelineLoading(false) }
+  }
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
   }
@@ -286,8 +368,8 @@ export default function ChartManagementPage() {
 
   // ── Computed ──
   const counts = useMemo(() => {
-    const c = { draft: 0, preliminary: 0, signed: 0, closed: 0, amended: 0, overdue: 0, unsigned: 0 }
-    records.forEach(r => { const cs = deriveChartStatus(r); c[cs]++; if (isOverdue(r)) c.overdue++; if (cs === 'draft' || cs === 'preliminary') c.unsigned++ })
+    const c = { draft: 0, preliminary: 0, signed: 0, closed: 0, amended: 0, overdue: 0, unsigned: 0, needs_cosign: 0 }
+    records.forEach(r => { const cs = deriveChartStatus(r); c[cs]++; if (isOverdue(r)) c.overdue++; if (cs === 'draft' || cs === 'preliminary') c.unsigned++; if (r.needs_cosign) c.needs_cosign++ })
     return c
   }, [records])
 
@@ -295,6 +377,7 @@ export default function ChartManagementPage() {
     let list = records
     if (filter === 'overdue') list = list.filter(isOverdue)
     else if (filter === 'unsigned') list = list.filter(r => { const cs = deriveChartStatus(r); return cs === 'draft' || cs === 'preliminary' })
+    else if (filter === 'needs_cosign') list = list.filter(r => r.needs_cosign)
     else if (filter !== 'all') list = list.filter(r => deriveChartStatus(r) === filter)
     if (search.trim()) { const q = search.toLowerCase(); list = list.filter(r => `${r.patients?.first_name || ''} ${r.patients?.last_name || ''}`.toLowerCase().includes(q)) }
     return list
@@ -339,12 +422,16 @@ export default function ChartManagementPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {selectedIds.size > 0 && (
+            {selectedIds.size > 0 && (<>
               <button onClick={handleBulkSign} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1.5">
                 {bulkLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <FileSignature className="w-3 h-3" />}
                 <span>Bulk Sign ({selectedIds.size})</span>
               </button>
-            )}
+              <button onClick={handleBulkClose} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1.5">
+                {bulkLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
+                <span>Bulk Close</span>
+              </button>
+            </>)}
             <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
@@ -385,7 +472,7 @@ export default function ChartManagementPage() {
         </div>
 
         {/* Alert Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <button onClick={() => setFilter(filter === 'overdue' ? 'all' : 'overdue')}
             className={`bg-[#0d2626] rounded-lg p-4 border transition-all flex items-center justify-between ${filter === 'overdue' ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-[#1a3d3d] hover:border-red-500/30'}`}>
             <div className="flex items-center space-x-3">
@@ -401,6 +488,14 @@ export default function ChartManagementPage() {
               <div className="text-left"><p className="text-sm font-bold text-white">Unsigned Notes</p><p className="text-[10px] text-gray-500">Draft + Preliminary needing attention</p></div>
             </div>
             <span className={`text-2xl font-bold ${counts.unsigned > 0 ? 'text-amber-400' : 'text-green-400'}`}>{counts.unsigned > 0 ? counts.unsigned : '✓'}</span>
+          </button>
+          <button onClick={() => setFilter(filter === 'needs_cosign' ? 'all' : 'needs_cosign')}
+            className={`bg-[#0d2626] rounded-lg p-4 border transition-all flex items-center justify-between ${filter === 'needs_cosign' ? 'border-cyan-500/50 ring-1 ring-cyan-500/20' : 'border-[#1a3d3d] hover:border-cyan-500/30'}`}>
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 bg-cyan-500/15 rounded-lg flex items-center justify-center"><Users className="w-4 h-4 text-cyan-400" /></div>
+              <div className="text-left"><p className="text-sm font-bold text-white">Needs Co-sign</p><p className="text-[10px] text-gray-500">Awaiting supervising provider sign-off</p></div>
+            </div>
+            <span className={`text-2xl font-bold ${counts.needs_cosign > 0 ? 'text-cyan-400' : 'text-green-400'}`}>{counts.needs_cosign > 0 ? counts.needs_cosign : '✓'}</span>
           </button>
         </div>
 
@@ -467,9 +562,11 @@ export default function ChartManagementPage() {
                       <div className="col-span-2">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: `${config.color}20`, color: config.color }}>{config.icon} {cs}</span>
                         {record.chart_signed_by && <p className="text-[9px] text-gray-500 mt-0.5">by {record.chart_signed_by}</p>}
+                        {record.cosigned_by && <p className="text-[9px] text-cyan-500 mt-0.5">✓ co-signed: {record.cosigned_by}</p>}
+                        {record.needs_cosign && !record.cosigned_by && <span className="text-[9px] bg-cyan-500/20 text-cyan-400 px-1 rounded font-bold">NEEDS CO-SIGN</span>}
                       </div>
                       <div className="col-span-1"><span className="text-xs text-gray-400">{noteCount} note{noteCount !== 1 ? 's' : ''}</span></div>
-                      <div className="col-span-4 flex items-center justify-end space-x-1.5">
+                      <div className="col-span-4 flex items-center justify-end space-x-1.5 flex-wrap gap-y-1">
                         {cs === 'draft' && (
                           <button onClick={() => setSignModal(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-green-600/20 text-green-400 hover:bg-green-600/40 transition-colors disabled:opacity-50 flex items-center space-x-1">
                             <Pen className="w-3 h-3" /><span>Sign</span>
@@ -485,11 +582,24 @@ export default function ChartManagementPage() {
                             <Edit3 className="w-3 h-3" /><span>Addendum</span>
                           </button>
                         )}
+                        {record.needs_cosign && (
+                          <button onClick={() => handleCosign(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/40 transition-colors disabled:opacity-50 flex items-center space-x-1">
+                            <UserCheck className="w-3 h-3" /><span>Co-sign</span>
+                          </button>
+                        )}
+                        {(cs === 'signed' || cs === 'closed' || cs === 'amended') && (
+                          <button onClick={() => setUnlockModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-amber-600/20 text-amber-400 hover:bg-amber-600/40 transition-colors flex items-center space-x-1">
+                            <Unlock className="w-3 h-3" /><span>Unlock</span>
+                          </button>
+                        )}
                         {record.clinical_note_pdf_url && (
                           <a href={record.clinical_note_pdf_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded text-[10px] font-bold bg-teal-600/20 text-teal-400 hover:bg-teal-600/40 transition-colors flex items-center space-x-1">
                             <Download className="w-3 h-3" /><span>PDF</span>
                           </a>
                         )}
+                        <button onClick={() => handleViewTimeline(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 transition-colors flex items-center space-x-1">
+                          <GitBranch className="w-3 h-3" /><span>Timeline</span>
+                        </button>
                         <button onClick={() => handleViewAudit(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-600/20 text-gray-400 hover:bg-gray-600/40 transition-colors flex items-center space-x-1">
                           <History className="w-3 h-3" /><span>Audit</span>
                         </button>
@@ -511,6 +621,9 @@ export default function ChartManagementPage() {
                         {cs === 'draft' && <button onClick={() => setSignModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-green-600/20 text-green-400">Sign</button>}
                         {cs === 'signed' && <button onClick={() => handleClose(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-600/20 text-blue-400">Close</button>}
                         {(cs === 'closed' || cs === 'amended') && <button onClick={() => setAddendumModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-purple-600/20 text-purple-400">Addendum</button>}
+                        {record.needs_cosign && <button onClick={() => handleCosign(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-cyan-600/20 text-cyan-400">Co-sign</button>}
+                        {(cs === 'signed' || cs === 'closed' || cs === 'amended') && <button onClick={() => setUnlockModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-amber-600/20 text-amber-400">Unlock</button>}
+                        <button onClick={() => handleViewTimeline(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-indigo-600/20 text-indigo-400">Timeline</button>
                         <button onClick={() => handleViewAudit(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-600/20 text-gray-400">Audit</button>
                       </div>
                     </div>
@@ -646,6 +759,123 @@ export default function ChartManagementPage() {
               )}
             </div>
             <button onClick={() => setAuditModal(null)} className="w-full py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ UNLOCK MODAL ═══ */}
+      {unlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><Unlock className="w-5 h-5 text-amber-400" /><span>Unlock Chart</span></h3>
+              <button onClick={() => { setUnlockModal(null); setUnlockReason('') }} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="bg-[#0a1f1f] rounded-lg p-4 space-y-2">
+              <p className="text-sm text-gray-300">Patient: <span className="text-white font-bold">{unlockModal.patients?.first_name} {unlockModal.patients?.last_name}</span></p>
+              <p className="text-sm text-gray-300">Current Status: <span className="text-white font-bold capitalize">{deriveChartStatus(unlockModal)}</span></p>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+              <p className="text-xs text-red-300"><strong>Warning:</strong> Unlocking returns this chart to <strong>draft</strong> status. The existing PDF will remain in storage but the chart will need to be re-signed, re-closed, and a new PDF generated. This action is fully audited.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 font-medium mb-1.5 block">Reason for Unlocking <span className="text-red-400">*</span></label>
+              <textarea value={unlockReason} onChange={e => setUnlockReason(e.target.value)} rows={3} placeholder="Explain why this chart needs to be unlocked..."
+                className="w-full bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 resize-none" />
+              <p className="text-[10px] text-gray-500 mt-1">{unlockReason.length} characters (min 5)</p>
+            </div>
+            <div className="flex space-x-3">
+              <button onClick={() => { setUnlockModal(null); setUnlockReason('') }} className="flex-1 py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Cancel</button>
+              <button onClick={handleUnlock} disabled={actionLoading === unlockModal.id || unlockReason.trim().length < 5}
+                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
+                {actionLoading === unlockModal.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Unlock className="w-4 h-4" /><span>Unlock Chart</span></>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TIMELINE MODAL ═══ */}
+      {timelineModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-lg p-6 space-y-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><GitBranch className="w-5 h-5 text-indigo-400" /><span>Chart Lifecycle</span></h3>
+              <button onClick={() => setTimelineModal(null)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="bg-[#0a1f1f] rounded-lg p-3 flex items-center justify-between">
+              <p className="text-xs text-gray-400">Patient: <span className="text-white font-bold">{timelineModal.patients?.first_name} {timelineModal.patients?.last_name}</span></p>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: `${CHART_STATUS_CONFIG[deriveChartStatus(timelineModal)].color}20`, color: CHART_STATUS_CONFIG[deriveChartStatus(timelineModal)].color }}>
+                {deriveChartStatus(timelineModal)}
+              </span>
+            </div>
+
+            {/* Built-in lifecycle events */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="relative pl-6 space-y-0">
+                {/* Timeline line */}
+                <div className="absolute left-[9px] top-2 bottom-2 w-px bg-[#1a3d3d]" />
+
+                {/* Created */}
+                <div className="relative pb-4">
+                  <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-gray-600 border-2 border-[#0d2626] flex items-center justify-center"><FileText className="w-2.5 h-2.5 text-white" /></div>
+                  <p className="text-xs font-bold text-white">Chart Created</p>
+                  <p className="text-[10px] text-gray-500">{new Date(timelineModal.created_at).toLocaleString()}</p>
+                </div>
+
+                {/* Signed */}
+                {timelineModal.chart_signed_at && (
+                  <div className="relative pb-4">
+                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-green-600 border-2 border-[#0d2626] flex items-center justify-center"><Pen className="w-2.5 h-2.5 text-white" /></div>
+                    <p className="text-xs font-bold text-white">Signed</p>
+                    <p className="text-[10px] text-gray-400">by {timelineModal.chart_signed_by}</p>
+                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.chart_signed_at).toLocaleString()}</p>
+                  </div>
+                )}
+
+                {/* Co-signed */}
+                {timelineModal.cosigned_at && (
+                  <div className="relative pb-4">
+                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-cyan-600 border-2 border-[#0d2626] flex items-center justify-center"><UserCheck className="w-2.5 h-2.5 text-white" /></div>
+                    <p className="text-xs font-bold text-white">Co-signed</p>
+                    <p className="text-[10px] text-gray-400">by {timelineModal.cosigned_by}</p>
+                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.cosigned_at).toLocaleString()}</p>
+                  </div>
+                )}
+
+                {/* Closed */}
+                {timelineModal.chart_closed_at && (
+                  <div className="relative pb-4">
+                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-blue-600 border-2 border-[#0d2626] flex items-center justify-center"><Lock className="w-2.5 h-2.5 text-white" /></div>
+                    <p className="text-xs font-bold text-white">Closed & Locked</p>
+                    <p className="text-[10px] text-gray-400">by {timelineModal.chart_closed_by} &bull; PDF generated</p>
+                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.chart_closed_at).toLocaleString()}</p>
+                  </div>
+                )}
+
+                {/* Audit entries */}
+                {timelineLoading ? (
+                  <div className="py-4 flex justify-center"><RefreshCw className="w-4 h-4 animate-spin text-gray-500" /></div>
+                ) : (
+                  timelineEntries.filter(e => !['signed', 'closed'].includes(e.action)).map(entry => (
+                    <div key={entry.id} className="relative pb-4">
+                      <div className={`absolute left-[-15px] w-5 h-5 rounded-full border-2 border-[#0d2626] flex items-center justify-center ${
+                        entry.action.includes('addendum') || entry.action.includes('amended') ? 'bg-purple-600' :
+                        entry.action.includes('unlock') ? 'bg-amber-600' :
+                        entry.action.includes('cosign') ? 'bg-cyan-600' :
+                        entry.action === 'pdf_generated' ? 'bg-teal-600' : 'bg-gray-600'
+                      }`}><History className="w-2.5 h-2.5 text-white" /></div>
+                      <p className="text-xs font-bold text-white capitalize">{entry.action.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-gray-400">by {entry.performed_by_name}</p>
+                      {entry.reason && <p className="text-[10px] text-amber-400">Reason: {entry.reason}</p>}
+                      <p className="text-[10px] text-gray-500">{new Date(entry.created_at).toLocaleString()}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <button onClick={() => setTimelineModal(null)} className="w-full py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Close</button>
           </div>
         </div>
       )}
