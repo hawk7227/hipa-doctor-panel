@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Appointment } from '@/lib/supabase'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
+import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
 import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
 import { HoverPreview, useHoverPreview, MiniCalendar, deriveChartStatus, getChipBorderStyle, getChipStatusIcon, useExtras, ExtrasToggleButton, ConfettiOverlay, WelcomePopup } from '@/components/calendar'
@@ -662,8 +663,10 @@ export default function AppointmentsPage() {
       {/* ═══ BODY ═══ */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
 
-        {/* ── Mini Calendar Sidebar (lg+ only) ── */}
-        <div className="hidden lg:flex flex-col flex-shrink-0 w-[270px] border-r border-[#1a3d3d] bg-[#0b2424] p-3 overflow-y-auto">
+        {/* ── Mini Calendar Sidebar (lg+ only) — collapses when workspace open ── */}
+        <div className={`hidden lg:flex flex-col flex-shrink-0 border-r border-[#1a3d3d] bg-[#0b2424] overflow-y-auto transition-all duration-300 ${
+          selectedAppointmentId ? 'w-[200px] p-2' : 'w-[270px] p-3'
+        }`} style={{ minWidth: selectedAppointmentId ? 180 : 270, maxWidth: selectedAppointmentId ? 220 : 270 }}>
           <MiniCalendar
             currentDate={currentDate}
             onDateSelect={(date) => setCurrentDate(date)}
@@ -704,7 +707,31 @@ export default function AppointmentsPage() {
         {/* ── Main Content Area ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-          {/* ══ LIST VIEW ══ */}
+          {/* ═══ WORKSPACE CANVAS (when appointment selected) ═══ */}
+          {selectedAppointmentId ? (
+            <WorkspaceCanvas
+              appointmentId={selectedAppointmentId}
+              isOpen={!!selectedAppointmentId}
+              appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
+              currentDate={currentDate}
+              onClose={() => setSelectedAppointmentId(null)}
+              onStatusChange={() => { if (currentDoctorId) fetchAppointments(currentDoctorId, true) }}
+              onAppointmentSwitch={(appointmentId) => setSelectedAppointmentId(appointmentId)}
+              onFollowUp={(patientData, date, time) => {
+                setFollowUpPatientData(patientData)
+                setSelectedSlotDate(date)
+                setSelectedSlotTime(time)
+                setShowCreateDialog(true)
+                setSelectedAppointmentId(null)
+              }}
+              onSmsSent={(message) => {
+                setNotification({ type: 'success', message })
+                setTimeout(() => setNotification(null), 5000)
+              }}
+            />
+          ) : (
+          <>
+          {/* ══ CALENDAR VIEWS (when no appointment selected) ══ */}
           {calendarView === 'list' ? (
             <div ref={gridRef} className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4">
               {listViewAppointments.length === 0 ? (
@@ -912,6 +939,8 @@ export default function AppointmentsPage() {
           </div>
           </>
           )}
+          </>
+          )}
         </div>
       </div>
 
@@ -925,27 +954,6 @@ export default function AppointmentsPage() {
       {/* ═══ HOVER PREVIEW ═══ */}
       <HoverPreview data={hoverPreview.data} anchorRect={hoverPreview.anchorRect} isVisible={hoverPreview.isVisible} onMouseEnter={hoverPreview.onPopupMouseEnter} onMouseLeave={hoverPreview.onPopupMouseLeave} />
 
-      {/* ═══ APPOINTMENT DETAIL MODAL ═══ */}
-      <AppointmentDetailModal
-        appointmentId={selectedAppointmentId}
-        isOpen={!!selectedAppointmentId}
-        appointments={appointments.map(apt => ({ ...apt, requested_date_time: apt.requested_date_time ?? null })) as any}
-        currentDate={currentDate}
-        onClose={() => setSelectedAppointmentId(null)}
-        onStatusChange={() => { if (currentDoctorId) fetchAppointments(currentDoctorId, true) }}
-        onAppointmentSwitch={(appointmentId) => setSelectedAppointmentId(appointmentId)}
-        onFollowUp={(patientData, date, time) => {
-          setFollowUpPatientData(patientData)
-          setSelectedSlotDate(date)
-          setSelectedSlotTime(time)
-          setShowCreateDialog(true)
-          setSelectedAppointmentId(null)
-        }}
-        onSmsSent={(message) => {
-          setNotification({ type: 'success', message })
-          setTimeout(() => setNotification(null), 5000)
-        }}
-      />
 
       {/* ═══ CREATE DIALOG ═══ */}
       {currentDoctorId && selectedSlotDate && selectedSlotTime && (
