@@ -68,8 +68,29 @@ export default function BillingPanelV2({ isOpen, onClose, patientId, patientName
             </div>
           ))}
 
-          {tab === 'Payments' && <div className="text-center py-8 text-xs text-gray-500">Payment history loads from billing API</div>}
-          {tab === 'Insurance' && <div className="text-center py-8 text-xs text-gray-500">Insurance details loads from insurance API</div>}
+          {tab === 'Payments' && (
+            <div className="space-y-2">
+              <div className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg p-3 space-y-2">
+                <div className="text-xs font-semibold text-amber-400">Record Payment</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-white text-sm">
+                    <option value="copay">Copay</option><option value="coinsurance">Coinsurance</option><option value="deductible">Deductible</option><option value="self_pay">Self-Pay</option>
+                  </select>
+                  <select className="bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-white text-sm">
+                    <option value="credit_card">Credit Card</option><option value="cash">Cash</option><option value="check">Check</option><option value="stripe">Stripe</option>
+                  </select>
+                </div>
+                <input type="number" placeholder="Amount ($)" step="0.01" className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded px-2 py-1.5 text-white text-sm" />
+                <button className="w-full px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-500">Record Payment</button>
+              </div>
+            </div>
+          )}
+          {tab === 'Insurance' && (
+            <div className="text-center py-6">
+              <Shield className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-xs text-gray-500">Insurance details available in Demographics panel</p>
+            </div>
+          )}
         </div>
       </div>
     </PanelBase>
