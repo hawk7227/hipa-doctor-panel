@@ -1,4 +1,5 @@
 'use client'
+import { AttachButton, PendingAttachments, AttachmentDisplay, type Attachment } from '@/components/MessageAttachments'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { MessageSquare, Send, Search, Plus, User, Users, Bell, Check, CheckCheck, Clock, Phone, Video, Archive, Pin, Star, RefreshCw } from 'lucide-react'
@@ -16,7 +17,7 @@ interface Conversation {
 interface Message {
   id: string; conversation_id: string; sender_type: 'admin' | 'doctor';
   sender_name: string; content: string; message_type: string;
-  is_read: boolean; created_at: string;
+  is_read: boolean; created_at: string; metadata?: any;
 }
 
 export default function AdminMessagingPage() {
@@ -28,6 +29,7 @@ export default function AdminMessagingPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([])
   const [showNewConv, setShowNewConv] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread' | 'pinned' | 'archived'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -74,12 +76,12 @@ export default function AdminMessagingPage() {
     try {
       const res = await fetch('/api/admin/messaging', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send', conversationId: selectedConv.id, content: newMessage, senderType: 'admin', senderName: 'Admin' })
+        body: JSON.stringify({ action: 'send', conversationId: selectedConv.id, content: newMessage, senderType: 'admin', senderName: 'Admin', attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined })
       })
       const data = await res.json()
       if (data.message) {
         setMessages(prev => [...prev, data.message])
-        setNewMessage('')
+        setNewMessage(''); setPendingAttachments([])
         // Update conversation preview
         setConversations(prev => prev.map(c => c.id === selectedConv.id ? { ...c, last_message: newMessage, last_message_at: new Date().toISOString() } : c))
       }
@@ -160,10 +162,15 @@ export default function AdminMessagingPage() {
           <h1 className="text-lg font-bold">Admin ↔ Doctor Messaging</h1>
           {totalUnread > 0 && <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white">{totalUnread}</span>}
         </div>
-        <button onClick={() => { setShowNewConv(true); fetchDoctors() }}
-          className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-500 text-sm">
-          <Plus className="w-4 h-4" />New Message
-        </button>
+        <div className="flex items-center gap-2">
+          <a href="/admin/bug-reports" className="flex items-center gap-2 px-3 py-1.5 bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-600/30 text-sm">
+            🐛 Bug Reports
+          </a>
+          <button onClick={() => { setShowNewConv(true); fetchDoctors() }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-500 text-sm">
+            <Plus className="w-4 h-4" />New Message
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-1 min-h-0">
@@ -281,6 +288,7 @@ export default function AdminMessagingPage() {
                         <span className="text-[10px] text-gray-600">{formatTime(msg.created_at)}</span>
                       </div>
                       <p className="text-sm text-white whitespace-pre-wrap">{msg.content}</p>
+                      {msg.metadata?.attachments && <AttachmentDisplay attachments={msg.metadata.attachments} />}
                       {msg.sender_type === 'admin' && (
                         <div className="flex justify-end mt-1">
                           {msg.is_read ? <CheckCheck className="w-3 h-3 text-teal-400" /> : <Check className="w-3 h-3 text-gray-500" />}
@@ -293,8 +301,10 @@ export default function AdminMessagingPage() {
               </div>
 
               {/* Input */}
+              {pendingAttachments.length > 0 && <PendingAttachments attachments={pendingAttachments} onRemove={(i: number) => setPendingAttachments((prev: Attachment[]) => prev.filter((_: any, idx: number) => idx !== i))} />}
               <div className="p-4 border-t border-[#1a3d3d] flex-shrink-0">
                 <div className="flex gap-2">
+                  <AttachButton onAttach={(a: Attachment) => setPendingAttachments((prev: Attachment[]) => [...prev, a])} />
                   <input value={newMessage} onChange={e => setNewMessage(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
                     placeholder="Type a message..."

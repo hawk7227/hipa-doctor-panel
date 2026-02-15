@@ -110,14 +110,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'send') {
-      const { conversationId, content, senderType, senderName } = body
+      const { conversationId, content, senderType, senderName, attachments } = body
 
       const { data: msg, error } = await db.from('admin_messages').insert({
         conversation_id: conversationId,
         sender_type: senderType,
         sender_name: senderName,
         content,
-        message_type: 'text',
+        message_type: attachments?.length ? 'attachment' : 'text',
+        metadata: attachments?.length ? { attachments } : {},
         is_read: false
       }).select().single()
 

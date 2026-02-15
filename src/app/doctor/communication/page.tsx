@@ -12,6 +12,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import type { Device, Call } from '@twilio/voice-sdk'
+import { AttachButton, PendingAttachments, AttachmentDisplay, type Attachment } from '@/components/MessageAttachments'
 import PatientSearchBar, { type PatientSearchResult } from '@/components/PatientSearchBarInline'
 
 // ═══ TYPES ═══
@@ -23,9 +24,9 @@ interface HistoryItem {
 }
 interface PatientMsg { id: string; patient_id: string; direction: string; subject: string | null; body: string; is_read: boolean; created_at: string; patients?: { first_name: string; last_name: string } }
 interface AdminConv { id: string; doctor_name: string; last_message: string; last_message_at: string; unread_count: number; status: string }
-interface AdminMsg { id: string; sender_type: string; sender_name: string; content: string; is_read: boolean; created_at: string }
+interface AdminMsg { id: string; sender_type: string; sender_name: string; content: string; is_read: boolean; created_at: string; metadata?: any }
 interface StaffConv { id: string; type: string; name: string | null; last_message_preview: string | null; last_message_at: string | null; staff_conversation_participants: any[] }
-interface StaffMsg { id: string; content: string; message_type: string; created_at: string; sender: { first_name: string; last_name: string; role: string } | null }
+interface StaffMsg { id: string; content: string; message_type: string; created_at: string; sender: { first_name: string; last_name: string; role: string } | null; metadata?: any }
 
 type MainTab = 'calls' | 'sms' | 'patient_msgs' | 'staff_chat' | 'admin'
 const TAB_CONFIG: { key: MainTab; label: string; icon: typeof Phone }[] = [
@@ -84,6 +85,10 @@ export default function CommunicationCenter() {
   const [staffMsgs, setStaffMsgs] = useState<StaffMsg[]>([])
   const [staffNewMsg, setStaffNewMsg] = useState('')
   const [staffId, setStaffId] = useState<string | null>(null)
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([])
+  const addAttachment = (a: Attachment) => setPendingAttachments(prev => [...prev, a])
+  const removeAttachment = (i: number) => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))
+  const clearAttachments = () => setPendingAttachments([])
   const staffEndRef = useRef<HTMLDivElement>(null)
 
   // Admin
@@ -225,24 +230,24 @@ export default function CommunicationCenter() {
   const sendPatientReply = async () => {
     if (!selectedPtMsg || !ptReply || !doctorId) return
     try {
-      await supabase.from('patient_messages').insert({ patient_id: selectedPtMsg.patient_id, doctor_id: doctorId, direction: 'outgoing', body: ptReply, message_type: 'reply', reply_to_id: selectedPtMsg.id, sent_via: 'portal' })
-      setPtReply(''); setSuccess('Reply sent'); setTimeout(() => setSuccess(null), 3000); fetchPatientMsgs(doctorId)
+      await supabase.from('patient_messages').insert({ patient_id: selectedPtMsg.patient_id, doctor_id: doctorId, direction: 'outgoing', body: ptReply, message_type: 'reply', reply_to_id: selectedPtMsg.id, sent_via: 'portal', attachment_urls: pendingAttachments.length > 0 ? pendingAttachments : null })
+      setPtReply(''); clearAttachments(); setSuccess('Reply sent'); setTimeout(() => setSuccess(null), 3000); fetchPatientMsgs(doctorId)
     } catch { setError('Reply failed') }
   }
 
   const sendAdminMsg = async () => {
     if (!adminConv || !adminNewMsg || !doctorId) return
     try {
-      await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: adminConv.id, senderType: 'doctor', senderName: doctorName, content: adminNewMsg }) })
-      setAdminNewMsg(''); fetchAdminMsgs(adminConv.id)
+      await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: adminConv.id, senderType: 'doctor', senderName: doctorName, content: adminNewMsg, attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined }) })
+      setAdminNewMsg(''); clearAttachments(); fetchAdminMsgs(adminConv.id)
     } catch { setError('Send failed') }
   }
 
   const sendStaffMsg = async () => {
     if (!activeStaffConv || !staffNewMsg || !staffId || !doctorId) return
     try {
-      await fetch('/api/staff-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_message', doctorId, staffId, conversationId: activeStaffConv.id, content: staffNewMsg }) })
-      setStaffNewMsg(''); fetchStaffMsgs(activeStaffConv.id)
+      await fetch('/api/staff-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_message', doctorId, staffId, conversationId: activeStaffConv.id, content: staffNewMsg, metadata: pendingAttachments.length > 0 ? { attachments: pendingAttachments } : {} }) })
+      setStaffNewMsg(''); clearAttachments(); fetchStaffMsgs(activeStaffConv.id)
     } catch { setError('Send failed') }
   }
 
@@ -302,9 +307,9 @@ export default function CommunicationCenter() {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'calls' && <CallsTab phoneNumber={phoneNumber} setPhoneNumber={setPhoneNumber} isCalling={isCalling} callStatus={callStatus} callDuration={callDuration} isMuted={isMuted} isDeviceReady={isDeviceReady} makeCall={makeCall} endCall={() => endCall('Ended')} toggleMute={() => { activeCallRef.current?.mute(!isMuted); setIsMuted(!isMuted) }} history={filteredHistory} historyFilter={historyFilter} setHistoryFilter={setHistoryFilter} selectedPatient={selectedPatient} />}
         {activeTab === 'sms' && <SMSTab smsTo={smsTo} setSmsTo={setSmsTo} smsMessage={smsMessage} setSmsMessage={setSmsMessage} isSending={isSendingSMS} sendSMS={sendSMS} history={filteredHistory.filter(h => h.type === 'sms')} selectedPatient={selectedPatient} />}
-        {activeTab === 'patient_msgs' && <PatientMsgsTab msgs={patientMsgs} selected={selectedPtMsg} setSelected={setSelectedPtMsg} reply={ptReply} setReply={setPtReply} sendReply={sendPatientReply} />}
-        {activeTab === 'staff_chat' && <StaffChatTab convs={staffConvs} activeConv={activeStaffConv} setActiveConv={(c) => { setActiveStaffConv(c); if (c) fetchStaffMsgs(c.id) }} msgs={staffMsgs} newMsg={staffNewMsg} setNewMsg={setStaffNewMsg} send={sendStaffMsg} endRef={staffEndRef} doctorName={doctorName} />}
-        {activeTab === 'admin' && <AdminTab conv={adminConv} msgs={adminMsgs} newMsg={adminNewMsg} setNewMsg={setAdminNewMsg} send={sendAdminMsg} endRef={adminEndRef} doctorName={doctorName} />}
+        {activeTab === 'patient_msgs' && <PatientMsgsTab msgs={patientMsgs} selected={selectedPtMsg} setSelected={setSelectedPtMsg} reply={ptReply} setReply={setPtReply} sendReply={sendPatientReply} pending={pendingAttachments} addAttach={addAttachment} removeAttach={removeAttachment} />}
+        {activeTab === 'staff_chat' && <StaffChatTab convs={staffConvs} activeConv={activeStaffConv} setActiveConv={(c) => { setActiveStaffConv(c); if (c) fetchStaffMsgs(c.id) }} msgs={staffMsgs} newMsg={staffNewMsg} setNewMsg={setStaffNewMsg} send={sendStaffMsg} endRef={staffEndRef} doctorName={doctorName} pending={pendingAttachments} addAttach={addAttachment} removeAttach={removeAttachment} />}
+        {activeTab === 'admin' && <AdminTab conv={adminConv} msgs={adminMsgs} newMsg={adminNewMsg} setNewMsg={setAdminNewMsg} send={sendAdminMsg} endRef={adminEndRef} doctorName={doctorName} pending={pendingAttachments} addAttach={addAttachment} removeAttach={removeAttachment} />}
       </div>
     </div>
   )
@@ -391,7 +396,7 @@ function SMSTab({ smsTo, setSmsTo, smsMessage, setSmsMessage, isSending, sendSMS
   )
 }
 
-function PatientMsgsTab({ msgs, selected, setSelected, reply, setReply, sendReply }: any) {
+function PatientMsgsTab({ msgs, selected, setSelected, reply, setReply, sendReply, pending, addAttach, removeAttach }: any) {
   return (
     <div className="flex h-full">
       <div className="w-80 border-r border-[#1a3d3d]/30 flex flex-col">
@@ -415,8 +420,13 @@ function PatientMsgsTab({ msgs, selected, setSelected, reply, setReply, sendRepl
               <div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${selected.direction === 'incoming' ? 'bg-blue-600/20 text-blue-400' : 'bg-emerald-600/20 text-emerald-400'}`}>{selected.direction}</span><h3 className="text-sm font-bold">{selected.patients?.first_name} {selected.patients?.last_name}</h3></div>
               {selected.subject && <p className="text-xs text-gray-400 mt-1">{selected.subject}</p>}
             </div>
-            <div className="flex-1 overflow-y-auto p-5"><div className="bg-[#0a1f1f] rounded-xl p-4 text-sm text-gray-300 leading-relaxed">{selected.body}</div></div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="bg-[#0a1f1f] rounded-xl p-4 text-sm text-gray-300 leading-relaxed">{selected.body}</div>
+              {selected.attachment_urls && <AttachmentDisplay attachments={selected.attachment_urls} />}
+            </div>
+            {pending.length > 0 && <PendingAttachments attachments={pending} onRemove={removeAttach} />}
             <div className="p-4 border-t border-[#1a3d3d]/30 flex gap-2">
+              <AttachButton onAttach={addAttach} />
               <input value={reply} onChange={e => setReply(e.target.value)} placeholder="Type reply..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && sendReply()} />
               <button onClick={sendReply} disabled={!reply} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
             </div>
@@ -429,7 +439,7 @@ function PatientMsgsTab({ msgs, selected, setSelected, reply, setReply, sendRepl
   )
 }
 
-function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: any) {
+function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMsg, send, endRef, doctorName, pending, addAttach, removeAttach }: any) {
   return (
     <div className="flex h-full">
       <div className="w-72 border-r border-[#1a3d3d]/30 flex flex-col">
@@ -459,6 +469,7 @@ function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMs
                     <div className={`max-w-[70%] rounded-xl px-3.5 py-2.5 ${m.message_type === 'system' ? 'bg-[#1a3d3d]/30 text-gray-500 text-[10px] text-center w-full max-w-full' : isMe ? 'bg-emerald-600/20 text-emerald-100' : 'bg-[#0a1f1f] text-gray-300'}`}>
                       {!isMe && m.message_type !== 'system' && <div className="text-[10px] text-gray-500 mb-0.5">{m.sender?.first_name} {m.sender?.last_name}</div>}
                       <p className="text-xs leading-relaxed">{m.content}</p>
+                      {m.metadata?.attachments && <AttachmentDisplay attachments={m.metadata.attachments} />}
                       <div className={`text-[9px] mt-1 ${isMe ? 'text-emerald-500 text-right' : 'text-gray-600'}`}>{fmtTime(m.created_at)}</div>
                     </div>
                   </div>
@@ -466,7 +477,9 @@ function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMs
               })}
               <div ref={endRef} />
             </div>
+            {pending.length > 0 && <PendingAttachments attachments={pending} onRemove={removeAttach} />}
             <div className="p-3 border-t border-[#1a3d3d]/30 flex gap-2">
+              <AttachButton onAttach={addAttach} />
               <input value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Type a message..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && send()} />
               <button onClick={send} disabled={!newMsg} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
             </div>
@@ -479,7 +492,7 @@ function StaffChatTab({ convs, activeConv, setActiveConv, msgs, newMsg, setNewMs
   )
 }
 
-function AdminTab({ conv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: any) {
+function AdminTab({ conv, msgs, newMsg, setNewMsg, send, endRef, doctorName, pending, addAttach, removeAttach }: any) {
   return (
     <div className="flex flex-col h-full">
       <div className="px-5 py-3 border-b border-[#1a3d3d]/30 flex items-center gap-2"><Shield className="w-4 h-4 text-amber-400" /><h3 className="text-sm font-bold">Admin Messages</h3></div>
@@ -496,6 +509,7 @@ function AdminTab({ conv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: a
                   <div className={`max-w-[70%] rounded-xl px-3.5 py-2.5 ${isMe ? 'bg-emerald-600/20 text-emerald-100' : 'bg-amber-600/10 text-amber-100'}`}>
                     <div className={`text-[10px] mb-0.5 ${isMe ? 'text-emerald-500' : 'text-amber-500'}`}>{isMe ? doctorName : m.sender_name || 'Admin'}</div>
                     <p className="text-xs leading-relaxed">{m.content}</p>
+                    {m.metadata?.attachments && <AttachmentDisplay attachments={m.metadata.attachments} />}
                     <div className={`text-[9px] mt-1 ${isMe ? 'text-emerald-500 text-right' : 'text-amber-600'}`}>{fmtTime(m.created_at)}</div>
                   </div>
                 </div>
@@ -503,7 +517,9 @@ function AdminTab({ conv, msgs, newMsg, setNewMsg, send, endRef, doctorName }: a
             })}
             <div ref={endRef} />
           </div>
+          {pending.length > 0 && <PendingAttachments attachments={pending} onRemove={removeAttach} />}
           <div className="p-3 border-t border-[#1a3d3d]/30 flex gap-2">
+            <AttachButton onAttach={addAttach} />
             <input value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Message admin..." className={`${INP} flex-1`} onKeyDown={e => e.key === 'Enter' && send()} />
             <button onClick={send} disabled={!newMsg} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg"><Send className="w-4 h-4" /></button>
           </div>
