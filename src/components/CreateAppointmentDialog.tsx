@@ -162,12 +162,8 @@ export default function CreateAppointmentDialog({
     try {
       setLoading(true)
       
-      // Build search pattern - Supabase uses % for wildcards in ilike
-      const searchPattern = `%${search}%`
-
-      // Build search query - search across multiple fields using OR
-      // Supabase .or() expects comma-separated conditions without quotes around values
-      const { data, error } = await supabase
+      const words = search.trim().split(/\s+/)
+      let query = supabase
         .from('patients')
         .select(`
           id,
@@ -178,15 +174,40 @@ export default function CreateAppointmentDialog({
           date_of_birth,
           location
         `)
-        .not('phone', 'is', null)
-        .or(`first_name.ilike.${searchPattern},last_name.ilike.${searchPattern},email.ilike.${searchPattern},phone.ilike.${searchPattern}`)
+
+      if (words.length >= 2) {
+        // Multi-word: assume "first last" — search first_name~word1 AND last_name~word2
+        // Also try reverse and individual field matches
+        const w1 = `%${words[0]}%`
+        const w2 = `%${words.slice(1).join(' ')}%`
+        query = query.or(
+          `and(first_name.ilike.${w1},last_name.ilike.${w2}),` +
+          `and(first_name.ilike.${w2},last_name.ilike.${w1}),` +
+          `email.ilike.%${search}%,phone.ilike.%${search}%`
+        )
+      } else {
+        // Single word: search across all fields
+        const searchPattern = `%${search}%`
+        query = query.or(`first_name.ilike.${searchPattern},last_name.ilike.${searchPattern},email.ilike.${searchPattern},phone.ilike.${searchPattern}`)
+      }
+
+      const { data, error } = await query
         .order('created_at', { ascending: false })
         .limit(100)
 
       if (error) throw error
 
+      // Deduplicate by email (keep first occurrence = most recent)
+      const seen = new Set<string>()
+      const deduped = (data || []).filter((item: any) => {
+        const key = (item.email || item.phone || item.id || '').toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
       // Map patients to Patient interface
-      const patientsList: Patient[] = (data || []).map((item: any) => ({
+      const patientsList: Patient[] = deduped.map((item: any) => ({
         id: item.id,
         first_name: item.first_name || '',
         last_name: item.last_name || '',
