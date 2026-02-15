@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 
 const db = createClient(
@@ -9,7 +8,6 @@ const db = createClient(
 
 // GET: conversations, messages, doctors
 export async function GET(req: NextRequest) {
-  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   const action = req.nextUrl.searchParams.get('action')
 
   try {
@@ -63,7 +61,6 @@ export async function GET(req: NextRequest) {
 
 // POST: send, create_conversation, mark_read, toggle_pin
 export async function POST(req: NextRequest) {
-  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json()
     const { action } = body
