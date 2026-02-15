@@ -20,38 +20,85 @@ interface AuthError {
 }
 
 /**
- * Verify the user is authenticated via Supabase JWT in the Authorization header or cookie.
- * Returns { user } on success or { error: NextResponse } on failure.
- *
- * Usage in route handlers:
- * ```
- * import { requireAuth } from '@/lib/api-auth'
- * export async function GET(req: NextRequest) {
- *   const auth = await requireAuth(req)
- *   if (auth.error) return auth.error
- *   // auth.user is available
- * }
- * ```
+ * Extract the access token from Supabase cookies.
+ * Supabase stores auth in cookies like:
+ *   sb-{ref}-auth-token (single cookie, base64 JSON)
+ *   sb-{ref}-auth-token.0, sb-{ref}-auth-token.1 (chunked)
+ */
+function extractTokenFromCookies(req: NextRequest): string | null {
+  const cookies = req.cookies
+  const allCookies = cookies.getAll()
+  
+  // Find auth token cookies (may be chunked: .0, .1, .2, etc.)
+  const authCookies = allCookies.filter(c => c.name.includes('auth-token'))
+  if (authCookies.length === 0) return null
+
+  // Sort chunks: base cookie first, then .0, .1, .2...
+  authCookies.sort((a, b) => {
+    const aNum = a.name.match(/\.(\d+)$/)?.[1]
+    const bNum = b.name.match(/\.(\d+)$/)?.[1]
+    if (!aNum && !bNum) return 0
+    if (!aNum) return -1
+    if (!bNum) return 1
+    return parseInt(aNum) - parseInt(bNum)
+  })
+
+  // Combine chunked cookie values
+  let combined = ''
+  const hasChunks = authCookies.some(c => /\.\d+$/.test(c.name))
+  
+  if (hasChunks) {
+    // Chunked: combine .0, .1, .2... (skip the base cookie if chunks exist)
+    const chunks = authCookies.filter(c => /\.\d+$/.test(c.name))
+    combined = chunks.map(c => c.value).join('')
+  } else {
+    // Single cookie
+    combined = authCookies[0].value
+  }
+
+  if (!combined) return null
+
+  // Try to parse as JSON (may be base64-encoded or raw JSON)
+  try {
+    // Try decoding URI component first
+    const decoded = decodeURIComponent(combined)
+    
+    // Try base64 decode
+    let jsonStr = decoded
+    try {
+      const b64decoded = Buffer.from(decoded, 'base64').toString('utf-8')
+      if (b64decoded.startsWith('{') || b64decoded.startsWith('[')) {
+        jsonStr = b64decoded
+      }
+    } catch { /* not base64 */ }
+
+    // Parse JSON
+    const parsed = JSON.parse(jsonStr)
+    
+    // Handle array format: [{access_token, ...}]
+    if (Array.isArray(parsed)) {
+      return parsed[0]?.access_token || null
+    }
+    // Handle object format: {access_token, ...}
+    return parsed?.access_token || null
+  } catch {
+    // Not JSON — might be raw token
+    return combined
+  }
+}
+
+/**
+ * Verify the user is authenticated via Supabase JWT.
+ * Checks: Authorization header → Supabase auth cookies
  */
 export async function requireAuth(req: NextRequest): Promise<AuthResult | AuthError> {
   try {
     // Try Authorization header first (API clients)
     let token = req.headers.get('authorization')?.replace('Bearer ', '')
 
-    // Fallback: Supabase stores the token in cookies
+    // Fallback: Supabase cookies
     if (!token) {
-      // Supabase client-side stores tokens in sb-*-auth-token cookie
-      const cookies = req.cookies
-      const authCookie = cookies.getAll().find(c => c.name.includes('auth-token'))
-      if (authCookie) {
-        try {
-          const parsed = JSON.parse(decodeURIComponent(authCookie.value))
-          token = parsed?.access_token || parsed?.[0]?.access_token
-        } catch {
-          // Try raw value
-          token = authCookie.value
-        }
-      }
+      token = extractTokenFromCookies(req) || undefined
     }
 
     if (!token) {
@@ -93,11 +140,6 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult | AuthEr
 
 /**
  * Quick helper that returns just the user or throws.
- * For routes where you want cleaner code:
- * ```
- * const user = await getAuthUser(req)
- * if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
- * ```
  */
 export async function getAuthUser(req: NextRequest): Promise<{ id: string; email?: string } | null> {
   const result = await requireAuth(req)
