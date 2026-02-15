@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { href: '/doctor/billing', label: 'Billing & Reports', icon: DollarSign },
   { href: '/doctor/referrals', label: 'Referrals', icon: ClipboardList },
   { href: '/doctor/quality', label: 'Quality Measures', icon: BarChart3 },
+  { href: '/doctor/admin-messages', label: 'Admin Messages', icon: Shield },
   { href: '/doctor/profile', label: 'Profile & Credentials', icon: UserCircle },
   { href: '/doctor/availability', label: 'Availability', icon: Clock },
 ] as const
