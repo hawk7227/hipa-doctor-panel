@@ -43,11 +43,11 @@ export async function GET(req: NextRequest) {
       const { count: localNew } = await db.from('patients')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', monthStart)
+      // For DrChrono, approximate "new" patients by looking at recent drchrono_updated_at
+      // (patients whose record was recently created/updated on DrChrono side)
       const { count: dcNew } = await db.from('drchrono_patients')
         .select('*', { count: 'exact', head: true })
-        .gte('last_synced_at', monthStart)
-      // For DC, we approximate "new" by checking if drchrono_updated_at is recent
-      // More accurate: check patient_status or first appearance
+        .gte('drchrono_updated_at', monthStart)
       newThisMonth = Math.max(localNew || 0, dcNew || 0)
     } catch { /* ok */ }
 
@@ -151,6 +151,119 @@ export async function GET(req: NextRequest) {
       lastSyncedAt = syncLog?.last_synced_at || null
     } catch { /* ok */ }
 
+    // ── Notifications ──
+    const notifications: any[] = []
+    try {
+      // Pending local appointments = new appointment requests
+      const { data: pendingApts } = await db.from('appointments')
+        .select('id, patient_id, requested_date_time, visit_type, created_at, patients!appointments_patient_id_fkey(first_name, last_name)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(5)
+      
+      for (const apt of (pendingApts || [])) {
+        const p = Array.isArray(apt.patients) ? apt.patients[0] : apt.patients
+        const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : 'Patient'
+        notifications.push({
+          id: `apt-pending-${apt.id}`,
+          type: 'appointment_request',
+          title: 'New Appointment Request',
+          message: `${name} requested a ${apt.visit_type || 'video'} visit for ${apt.requested_date_time ? new Date(apt.requested_date_time).toLocaleDateString() : 'TBD'}`,
+          is_read: false,
+          created_at: apt.created_at,
+        })
+      }
+
+      // Today's appointments = reminders
+      const todayStart2 = `${todayStr}T00:00:00`
+      const todayEnd2 = `${todayStr}T23:59:59`
+      const { data: todayApts } = await db.from('appointments')
+        .select('id, patient_id, requested_date_time, visit_type, patients!appointments_patient_id_fkey(first_name, last_name)')
+        .gte('requested_date_time', todayStart2)
+        .lte('requested_date_time', todayEnd2)
+        .in('status', ['accepted', 'pending'])
+        .limit(5)
+
+      for (const apt of (todayApts || [])) {
+        const p = Array.isArray(apt.patients) ? apt.patients[0] : apt.patients
+        const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : 'Patient'
+        notifications.push({
+          id: `apt-today-${apt.id}`,
+          type: 'appointment_reminder',
+          title: 'Appointment Today',
+          message: `${name} — ${apt.visit_type || 'video'} visit at ${apt.requested_date_time ? new Date(apt.requested_date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD'}`,
+          is_read: false,
+          created_at: apt.requested_date_time,
+        })
+      }
+
+      // DrChrono upcoming appointments as notifications
+      const { data: dcTodayApts } = await db.from('drchrono_appointments')
+        .select('drchrono_appointment_id, drchrono_patient_id, scheduled_time, status, reason')
+        .gte('scheduled_time', todayStart2)
+        .lte('scheduled_time', todayEnd2)
+        .neq('status', 'Cancelled')
+        .limit(5)
+
+      for (const apt of (dcTodayApts || [])) {
+        let name = 'Patient'
+        if (apt.drchrono_patient_id) {
+          const { data: p } = await db.from('drchrono_patients')
+            .select('first_name, last_name')
+            .eq('drchrono_patient_id', apt.drchrono_patient_id)
+            .single()
+          if (p) name = `${p.first_name} ${p.last_name}`.trim()
+        }
+        // Avoid duplicates with local
+        if (!notifications.some(n => n.id.includes(String(apt.drchrono_appointment_id)))) {
+          notifications.push({
+            id: `dc-today-${apt.drchrono_appointment_id}`,
+            type: 'appointment_reminder',
+            title: 'Appointment Today (DrChrono)',
+            message: `${name} — ${apt.reason || 'visit'} at ${apt.scheduled_time ? new Date(apt.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD'}`,
+            is_read: false,
+            created_at: apt.scheduled_time,
+          })
+        }
+      }
+
+      // New lab results (last 24 hours)
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { count: newLabCount } = await db.from('drchrono_lab_results')
+        .select('*', { count: 'exact', head: true })
+        .gte('last_synced_at', yesterday)
+      if (newLabCount && newLabCount > 0) {
+        notifications.push({
+          id: 'lab-results-new',
+          type: 'lab_results',
+          title: 'New Lab Results',
+          message: `${newLabCount} new lab result${newLabCount > 1 ? 's' : ''} received in the last 24 hours`,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+
+      // Unread messages
+      const { count: unreadMsgs } = await db.from('drchrono_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('read', false)
+      if (unreadMsgs && unreadMsgs > 0) {
+        notifications.push({
+          id: 'messages-unread',
+          type: 'messages',
+          title: 'Unread Messages',
+          message: `You have ${unreadMsgs} unread message${unreadMsgs > 1 ? 's' : ''} in your inbox`,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+    } catch (err) {
+      console.error('Notifications generation error:', err)
+    }
+
+    // Sort notifications by date, newest first
+    notifications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
     return NextResponse.json({
       totalPatients,
       activePatients,
@@ -158,6 +271,7 @@ export async function GET(req: NextRequest) {
       appointmentsToday,
       avgAppointments,
       upcomingAppointments,
+      notifications,
       lastSyncedAt,
       sources: {
         local_patients: localPatients || 0,

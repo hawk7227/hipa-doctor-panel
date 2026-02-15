@@ -107,6 +107,10 @@ export default function DoctorDashboard() {
               } : null,
             })))
           }
+          // Load notifications from API
+          if (statsData.notifications && statsData.notifications.length > 0) {
+            setNotifications(statsData.notifications)
+          }
         }
       } catch (err) {
         console.error('Dashboard stats API error:', err)
