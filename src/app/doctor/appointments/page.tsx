@@ -578,8 +578,8 @@ export default function AppointmentsPage() {
   return (
     <div className="h-full flex flex-col bg-[#0a1f1f] overflow-hidden">
 
-      {/* ═══ TOP BAR ═══ */}
-      <div className="flex-shrink-0 border-b border-[#1a3d3d] bg-[#0d2626]">
+      {/* ═══ TOP BAR (hidden when workspace active) ═══ */}
+      <div className={`flex-shrink-0 border-b border-[#1a3d3d] bg-[#0d2626] ${selectedAppointmentId ? 'hidden' : ''}`}>
         <div className="flex items-center justify-between px-3 py-2 md:px-4">
           <div className="flex items-center space-x-2 min-w-0">
             <button onClick={() => router.push('/doctor/dashboard')} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors md:hidden" aria-label="Back to dashboard">
@@ -662,10 +662,10 @@ export default function AppointmentsPage() {
       {/* ═══ BODY ═══ */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
 
-        {/* ── Mini Calendar Sidebar (lg+ only) — collapses when workspace open ── */}
+        {/* ── Mini Calendar Sidebar (lg+ only) — HIDDEN when workspace open ── */}
         <div className={`hidden lg:flex flex-col flex-shrink-0 border-r border-[#1a3d3d] bg-[#0b2424] overflow-y-auto transition-all duration-300 ${
-          selectedAppointmentId ? 'w-[200px] p-2' : 'w-[270px] p-3'
-        }`} style={{ minWidth: selectedAppointmentId ? 180 : 270, maxWidth: selectedAppointmentId ? 220 : 270 }}>
+          selectedAppointmentId ? 'w-0 p-0 overflow-hidden opacity-0' : 'w-[270px] p-3 opacity-100'
+        }`} style={{ minWidth: selectedAppointmentId ? 0 : 270, maxWidth: selectedAppointmentId ? 0 : 270 }}>
           <MiniCalendar
             currentDate={currentDate}
             onDateSelect={(date) => setCurrentDate(date)}

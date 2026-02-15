@@ -1,7 +1,7 @@
 'use client'
 
 import { ReactNode, useState, useEffect, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
 import ErrorBoundary from '@/components/ErrorBoundary'
@@ -99,11 +99,21 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
 
   // Auto-collapse on workspace-heavy pages (calendar, chart management)
   const isWorkspacePage = pathname === '/doctor/appointments' || pathname === '/doctor/chart-management'
+  const searchParams = useSearchParams()
+  const isWorkspaceActive = isWorkspacePage && !!searchParams.get('apt')
+  
   useEffect(() => {
     if (isWorkspacePage && !collapsed && window.innerWidth >= 1024) {
       setCollapsed(true)
     }
   }, [isWorkspacePage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Force collapse when workspace appointment is open
+  useEffect(() => {
+    if (isWorkspaceActive && !collapsed) {
+      setCollapsed(true)
+    }
+  }, [isWorkspaceActive]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed(prev => {
