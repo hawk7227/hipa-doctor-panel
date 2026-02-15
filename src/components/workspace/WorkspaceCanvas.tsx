@@ -25,6 +25,39 @@ import type { Layout, ResponsiveLayouts } from 'react-grid-layout'
 // ── Grid layout CSS ──
 import 'react-grid-layout/css/styles.css'
 
+// Custom overrides for grid items
+const gridStyles = `
+  .react-grid-item.react-grid-placeholder {
+    background: rgba(20, 184, 166, 0.15) !important;
+    border: 2px dashed rgba(20, 184, 166, 0.4) !important;
+    border-radius: 12px !important;
+    opacity: 1 !important;
+  }
+  .react-grid-item > .react-resizable-handle {
+    background-image: none !important;
+    width: 20px !important;
+    height: 20px !important;
+  }
+  .react-grid-item > .react-resizable-handle::after {
+    content: '' !important;
+    position: absolute !important;
+    right: 5px !important;
+    bottom: 5px !important;
+    width: 8px !important;
+    height: 8px !important;
+    border-right: 2px solid rgba(148, 163, 184, 0.4) !important;
+    border-bottom: 2px solid rgba(148, 163, 184, 0.4) !important;
+  }
+  .react-grid-item > .react-resizable-handle:hover::after {
+    border-color: rgba(20, 184, 166, 0.8) !important;
+  }
+  .react-grid-item.react-draggable-dragging {
+    box-shadow: 0 0 20px rgba(20, 184, 166, 0.2) !important;
+    border-color: rgba(20, 184, 166, 0.4) !important;
+    z-index: 100 !important;
+  }
+`
+
 // ── Hooks ──
 import { useAppointmentData } from '@/components/appointment/hooks/useAppointmentData'
 import { useDoctorNotes } from '@/components/appointment/hooks/useDoctorNotes'
@@ -194,6 +227,34 @@ export default function WorkspaceCanvas({
     })
   }, [])
 
+  // ── Grid container width measurement ──
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const [gridWidth, setGridWidth] = useState(1200)
+
+  useEffect(() => {
+    const measure = () => {
+      if (gridContainerRef.current) {
+        setGridWidth(gridContainerRef.current.offsetWidth)
+      }
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
+  // Re-measure when appointment loads (container might change)
+  useEffect(() => {
+    if (appointment && gridContainerRef.current) {
+      // Small delay to let DOM settle
+      const t = setTimeout(() => {
+        if (gridContainerRef.current) {
+          setGridWidth(gridContainerRef.current.offsetWidth)
+        }
+      }, 100)
+      return () => clearTimeout(t)
+    }
+  }, [appointment])
+
   // ── Grid layout state ──
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(DEFAULT_LAYOUTS)
   const [showVideo, setShowVideo] = useState(false)
@@ -238,6 +299,8 @@ export default function WorkspaceCanvas({
 
   return (
     <div className="h-full flex flex-col bg-[#0a1118] overflow-hidden">
+      {/* Grid custom styles */}
+      <style dangerouslySetInnerHTML={{ __html: gridStyles }} />
       {/* ═══ TOOLBAR HEADER ═══ */}
       <div className="flex-shrink-0 bg-[#0d1a24] border-b border-white/10 px-4 py-2">
         {/* Row 1: Title + Status + Chart + Close */}
@@ -389,9 +452,10 @@ export default function WorkspaceCanvas({
         )}
 
         {!loading && !error && appointment && (
+          <div ref={gridContainerRef} className="w-full">
           <ResponsiveGridLayout
             className="layout"
-            width={typeof window !== 'undefined' ? window.innerWidth - 80 : 1200}
+            width={gridWidth}
             layouts={layouts}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
             cols={COLS}
@@ -402,9 +466,14 @@ export default function WorkspaceCanvas({
             onLayoutChange={handleLayoutChange as any}
           >
             {/* ── PATIENT INFO PANEL ── */}
-            <div key="patient-info" className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden">
-              <div className="grid-drag-handle flex items-center px-3 py-2 border-b border-[#1a3d3d] cursor-grab bg-[#0d2626]"
+            <div key="patient-info" className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden relative">
+              <div className="grid-drag-handle flex items-center gap-2 px-3 py-2 border-b border-[#1a3d3d] cursor-grab active:cursor-grabbing bg-[#0d2626] select-none"
                 style={{ borderTop: '2px solid #14b8a6' }}>
+                <svg className="w-4 h-4 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                  <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                  <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                  <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                </svg>
                 <span className="text-sm font-semibold text-white">Patient Info</span>
               </div>
               <div className="p-3 overflow-auto h-[calc(100%-36px)]">
@@ -448,10 +517,17 @@ export default function WorkspaceCanvas({
             </div>
 
             {/* ── SOAP NOTES PANEL ── */}
-            <div key="soap-notes" className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden flex flex-col">
-              <div className="grid-drag-handle flex items-center justify-between px-3 py-2 border-b border-[#1a3d3d] cursor-grab"
+            <div key="soap-notes" className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden flex flex-col relative">
+              <div className="grid-drag-handle flex items-center gap-2 justify-between px-3 py-2 border-b border-[#1a3d3d] cursor-grab active:cursor-grabbing select-none"
                 style={{ borderTop: '2px solid #3b82f6' }}>
-                <span className="text-sm font-semibold text-white">Clinical</span>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                    <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                    <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                    <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                  </svg>
+                  <span className="text-sm font-semibold text-white">Clinical</span>
+                </div>
               </div>
               {/* Tabs */}
               <div className="flex border-b border-[#1a3d3d] flex-shrink-0">
@@ -585,6 +661,7 @@ export default function WorkspaceCanvas({
               </div>
             )}
           </ResponsiveGridLayout>
+          </div>
         )}
       </div>
 

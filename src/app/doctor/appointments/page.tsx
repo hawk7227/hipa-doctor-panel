@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Appointment } from '@/lib/supabase'
-import AppointmentDetailModal from '@/components/AppointmentDetailModal'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
 import CreateAppointmentDialog from '@/components/CreateAppointmentDialog'
 import InstantVisitQueueModal from '@/components/InstantVisitQueueModal'
