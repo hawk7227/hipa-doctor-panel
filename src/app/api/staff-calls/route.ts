@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
       // Notify callee
       const { data: caller } = await supabaseAdmin
-        .from('doctor_staff')
+        .from('practice_staff')
         .select('first_name, last_name')
         .eq('id', staffId)
         .single()

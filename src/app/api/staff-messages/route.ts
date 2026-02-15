@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
           id, type, name, description, patient_id, is_archived,
           last_message_at, last_message_preview, created_at,
           staff_conversation_participants(staff_id, role, last_read_at,
-            doctor_staff(id, first_name, last_name, role, email, active))
+            practice_staff(id, first_name, last_name, role, email, active))
         `)
         .in('id', convIds)
         .eq('doctor_id', doctorId)
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
         .select(`
           id, conversation_id, content, message_type, reply_to_id,
           metadata, is_edited, is_deleted, created_at,
-          sender:doctor_staff!staff_messages_sender_id_fkey(id, first_name, last_name, role, email)
+          sender:practice_staff!staff_messages_sender_id_fkey(id, first_name, last_name, role, email)
         `)
         .eq('conversation_id', conversationId)
         .eq('is_deleted', false)
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
         .select(`
           id, conversation_id, content, message_type, reply_to_id,
           metadata, is_edited, is_deleted, created_at,
-          sender:doctor_staff!staff_messages_sender_id_fkey(id, first_name, last_name, role, email)
+          sender:practice_staff!staff_messages_sender_id_fkey(id, first_name, last_name, role, email)
         `)
         .single()
 
@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
 
       if (participants?.length) {
         const { data: sender } = await supabaseAdmin
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('first_name, last_name')
           .eq('id', staffId)
           .single()

@@ -23,12 +23,12 @@ export async function GET(req: NextRequest) {
         id, title, description, priority, status, category,
         due_date, notes, created_at, updated_at, completed_at,
         patient_id, appointment_id,
-        assigned_to_staff:doctor_staff!staff_tasks_assigned_to_fkey(id, first_name, last_name, role, email),
-        assigned_by_staff:doctor_staff!staff_tasks_assigned_by_fkey(id, first_name, last_name, role, email),
-        completed_by_staff:doctor_staff!staff_tasks_completed_by_fkey(id, first_name, last_name, role),
+        assigned_to_staff:practice_staff!staff_tasks_assigned_to_fkey(id, first_name, last_name, role, email),
+        assigned_by_staff:practice_staff!staff_tasks_assigned_by_fkey(id, first_name, last_name, role, email),
+        completed_by_staff:practice_staff!staff_tasks_completed_by_fkey(id, first_name, last_name, role),
         patients(first_name, last_name),
         staff_task_comments(id, content, created_at,
-          doctor_staff(first_name, last_name))
+          practice_staff(first_name, last_name))
       `)
       .eq('doctor_id', doctorId)
       .order('created_at', { ascending: false })
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       // Notify assigned staff
       if (assignedTo && assignedTo !== staffId) {
         const { data: assigner } = await supabaseAdmin
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('first_name, last_name')
           .eq('id', staffId)
           .single()
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
       // Notify assigner when completed
       if (newStatus === 'completed' && task.assigned_by !== staffId) {
         const { data: completer } = await supabaseAdmin
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('first_name, last_name')
           .eq('id', staffId)
           .single()
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
       const { data: comment, error } = await supabaseAdmin
         .from('staff_task_comments')
         .insert({ task_id: taskId, staff_id: staffId, content })
-        .select(`id, content, created_at, doctor_staff(first_name, last_name)`)
+        .select(`id, content, created_at, practice_staff(first_name, last_name)`)
         .single()
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })

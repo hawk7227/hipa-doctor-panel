@@ -148,7 +148,7 @@ export default function ChartManagementPage() {
         setDoctorId(authUser.doctor.id)
         // Check if this user is actually a staff member viewing doctor's panel
         const { data: staffRecord } = await supabase
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('id, first_name, last_name, role')
           .eq('email', authUser.email)
           .eq('doctor_id', authUser.doctor.id)

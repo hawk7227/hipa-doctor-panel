@@ -29,7 +29,7 @@ interface Conversation {
   created_at: string; my_last_read_at: string | null; is_muted: boolean;
   staff_conversation_participants: Array<{
     staff_id: string; role: string; last_read_at: string;
-    doctor_staff: StaffMember;
+    practice_staff: StaffMember;
   }>;
 }
 
@@ -53,7 +53,7 @@ interface Task {
   patients: { first_name: string; last_name: string } | null;
   staff_task_comments: Array<{
     id: string; content: string; created_at: string;
-    doctor_staff: { first_name: string; last_name: string };
+    practice_staff: { first_name: string; last_name: string };
   }>;
 }
 
@@ -158,7 +158,7 @@ export default function StaffHubPage() {
 
         // Check if user is staff or doctor
         const { data: staffRecord } = await supabase
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('id, first_name, last_name, role, email')
           .eq('email', authUser.email)
           .eq('doctor_id', docId)
@@ -172,7 +172,7 @@ export default function StaffHubPage() {
         } else {
           // Doctor is also a staff entry (self) — check or create
           const { data: doctorStaff } = await supabase
-            .from('doctor_staff')
+            .from('practice_staff')
             .select('id, first_name, last_name, role')
             .eq('doctor_id', docId)
             .eq('role', 'doctor')
@@ -190,7 +190,7 @@ export default function StaffHubPage() {
 
         // Fetch all staff
         const { data: staff } = await supabase
-          .from('doctor_staff')
+          .from('practice_staff')
           .select('id, first_name, last_name, role, email, active')
           .eq('doctor_id', docId)
           .eq('active', true)
@@ -462,7 +462,7 @@ export default function StaffHubPage() {
     if (conv.name) return conv.name
     if (conv.type === 'direct') {
       const other = conv.staff_conversation_participants?.find(p => p.staff_id !== currentStaffId)
-      if (other?.doctor_staff) return `${other.doctor_staff.first_name} ${other.doctor_staff.last_name}`
+      if (other?.practice_staff) return `${other.practice_staff.first_name} ${other.practice_staff.last_name}`
     }
     return 'Conversation'
   }
@@ -834,7 +834,7 @@ export default function StaffHubPage() {
                         <div className="mt-3 pt-2 border-t border-[#1a3d3d] space-y-1">
                           {task.staff_task_comments.slice(0, 3).map(c => (
                             <p key={c.id} className="text-[10px] text-gray-400">
-                              <span className="font-medium text-gray-300">{c.doctor_staff?.first_name}:</span> {c.content}
+                              <span className="font-medium text-gray-300">{c.practice_staff?.first_name}:</span> {c.content}
                             </p>
                           ))}
                         </div>
