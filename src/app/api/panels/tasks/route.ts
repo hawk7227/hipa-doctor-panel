@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '../_shared'
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  const patient_id = req.nextUrl.searchParams.get('patient_id')
+  if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
+  try {
+    const { data, error } = await db.from('patient_tasks').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+    if (error) throw error
+    return NextResponse.json({ data: data || [] })
+  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { patient_id, doctor_id, document_id, appointment_id, title, description, assignee, priority, due_date, created_by } = body
+    if (!patient_id || !title) return NextResponse.json({ error: 'patient_id and title required' }, { status: 400 })
+
+    const { data, error } = await db.from('patient_tasks').insert({
+      patient_id, doctor_id, document_id, appointment_id, title, description, assignee, priority: priority || 'normal', due_date, status: 'pending', created_by,
+    }).select().single()
+
+    if (error) throw error
+    return NextResponse.json({ data })
+  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, status, assignee, priority, due_date, completed_by } = body
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+    const update: any = { updated_at: new Date().toISOString() }
+    if (status) update.status = status
+    if (assignee !== undefined) update.assignee = assignee
+    if (priority) update.priority = priority
+    if (due_date !== undefined) update.due_date = due_date
+    if (status === 'completed') {
+      update.completed_at = new Date().toISOString()
+      update.completed_by = completed_by
+    }
+
+    const { data, error } = await db.from('patient_tasks').update(update).eq('id', id).select().single()
+    if (error) throw error
+    return NextResponse.json({ data })
+  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
+}
+
+export async function DELETE(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  try {
+    const { error } = await db.from('patient_tasks').delete().eq('id', id)
+    if (error) throw error
+    return NextResponse.json({ success: true })
+  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
+}
