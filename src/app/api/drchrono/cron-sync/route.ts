@@ -648,13 +648,64 @@ export async function POST(req: NextRequest) {
 
   const results: Record<string, { fetched: number; upserted: number; errored: number; elapsed_ms: number }> = {}
 
-  // Process each entity sequentially to avoid overwhelming the API
-  for (const [entityName, config] of Object.entries(ENTITIES)) {
+  // Process entities with time budget awareness
+  // Reorder: quick reference tables first, then large patient tables
+  const ENTITY_ORDER = [
+    // Quick reference data (few records, fast)
+    'offices', 'doctors', 'users', 'task_categories', 'appointment_profiles',
+    'reminder_profiles', 'custom_demographics',
+    // Medium clinical/practice data
+    'tasks', 'amendments', 'messages',
+    // Patient data (can be large)
+    'patients', 'appointments', 'documents',
+    'allergies', 'problems', 'vaccines', 'patient_communications',
+    // Large clinical data
+    'medications', 'clinical_notes', 'lab_orders', 'lab_results', 'lab_tests',
+    // Large billing data (often biggest tables)
+    'line_items', 'transactions', 'patient_payments',
+  ]
+
+  const TIME_BUDGET_MS = 270_000 // 4.5 minutes — leave 30s buffer for response + logging
+
+  const orderedEntities = ENTITY_ORDER
+    .filter(name => ENTITIES[name])
+    .map(name => [name, ENTITIES[name]] as const)
+  // Add any entities not in order list at the end
+  for (const [name, config] of Object.entries(ENTITIES)) {
+    if (!ENTITY_ORDER.includes(name)) {
+      orderedEntities.push([name, config] as const)
+    }
+  }
+
+  for (const [entityName, config] of orderedEntities) {
+    // Check time budget before starting entity
+    const elapsed = Date.now() - startTime
+    if (elapsed > TIME_BUDGET_MS) {
+      console.log(`[CronSync] Time budget exceeded (${elapsed}ms), skipping remaining entities`)
+      results[entityName] = { fetched: 0, upserted: 0, errored: 0, elapsed_ms: 0 }
+      continue
+    }
+
     const entityStart = Date.now()
     console.log(`[CronSync] Starting ${entityName}...`)
 
     try {
-      const allRecords = await fetchAllPages(token, config.url)
+      // For large tables after initial sync, use incremental sync (last 25 hours)
+      let syncUrl = config.url
+      const LARGE_TABLES = ['patients', 'medications', 'line_items', 'transactions', 'patient_payments', 'appointments', 'lab_results', 'clinical_notes']
+      if (LARGE_TABLES.includes(entityName)) {
+        // Check if table already has data
+        const { count } = await supabaseAdmin.from(config.table).select('*', { count: 'exact', head: true })
+        if (count && count > 100) {
+          // Incremental: only sync records updated in last 25 hours
+          const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString().split('T')[0]
+          const separator = syncUrl.includes('?') ? '&' : '?'
+          syncUrl = `${syncUrl}${separator}since=${since}`
+          console.log(`[CronSync] ${entityName}: incremental since ${since} (${count} existing records)`)
+        }
+      }
+
+      const allRecords = await fetchAllPages(token, syncUrl)
       let upserted = 0
       let errored = 0
 
