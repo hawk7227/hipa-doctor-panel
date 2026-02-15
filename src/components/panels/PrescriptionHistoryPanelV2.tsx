@@ -36,7 +36,7 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
     ...drchronoData.map((d: any) => ({
       id: `dc-${d.id}`, _source: 'drchrono',
       medication_name: d.name || d.medication_name || 'Unknown',
-      dosage: d.dosage || d.dosage_quantity ? `${d.dosage_quantity || ''}${d.dosage_unit ? ' ' + d.dosage_unit : ''}` : d.dose || null,
+      dosage: d.dosage || (d.dosage_quantity ? `${d.dosage_quantity}${d.dosage_unit ? ' ' + d.dosage_unit : ''}` : null) || d.dose || null,
       frequency: d.frequency || null,
       status: d.status || 'active',
       created_at: d.date_prescribed || d.created_at,
@@ -102,7 +102,7 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
                 <span className="text-sm font-semibold text-white">{rx.medication_name}</span>
                 {rx.status && (
                   <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[rx.status] || STATUS_COLORS.pending}`}>
-                    {rx.status.toUpperCase()}
+                    {(rx.status || 'pending').toUpperCase()}
                   </span>
                 )}
                 {rx._source === 'drchrono' && (

@@ -99,7 +99,7 @@ export default function VitalsPanelV2({ isOpen, onClose, patientId, patientName,
         {/* Latest Vitals Grid */}
         {latest && (
           <div className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg p-3">
-            <p className="text-[9px] text-gray-500 uppercase mb-2">Latest — {new Date(latest.recorded_at).toLocaleString()}</p>
+            <p className="text-[9px] text-gray-500 uppercase mb-2">Latest — {(latest.recorded_at || latest.created_at) ? new Date(latest.recorded_at || latest.created_at).toLocaleString() : ''}</p>
             <div className="grid grid-cols-3 gap-2">
               {FIELDS.map(f => {
                 const val = (latest as any)[f.key]
@@ -131,7 +131,7 @@ export default function VitalsPanelV2({ isOpen, onClose, patientId, patientName,
                   {v.oxygen_saturation && <span>SpO2: {v.oxygen_saturation}%</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-600">{new Date(v.recorded_at).toLocaleDateString()}</span>
+                  <span className="text-[10px] text-gray-600">{(v.recorded_at || v.created_at) ? new Date(v.recorded_at || v.created_at).toLocaleDateString() : ''}</span>
                   <button onClick={() => remove(v.id)} className="p-0.5 text-gray-600 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
                 </div>
               </div>

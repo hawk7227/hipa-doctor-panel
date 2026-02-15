@@ -108,7 +108,7 @@ export default function OrdersPanelV2({ isOpen, onClose, patientId, patientName,
                 </span>
               </div>
               {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}
-              <p className="text-[10px] text-gray-600 mt-1">{new Date(item.created_at).toLocaleString()}</p>
+              {item.created_at && <p className="text-[10px] text-gray-600 mt-1">{new Date(item.created_at).toLocaleString()}</p>}
             </div>
             <div className="flex gap-1 flex-shrink-0">
               <button onClick={() => { setEditId(item.id); setForm({ order_type: item.order_type || 'lab', description: item.description || '', priority: item.priority || 'routine', status: item.status || 'pending', notes: item.notes || '' }) }}
@@ -126,7 +126,7 @@ export default function OrdersPanelV2({ isOpen, onClose, patientId, patientName,
               <div key={item.id} className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg p-2 mb-1 opacity-60 flex items-center gap-2">
                 <span className="text-sm">{TYPE_ICONS[item.order_type] || '📋'}</span>
                 <span className="text-xs text-gray-400 flex-1 truncate">{item.description || item.order_type}</span>
-                <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[item.status]}`}>{item.status}</span>
+                <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[item.status] || STATUS_COLORS.pending}`}>{item.status || 'completed'}</span>
               </div>
             ))}
           </div>
