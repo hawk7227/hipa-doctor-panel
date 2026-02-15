@@ -531,29 +531,40 @@ export default function StaffManagementPage() {
                           Reset to role defaults
                         </button>
                       </div>
-                      {PERMISSION_GROUPS.map(group => (
-                        <div key={group.label}>
-                          <p className="text-[10px] text-gray-400 font-bold mb-1">{group.label}</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {group.permissions.map(perm => {
-                              const has = member.permissions.includes(perm.key)
-                              return (
-                                <button
-                                  key={perm.key}
-                                  onClick={() => handleTogglePermission(member, perm.key)}
-                                  className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium ${
-                                    has
-                                      ? 'bg-teal-500/15 border-teal-500/30 text-teal-400'
-                                      : 'bg-[#0a1f1f] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
-                                  }`}
-                                >
-                                  {has ? '✓' : '○'} {perm.label}
-                                </button>
-                              )
-                            })}
+                      {PERMISSION_GROUPS.map(group => {
+                        const groupPerms = group.permissions.map(p => p.key)
+                        const enabledCount = groupPerms.filter(k => member.permissions.includes(k)).length
+                        return (
+                          <div key={group.label} className="space-y-1">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-xs">{group.icon}</span>
+                              <span className="text-[10px] text-gray-400 font-bold">{group.label}</span>
+                              <span className="text-[9px] text-gray-600">({enabledCount}/{groupPerms.length})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {group.permissions.map(perm => {
+                                const has = member.permissions.includes(perm.key)
+                                return (
+                                  <button
+                                    key={perm.key}
+                                    onClick={() => handleTogglePermission(member, perm.key)}
+                                    title={perm.description}
+                                    className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium flex items-center space-x-1 ${
+                                      has
+                                        ? 'bg-teal-500/15 border-teal-500/30 text-teal-400'
+                                        : 'bg-[#0a1f1f] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
+                                    }`}
+                                  >
+                                    <span>{has ? '✓' : '○'}</span>
+                                    <span>{perm.label}</span>
+                                    {perm.sensitive && <span className="text-[8px] text-red-400 ml-0.5">⚠</span>}
+                                  </button>
+                                )
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -806,8 +817,8 @@ export default function StaffManagementPage() {
 
             <div>
               <label className="text-[10px] text-gray-400 font-bold uppercase">Role</label>
-              <div className="grid grid-cols-3 gap-2 mt-1">
-                {(['assistant', 'admin', 'billing'] as Role[]).map(role => {
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                {(['assistant', 'nurse', 'front_desk', 'admin', 'billing'] as Role[]).map(role => {
                   const config = ROLE_CONFIG[role]
                   return (
                     <button
@@ -830,36 +841,52 @@ export default function StaffManagementPage() {
             {/* Permissions Checklist */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-[10px] text-gray-400 font-bold uppercase">Permissions ({invitePermissions.length})</label>
+                <label className="text-[10px] text-gray-400 font-bold uppercase">Permissions ({invitePermissions.length}/{Object.keys(PERMISSIONS).length})</label>
                 <button onClick={() => setInvitePermissions(getPermissionsForRole(inviteRole))} className="text-[10px] text-teal-400 hover:text-teal-300 font-bold">
                   Reset to defaults
                 </button>
               </div>
-              <div className="bg-[#0a1f1f] rounded-lg border border-[#1a3d3d] p-3 max-h-48 overflow-y-auto space-y-3">
-                {PERMISSION_GROUPS.map(group => (
-                  <div key={group.label}>
-                    <p className="text-[10px] text-gray-500 font-bold mb-1">{group.label}</p>
-                    <div className="flex flex-wrap gap-1">
-                      {group.permissions.map(perm => {
-                        const has = invitePermissions.includes(perm.key)
-                        return (
-                          <button key={perm.key}
-                            onClick={() => {
-                              setInvitePermissions(prev =>
-                                has ? prev.filter(p => p !== perm.key) : [...prev, perm.key]
-                              )
-                            }}
-                            className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium ${
-                              has ? 'bg-teal-500/15 border-teal-500/30 text-teal-400' : 'bg-[#0d2626] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
-                            }`}
-                          >
-                            {has ? '✓' : '○'} {perm.label}
-                          </button>
-                        )
-                      })}
+              <div className="bg-[#0a1f1f] rounded-lg border border-[#1a3d3d] p-3 max-h-64 overflow-y-auto space-y-4">
+                {PERMISSION_GROUPS.map(group => {
+                  const groupPerms = group.permissions.map(p => p.key)
+                  const allEnabled = groupPerms.every(k => invitePermissions.includes(k))
+                  const someEnabled = groupPerms.some(k => invitePermissions.includes(k))
+                  return (
+                    <div key={group.label} className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-xs">{group.icon}</span>
+                          <span className="text-[10px] text-gray-400 font-bold">{group.label}</span>
+                          <span className="text-[9px] text-gray-600">({groupPerms.filter(k => invitePermissions.includes(k)).length}/{groupPerms.length})</span>
+                        </div>
+                        <button onClick={() => {
+                          if (allEnabled) setInvitePermissions(prev => prev.filter(p => !groupPerms.includes(p)))
+                          else setInvitePermissions(prev => [...new Set([...prev, ...groupPerms])])
+                        }} className={`text-[9px] font-bold ${allEnabled ? 'text-red-400' : 'text-teal-400'}`}>
+                          {allEnabled ? 'Remove All' : someEnabled ? 'Enable All' : 'Enable All'}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {group.permissions.map(perm => {
+                          const has = invitePermissions.includes(perm.key)
+                          return (
+                            <button key={perm.key}
+                              onClick={() => setInvitePermissions(prev => has ? prev.filter(p => p !== perm.key) : [...prev, perm.key])}
+                              title={perm.description}
+                              className={`text-[10px] px-2 py-1 rounded-md border transition-colors font-medium flex items-center space-x-1 ${
+                                has ? 'bg-teal-500/15 border-teal-500/30 text-teal-400' : 'bg-[#0d2626] border-[#1a3d3d] text-gray-500 hover:text-gray-300'
+                              }`}
+                            >
+                              <span>{has ? '✓' : '○'}</span>
+                              <span>{perm.label}</span>
+                              {perm.sensitive && <span className="text-[8px] text-red-400 ml-0.5">⚠</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
