@@ -154,6 +154,9 @@ export default function AppointmentsPage() {
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(
     searchParams.get('apt') || null
   )
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(
+    searchParams.get('patient') || null
+  )
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedSlotDate, setSelectedSlotDate] = useState<Date | null>(null)
   const [selectedSlotTime, setSelectedSlotTime] = useState<Date | null>(null)
@@ -179,6 +182,7 @@ export default function AppointmentsPage() {
   useEffect(() => {
     const params = new URLSearchParams()
     if (selectedAppointmentId) params.set('apt', selectedAppointmentId)
+    if (selectedPatientId && !selectedAppointmentId) params.set('patient', selectedPatientId)
     if (calendarView !== 'week') params.set('view', calendarView)
     // Only add date if not today
     const todayStr = formatDateKey(new Date())
@@ -187,7 +191,7 @@ export default function AppointmentsPage() {
     const paramStr = params.toString()
     const newUrl = paramStr ? `/doctor/appointments?${paramStr}` : '/doctor/appointments'
     window.history.replaceState(null, '', newUrl)
-  }, [selectedAppointmentId, calendarView, currentDate])
+  }, [selectedAppointmentId, selectedPatientId, calendarView, currentDate])
 
   // ── Computed ──
   const visibleDates = useMemo(() => {
@@ -579,7 +583,7 @@ export default function AppointmentsPage() {
     <div className="h-full flex flex-col bg-[#0a1f1f] overflow-hidden">
 
       {/* ═══ TOP BAR (hidden when workspace active) ═══ */}
-      <div className={`flex-shrink-0 border-b border-[#1a3d3d] bg-[#0d2626] ${selectedAppointmentId ? 'hidden' : ''}`}>
+      <div className={`flex-shrink-0 border-b border-[#1a3d3d] bg-[#0d2626] ${selectedAppointmentId || selectedPatientId ? 'hidden' : ''}`}>
         <div className="flex items-center justify-between px-3 py-2 md:px-4">
           <div className="flex items-center space-x-2 min-w-0">
             <button onClick={() => router.push('/doctor/dashboard')} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors md:hidden" aria-label="Back to dashboard">
@@ -664,7 +668,7 @@ export default function AppointmentsPage() {
 
         {/* ── Mini Calendar Sidebar (lg+ only) — HIDDEN when workspace open ── */}
         <div className={`hidden lg:flex flex-col flex-shrink-0 border-r border-[#1a3d3d] bg-[#0b2424] overflow-y-auto transition-all duration-300 ${
-          selectedAppointmentId ? 'w-0 p-0 overflow-hidden opacity-0' : 'w-[270px] p-3 opacity-100'
+          (selectedAppointmentId || selectedPatientId) ? 'w-0 p-0 overflow-hidden opacity-0' : 'w-[270px] p-3 opacity-100'
         }`} style={{ minWidth: selectedAppointmentId ? 0 : 270, maxWidth: selectedAppointmentId ? 0 : 270 }}>
           <MiniCalendar
             currentDate={currentDate}
@@ -706,7 +710,7 @@ export default function AppointmentsPage() {
         {/* ── Main Content Area ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-          {/* ═══ WORKSPACE CANVAS (when appointment selected) ═══ */}
+          {/* ═══ WORKSPACE CANVAS (appointment or patient-only mode) ═══ */}
           {selectedAppointmentId ? (
             <WorkspaceCanvas
               appointmentId={selectedAppointmentId}
@@ -722,6 +726,24 @@ export default function AppointmentsPage() {
                 setSelectedSlotTime(time)
                 setShowCreateDialog(true)
                 setSelectedAppointmentId(null)
+              }}
+              onSmsSent={(message) => {
+                setNotification({ type: 'success', message })
+                setTimeout(() => setNotification(null), 5000)
+              }}
+            />
+          ) : selectedPatientId ? (
+            <WorkspaceCanvas
+              appointmentId={null}
+              patientId={selectedPatientId}
+              isOpen={true}
+              onClose={() => setSelectedPatientId(null)}
+              onStatusChange={() => {}}
+              onScheduleAppointment={(patientData) => {
+                setFollowUpPatientData(patientData)
+                setSelectedSlotDate(new Date())
+                setSelectedSlotTime(new Date())
+                setShowCreateDialog(true)
               }}
               onSmsSent={(message) => {
                 setNotification({ type: 'success', message })

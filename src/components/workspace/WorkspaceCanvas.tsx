@@ -17,7 +17,7 @@ import { logViewAppointment } from '@/lib/audit'
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import {
   X, Loader2, CheckCircle, XCircle, RotateCcw, Lock, Edit, Clock,
-  FileText, Video, ArrowRight, ChevronLeft, ChevronRight,
+  FileText, Video, ArrowRight, ChevronLeft, ChevronRight, CalendarPlus, RefreshCw, User, Calendar,
 } from 'lucide-react'
 import type { Layout, ResponsiveLayouts } from 'react-grid-layout'
 
@@ -69,6 +69,7 @@ import { usePriorAuth } from '@/components/appointment/hooks/usePriorAuth'
 import { useChartManagement } from '@/components/appointment/hooks/useChartManagement'
 import { useAppointmentActions } from '@/components/appointment/hooks/useAppointmentActions'
 import { convertToTimezone } from '@/components/appointment/utils/timezone-utils'
+import { usePatientData } from '@/hooks/usePatientData'
 
 // ── Panel Components ──
 import ErxComposer from '@/components/appointment/sections/ErxComposer'
@@ -154,6 +155,8 @@ interface CalendarAppointment {
 
 interface WorkspaceCanvasProps {
   appointmentId: string | null
+  /** Patient-only mode: open chart without appointment */
+  patientId?: string | null
   isOpen: boolean
   onClose: () => void
   onStatusChange: () => void
@@ -166,24 +169,43 @@ interface WorkspaceCanvasProps {
   onFollowUp?: (patientData: {
     id: string; first_name: string; last_name: string; email: string; mobile_phone: string
   }, date: Date, time: Date) => void
+  /** Called when "Schedule Appointment" is clicked in patient-only mode */
+  onScheduleAppointment?: (patientData: {
+    id: string; first_name: string; last_name: string; email: string; mobile_phone: string
+  }) => void
 }
 
 // ═══════════════════════════════════════════════════════════════
 // WORKSPACE CANVAS COMPONENT
 // ═══════════════════════════════════════════════════════════════
 export default function WorkspaceCanvas({
-  appointmentId, isOpen, onClose, onStatusChange, onSmsSent,
-  appointments = [], currentDate, onAppointmentSwitch, onFollowUp,
+  appointmentId, patientId: propPatientId, isOpen, onClose, onStatusChange, onSmsSent,
+  appointments = [], currentDate, onAppointmentSwitch, onFollowUp, onScheduleAppointment,
 }: WorkspaceCanvasProps) {
   // ── Stable appointments ──
   const idsString = useMemo(() => appointments.map(a => a.id).sort().join(','), [appointments])
   const stableAppointments = useMemo(() => appointments, [idsString])
 
-  // ── Core data ──
+  // ── Mode detection ──
+  const isPatientOnlyMode = !appointmentId && !!propPatientId
+
+  // ── Core data (appointment mode) ──
   const {
-    appointment, loading, error, newDateTime, setNewDateTime,
+    appointment, loading: aptLoading, error: aptError, newDateTime, setNewDateTime,
     currentUser, setAppointment, setError, fetchAppointmentDetails,
-  } = useAppointmentData(appointmentId, isOpen, stableAppointments)
+  } = useAppointmentData(appointmentId, isOpen && !isPatientOnlyMode, stableAppointments)
+
+  // ── Patient-only data ──
+  const {
+    patient: directPatient,
+    loading: patientLoading,
+    error: patientError,
+    refetch: refetchPatient,
+  } = usePatientData(isPatientOnlyMode ? propPatientId! : null)
+
+  // ── Unified loading/error ──
+  const loading = isPatientOnlyMode ? patientLoading : aptLoading
+  const error = isPatientOnlyMode ? patientError : aptError
 
   // ── Chart management ──
   const chart = useChartManagement(appointmentId, currentUser?.email)
@@ -195,7 +217,7 @@ export default function WorkspaceCanvas({
   )
 
   // ── Derived data (needed by hooks below) ──
-  const patientId = appointment?.patient_id || null
+  const patientId = isPatientOnlyMode ? propPatientId! : (appointment?.patient_id || null)
 
   // ── Content hooks ──
   const doctorNotes = useDoctorNotes(appointmentId, appointment)
@@ -281,14 +303,16 @@ export default function WorkspaceCanvas({
 
   // ── Derived display data ──
   // Supabase joins may return patients as array or object — normalize
-  const patientData = appointment?.patients
+  // ── Patient data normalization (handles both modes) ──
+  const aptPatientData = appointment?.patients
     ? (Array.isArray(appointment.patients) ? appointment.patients[0] : appointment.patients)
     : null
+  const patientData = isPatientOnlyMode ? directPatient : aptPatientData
   const patientName = patientData
     ? `${patientData.first_name || ''} ${patientData.last_name || ''}`.trim() || 'N/A'
     : 'N/A'
   const patientEmail = patientData?.email || 'N/A'
-  const patientPhone = patientData?.phone || patientData?.mobile_phone || 'N/A'
+  const patientPhone = patientData?.phone || (patientData as any)?.mobile_phone || 'N/A'
   const patientDob = patientData?.date_of_birth || 'N/A'
 
   // ── Layout change handler ──
@@ -307,58 +331,87 @@ export default function WorkspaceCanvas({
       <style dangerouslySetInnerHTML={{ __html: gridStyles }} />
       {/* ═══ TOOLBAR HEADER ═══ */}
       <div className="flex-shrink-0 bg-[#0d1a24] border-b border-white/10 px-4 py-2">
-        {/* Row 1: Title + Status + Chart + Close */}
+        {/* Row 1: Title + Status/Patient + Close */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="text-cyan-400 font-bold text-sm">APPOINTMENT</span>
-            {appointment?.requested_date_time && (
-              <span className="text-white text-sm">
-                • {convertToTimezone(appointment.requested_date_time, PROVIDER_TIMEZONE).toLocaleString('en-US', {
-                  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-                })}
-              </span>
+            {isPatientOnlyMode ? (
+              <>
+                <span className="text-teal-400 font-bold text-sm">PATIENT CHART</span>
+                <span className="px-2 py-0.5 bg-white/10 text-white text-xs font-bold rounded">{patientName}</span>
+                {patientDob !== 'N/A' && (
+                  <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-bold rounded border border-orange-500/30">
+                    DOB {new Date(patientDob + 'T00:00:00').toLocaleDateString()}
+                  </span>
+                )}
+                {(directPatient as any)?.drchrono_synced && (
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                    DrChrono Synced
+                  </span>
+                )}
+                {(directPatient as any)?.chart_id && (
+                  <span className="text-[10px] text-gray-500">Chart #{(directPatient as any).chart_id}</span>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="text-cyan-400 font-bold text-sm">APPOINTMENT</span>
+                {appointment?.requested_date_time && (
+                  <span className="text-white text-sm">
+                    • {convertToTimezone(appointment.requested_date_time, PROVIDER_TIMEZONE).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+                    })}
+                  </span>
+                )}
+                {appointment?.status && (
+                  <select
+                    value={appointment.status}
+                    onChange={(e) => actions.handleStatusChange(e.target.value)}
+                    disabled={actions.statusUpdating}
+                    className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer border-0 outline-none ${
+                      appointment.status === 'pending' ? 'bg-yellow-600 text-white' :
+                      appointment.status === 'accepted' ? 'bg-green-600 text-white' :
+                      appointment.status === 'completed' ? 'bg-blue-600 text-white' :
+                      appointment.status === 'cancelled' ? 'bg-gray-600 text-white' :
+                      'bg-gray-600 text-white'
+                    }`}
+                  >
+                    <option value="pending">PENDING</option>
+                    <option value="accepted">ACCEPTED</option>
+                    <option value="completed">COMPLETED</option>
+                    <option value="cancelled">CANCELLED</option>
+                    <option value="no_show">NO SHOW</option>
+                  </select>
+                )}
+                {/* Chart status badge */}
+                <button
+                  onClick={() => toggleOverlay('chart-management')}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition-all hover:opacity-80 ${
+                    chart.chartStatus === 'draft' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40' :
+                    chart.chartStatus === 'signed' ? 'bg-green-600/20 text-green-400 border border-green-500/40' :
+                    chart.chartStatus === 'closed' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40' :
+                    chart.chartStatus === 'preliminary' ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/40' :
+                    'bg-blue-600/20 text-blue-400 border border-blue-500/40'
+                  }`}
+                >
+                  {chart.chartStatus === 'draft' && <><Edit className="h-3 w-3" />Draft</>}
+                  {chart.chartStatus === 'preliminary' && <><Clock className="h-3 w-3" />Preliminary</>}
+                  {chart.chartStatus === 'signed' && <><Lock className="h-3 w-3" />Signed</>}
+                  {chart.chartStatus === 'closed' && <><Lock className="h-3 w-3" />Closed</>}
+                  {chart.chartStatus === 'amended' && <><FileText className="h-3 w-3" />Amended</>}
+                </button>
+              </>
             )}
-            {appointment?.status && (
-              <select
-                value={appointment.status}
-                onChange={(e) => actions.handleStatusChange(e.target.value)}
-                disabled={actions.statusUpdating}
-                className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer border-0 outline-none ${
-                  appointment.status === 'pending' ? 'bg-yellow-600 text-white' :
-                  appointment.status === 'accepted' ? 'bg-green-600 text-white' :
-                  appointment.status === 'completed' ? 'bg-blue-600 text-white' :
-                  appointment.status === 'cancelled' ? 'bg-gray-600 text-white' :
-                  'bg-gray-600 text-white'
-                }`}
-              >
-                <option value="pending">PENDING</option>
-                <option value="accepted">ACCEPTED</option>
-                <option value="completed">COMPLETED</option>
-                <option value="cancelled">CANCELLED</option>
-                <option value="no_show">NO SHOW</option>
-              </select>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {isPatientOnlyMode && (
+              <button onClick={() => refetchPatient()} className="p-1.5 text-gray-500 hover:text-teal-400 rounded-lg hover:bg-white/5 transition-colors" title="Refresh">
+                <RefreshCw className="h-4 w-4" />
+              </button>
             )}
-            {/* Chart status badge */}
-            <button
-              onClick={() => toggleOverlay('chart-management')}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition-all hover:opacity-80 ${
-                chart.chartStatus === 'draft' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40' :
-                chart.chartStatus === 'signed' ? 'bg-green-600/20 text-green-400 border border-green-500/40' :
-                chart.chartStatus === 'closed' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40' :
-                chart.chartStatus === 'preliminary' ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/40' :
-                'bg-blue-600/20 text-blue-400 border border-blue-500/40'
-              }`}
-            >
-              {chart.chartStatus === 'draft' && <><Edit className="h-3 w-3" />Draft</>}
-              {chart.chartStatus === 'preliminary' && <><Clock className="h-3 w-3" />Preliminary</>}
-              {chart.chartStatus === 'signed' && <><Lock className="h-3 w-3" />Signed</>}
-              {chart.chartStatus === 'closed' && <><Lock className="h-3 w-3" />Closed</>}
-              {chart.chartStatus === 'amended' && <><FileText className="h-3 w-3" />Amended</>}
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors">
+              <X className="h-5 w-5" />
             </button>
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors flex-shrink-0">
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         {/* Row 2: EHR Panel Buttons */}
@@ -390,7 +443,37 @@ export default function WorkspaceCanvas({
         </div>
 
         {/* Row 3: Action Buttons */}
-        {appointment && (
+        {isPatientOnlyMode && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <button
+              onClick={() => {
+                if (onScheduleAppointment && patientData) {
+                  onScheduleAppointment({
+                    id: (patientData as any).id || propPatientId!,
+                    first_name: patientData.first_name || '',
+                    last_name: patientData.last_name || '',
+                    email: patientData.email || '',
+                    mobile_phone: (patientData as any).mobile_phone || patientData.phone || '',
+                  })
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg hover:from-teal-400 hover:to-cyan-500 transition-all text-xs font-bold shadow-lg shadow-teal-900/30"
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+              Schedule Appointment
+            </button>
+            {(directPatient?.appointments_count || 0) > 0 && (
+              <button
+                onClick={() => toggleOverlay('appointments')}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-600/30 text-xs font-medium"
+              >
+                <Calendar className="h-3 w-3" />
+                View {directPatient?.appointments_count} Appointment{(directPatient?.appointments_count || 0) > 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
+        )}
+        {!isPatientOnlyMode && appointment && (
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             {appointment.visit_type === 'video' && (
               <button onClick={() => setShowVideo(!showVideo)}
@@ -449,13 +532,13 @@ export default function WorkspaceCanvas({
           </div>
         )}
 
-        {!loading && !error && !appointment && (
+        {!loading && !error && !appointment && !isPatientOnlyMode && (
           <div className="flex items-center justify-center h-64 text-gray-500">
             No appointment selected
           </div>
         )}
 
-        {!loading && !error && appointment && mounted && (
+        {!loading && !error && (appointment || isPatientOnlyMode) && mounted && (
           <div ref={gridContainerRef} className="w-full">
           <RGL
             className="layout"
@@ -499,14 +582,17 @@ export default function WorkspaceCanvas({
                     <p className="text-white text-sm">{patientDob}</p>
                   </div>
                 </div>
-                {/* Chief Complaint */}
+                {/* Chief Complaint (appointment mode only) */}
+                {!isPatientOnlyMode && appointment && (
                 <div className="mt-3 pt-3 border-t border-[#1a3d3d]">
                   <p className="text-[10px] text-gray-500 uppercase">Chief Complaint</p>
                   <p className="text-teal-300 text-sm font-medium mt-1">
                     {appointment.chief_complaint || (appointment as any).reason || 'N/A'}
                   </p>
                 </div>
-                {/* Visit Type */}
+                )}
+                {/* Visit Type (appointment mode only) */}
+                {!isPatientOnlyMode && appointment && (
                 <div className="mt-2">
                   <p className="text-[10px] text-gray-500 uppercase">Visit Type</p>
                   <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold ${
@@ -517,6 +603,40 @@ export default function WorkspaceCanvas({
                     {(appointment.visit_type || 'video').toUpperCase()}
                   </span>
                 </div>
+                )}
+                {/* Patient-only: extra fields */}
+                {isPatientOnlyMode && directPatient && (
+                <>
+                  <div className="mt-3 pt-3 border-t border-[#1a3d3d] grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Gender</p>
+                      <p className="text-white text-sm capitalize">{directPatient.gender || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 uppercase">Language</p>
+                      <p className="text-white text-sm">{directPatient.preferred_language || 'English'}</p>
+                    </div>
+                  </div>
+                  {directPatient.address && (
+                    <div className="mt-2">
+                      <p className="text-[10px] text-gray-500 uppercase">Address</p>
+                      <p className="text-white text-sm">{directPatient.address}</p>
+                    </div>
+                  )}
+                  {directPatient.preferred_pharmacy && (
+                    <div className="mt-2">
+                      <p className="text-[10px] text-gray-500 uppercase">Pharmacy</p>
+                      <p className="text-white text-sm">{directPatient.preferred_pharmacy}</p>
+                    </div>
+                  )}
+                  {directPatient.emergency_contact_name && (
+                    <div className="mt-2">
+                      <p className="text-[10px] text-gray-500 uppercase">Emergency Contact</p>
+                      <p className="text-white text-sm">{directPatient.emergency_contact_name} — {directPatient.emergency_contact_phone || 'N/A'}</p>
+                    </div>
+                  )}
+                </>
+                )}
               </div>
             </div>
 
@@ -551,7 +671,7 @@ export default function WorkspaceCanvas({
                     <div>
                       <label className="text-[10px] text-gray-500 uppercase block mb-1">Chief Complaint</label>
                       <textarea
-                        value={doctorNotes.soapNotes?.chiefComplaint || appointment.chief_complaint || (appointment as any).reason || ''}
+                        value={doctorNotes.soapNotes?.chiefComplaint || appointment?.chief_complaint || (appointment as any)?.reason || ''}
                         onChange={(e) => doctorNotes.handleSoapNotesChange?.('chiefComplaint', e.target.value)}
                         readOnly={chart.chartLocked}
                         className="w-full bg-[#0a1a1a] border border-[#1a3d3d] rounded-lg p-2 text-white text-sm min-h-[50px] resize-y"

@@ -101,7 +101,7 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
   // Auto-collapse on workspace-heavy pages (calendar, chart management)
   const isWorkspacePage = pathname === '/doctor/appointments' || pathname === '/doctor/chart-management'
   const searchParams = useSearchParams()
-  const isWorkspaceActive = isWorkspacePage && !!searchParams.get('apt')
+  const isWorkspaceActive = isWorkspacePage && !!(searchParams.get('apt') || searchParams.get('patient'))
   
   useEffect(() => {
     if (isWorkspacePage && !collapsed && window.innerWidth >= 1024) {
