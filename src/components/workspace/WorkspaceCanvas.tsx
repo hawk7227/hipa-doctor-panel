@@ -17,9 +17,9 @@ import { logViewAppointment } from '@/lib/audit'
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import {
   X, Loader2, CheckCircle, XCircle, RotateCcw, Lock, Edit, Clock,
-  FileText, Video, ArrowRight, ChevronLeft, ChevronRight, CalendarPlus, RefreshCw, User, Calendar,
+  FileText, Video, ArrowRight, ChevronLeft, ChevronRight, CalendarPlus, RefreshCw, User, Calendar, FlaskConical,
 } from 'lucide-react'
-import type { Layout, ResponsiveLayouts } from 'react-grid-layout'
+import type { LayoutItem, ResponsiveLayouts } from 'react-grid-layout'
 
 // ── Grid layout CSS ──
 import 'react-grid-layout/css/styles.css'
@@ -227,23 +227,20 @@ export default function WorkspaceCanvas({
   const referrals = useReferralsFollowUp(appointmentId, appointment)
   const priorAuth = usePriorAuth(appointmentId, patientId)
 
-  // ── Open overlay panels ──
-  const [openOverlays, setOpenOverlays] = useState<Set<string>>(new Set())
-  const toggleOverlay = useCallback((id: string) => {
-    setOpenOverlays(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
+  // ── Open EHR panels (rendered as grid items) ──
+  const [openPanels, setOpenPanels] = useState<string[]>([])
+  const togglePanel = useCallback((id: string) => {
+    setOpenPanels(prev => {
+      if (prev.includes(id)) return prev.filter(p => p !== id)
+      return [...prev, id]
     })
   }, [])
-  const closeOverlay = useCallback((id: string) => {
-    setOpenOverlays(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
+  const closePanel = useCallback((id: string) => {
+    setOpenPanels(prev => prev.filter(p => p !== id))
   }, [])
+
+  // ── eRx modal (special case — stays as overlay) ──
+  const [showErxModal, setShowErxModal] = useState(false)
 
   // ── SSR guard ──
   const [mounted, setMounted] = useState(false)
@@ -278,9 +275,44 @@ export default function WorkspaceCanvas({
   }, [appointment])
 
   // ── Grid layout state ──
-  const [layouts, setLayouts] = useState<ResponsiveLayouts>(DEFAULT_LAYOUTS)
+  const [baseLayouts, setBaseLayouts] = useState<ResponsiveLayouts>(DEFAULT_LAYOUTS)
   const [showVideo, setShowVideo] = useState(false)
   const [activeTab, setActiveTab] = useState<'SOAP' | 'Orders' | 'Files' | 'Notes' | 'Billing' | 'Audit'>('SOAP')
+
+  // ── Compute merged layouts (base + open panels) ──
+  const layouts = useMemo((): ResponsiveLayouts => {
+    if (openPanels.length === 0) return baseLayouts
+    const merged: Record<string, LayoutItem[]> = {}
+    for (const bp of Object.keys(baseLayouts) as Array<keyof typeof COLS>) {
+      const base: LayoutItem[] = [...(baseLayouts[bp] as unknown as LayoutItem[] || [])]
+      // Find the lowest Y + H to place new panels below
+      let maxBottom = 0
+      for (const item of base) {
+        const bottom = (item.y || 0) + (item.h || 6)
+        if (bottom > maxBottom) maxBottom = bottom
+      }
+      const panelItems: LayoutItem[] = openPanels
+        .filter(pid => !base.some(b => b.i === pid))
+        .map((pid, idx) => {
+          const cols = COLS[bp] || 12
+          const w = bp === 'xxs' ? 1 : bp === 'xs' ? 2 : bp === 'sm' ? 4 : Math.min(6, cols)
+          const perRow = Math.max(1, Math.floor(cols / w))
+          const col = idx % perRow
+          const row = Math.floor(idx / perRow)
+          return {
+            i: pid,
+            x: col * w,
+            y: maxBottom + row * 8,
+            w,
+            h: 8,
+            minW: bp === 'xxs' ? 1 : 2,
+            minH: 4,
+          } as LayoutItem
+        })
+      merged[bp] = [...base, ...panelItems]
+    }
+    return merged as unknown as ResponsiveLayouts
+  }, [baseLayouts, openPanels])
 
   // ── Sync chart from appointment ──
   useEffect(() => {
@@ -296,7 +328,7 @@ export default function WorkspaceCanvas({
 
   // ── Reset overlays when appointment changes ──
   useEffect(() => {
-    setOpenOverlays(new Set())
+    setOpenPanels([])
     setShowVideo(false)
     setActiveTab('SOAP')
   }, [appointmentId])
@@ -317,7 +349,7 @@ export default function WorkspaceCanvas({
 
   // ── Layout change handler ──
   const handleLayoutChange = useCallback((_layout: any, allLayouts: any) => {
-    setLayouts(allLayouts)
+    setBaseLayouts(allLayouts)
   }, [])
 
   // ═══════════════════════════════════════════════════════════════
@@ -384,7 +416,7 @@ export default function WorkspaceCanvas({
                 )}
                 {/* Chart status badge */}
                 <button
-                  onClick={() => toggleOverlay('chart-management')}
+                  onClick={() => togglePanel('chart-management')}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition-all hover:opacity-80 ${
                     chart.chartStatus === 'draft' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40' :
                     chart.chartStatus === 'signed' ? 'bg-green-600/20 text-green-400 border border-green-500/40' :
@@ -419,11 +451,11 @@ export default function WorkspaceCanvas({
           {EHR_PANELS.map(panel => {
             const Icon = panel.icon
             const isErx = panel.id === 'drchrono-erx'
-            const isActive = openOverlays.has(panel.id)
+            const isActive = isErx ? showErxModal : openPanels.includes(panel.id)
             return (
               <button
                 key={panel.id}
-                onClick={() => toggleOverlay(panel.id)}
+                onClick={() => isErx ? setShowErxModal(!showErxModal) : togglePanel(panel.id)}
                 className={`flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white relative ${
                   isErx
                     ? 'px-3 py-2 text-sm border-green-500/60 bg-green-600/20 text-green-300 hover:bg-green-600/40 hover:border-green-400 shadow-lg shadow-green-900/30'
@@ -464,7 +496,7 @@ export default function WorkspaceCanvas({
             </button>
             {(directPatient?.appointments_count || 0) > 0 && (
               <button
-                onClick={() => toggleOverlay('appointments')}
+                onClick={() => togglePanel('appointments')}
                 className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-600/30 text-xs font-medium"
               >
                 <Calendar className="h-3 w-3" />
@@ -784,79 +816,102 @@ export default function WorkspaceCanvas({
                 </div>
               </div>
             )}
+
+            {/* ── DYNAMIC EHR PANELS (from toolbar) ── */}
+            {openPanels.map(panelId => {
+              const panelConfig = EHR_PANELS.find(p => p.id === panelId)
+              const Icon = panelConfig?.icon || FlaskConical
+              const color = panelConfig?.color || '#64748b'
+              const label = panelConfig?.label || panelId
+              const pid = patientId || ''
+              const aid = appointmentId || ''
+              const pname = patientName || 'Patient'
+              const close = () => closePanel(panelId)
+
+              const PANEL_CONTENT: Record<string, React.ReactNode> = {
+                'medication-history': <MedicationHistoryPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'orders': <OrdersPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+                'prescription-history': <PrescriptionHistoryPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+                'appointments': <AppointmentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'allergies': <AllergiesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'vitals': <VitalsPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+                'medications': <MedicationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'demographics': <DemographicsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'problems': <ProblemsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'clinical-notes': <ClinicalNotesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'lab-results-panel': <LabResultsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'immunizations': <ImmunizationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'documents': <DocumentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'family-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="family" onClose={close} />,
+                'social-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="social" onClose={close} />,
+                'surgical-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="surgical" onClose={close} />,
+                'pharmacy': <PharmacyPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'care-plans': <CarePlansPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+                'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} onClose={close} />,
+              }
+
+              const content = PANEL_CONTENT[panelId]
+              if (!content) return null
+
+              return (
+                <div key={panelId} className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden flex flex-col">
+                  {/* Drag handle with panel color */}
+                  <div
+                    className="grid-drag-handle flex items-center justify-between px-3 py-1.5 border-b border-[#1a3d3d] cursor-grab active:cursor-grabbing select-none flex-shrink-0"
+                    style={{ borderTop: `2px solid ${color}` }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                        <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                        <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                        <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                      </svg>
+                      <Icon className="h-3.5 w-3.5" style={{ color }} />
+                      <span className="text-xs font-semibold text-white">{label}</span>
+                    </div>
+                    <button
+                      onClick={close}
+                      className="p-0.5 text-gray-500 hover:text-white rounded transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {/* Panel content */}
+                  <div className="flex-1 overflow-auto">
+                    {content}
+                  </div>
+                </div>
+              )
+            })}
           </RGL>
           </div>
         )}
       </div>
 
-      {/* ═══ OVERLAY PANELS (EHR panels from toolbar) ═══ */}
-      {Array.from(openOverlays).map(panelId => {
-        const pid = patientId || ''
-        const aid = appointmentId || ''
-        const pname = patientName || 'Patient'
-        const close = () => closeOverlay(panelId)
-
-        const PANEL_MAP: Record<string, React.ReactNode> = {
-          'medication-history': <MedicationHistoryPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'orders': <OrdersPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'prescription-history': <PrescriptionHistoryPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'appointments': <AppointmentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'allergies': <AllergiesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'vitals': <VitalsPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'medications': <MedicationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'demographics': <DemographicsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'problems': <ProblemsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'clinical-notes': <ClinicalNotesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'lab-results-panel': <LabResultsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'immunizations': <ImmunizationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'documents': <DocumentsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'family-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="family" onClose={close} />,
-          'social-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="social" onClose={close} />,
-          'surgical-history': <HistoryPanelV2 isOpen patientId={pid} patientName={pname} historyType="surgical" onClose={close} />,
-          'pharmacy': <PharmacyPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'care-plans': <CarePlansPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} onClose={close} />,
-          'drchrono-erx': prescriptions ? <ErxComposer {...prescriptions as any} onClose={close} /> : null,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        }
-
-        const content = PANEL_MAP[panelId]
-        if (!content) return null
-
-        return (
-          <div key={panelId} className="fixed inset-0 z-[60] flex items-start justify-center pt-16">
-            <div className="absolute inset-0 bg-black/50" onClick={close} />
-            <div className="relative bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-y-auto z-10">
-              <button onClick={close} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white z-20">
-                <X className="h-5 w-5" />
-              </button>
-              {content}
-            </div>
+      {/* ═══ eRx MODAL (only panel that stays as overlay) ═══ */}
+      {showErxModal && prescriptions && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center pt-16">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowErxModal(false)} />
+          <div className="relative bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-y-auto z-10">
+            <button onClick={() => setShowErxModal(false)} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white z-20">
+              <X className="h-5 w-5" />
+            </button>
+            <ErxComposer {...prescriptions as any} onClose={() => setShowErxModal(false)} />
           </div>
-        )
-      })}
+        </div>
+      )}
+
+
+
+
+
+
+
+
+
+
 
       {/* Cancel Confirmation Dialog */}
       {actions.showCancelConfirm && (
