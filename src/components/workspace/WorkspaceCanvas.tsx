@@ -112,6 +112,12 @@ import PharmacyPanelV2 from '@/components/panels/PharmacyPanelV2'
 import CarePlansPanelV2 from '@/components/panels/CarePlansPanelV2'
 import BillingPanelV2 from '@/components/panels/BillingPanelV2'
 import CommHubPanelV2 from '@/components/panels/CommHubPanelV2'
+import PriorAuthPanelV2 from '@/components/panels/PriorAuthPanelV2'
+import InsurancePanelV2 from '@/components/panels/InsurancePanelV2'
+import AlertsPanelV2 from '@/components/panels/AlertsPanelV2'
+import AIInteractionsPanelV2 from '@/components/panels/AIInteractionsPanelV2'
+import QualityMeasuresPanelV2 from '@/components/panels/QualityMeasuresPanelV2'
+import CohortsPanelV2 from '@/components/panels/CohortsPanelV2'
 import DailyMeetingEmbed from '@/components/DailycoMeetingPanel'
 
 // ── Toolbar config ──
@@ -874,6 +880,12 @@ export default function WorkspaceCanvas({
                 'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
                 'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} onClose={close} />,
+                'prior-auth': <PriorAuthPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'insurance': <InsurancePanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'alerts': <AlertsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'ai-interactions': <AIInteractionsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'quality-measures': <QualityMeasuresPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'cohorts': <CohortsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
               }
 
               const content = PANEL_CONTENT[panelId]
