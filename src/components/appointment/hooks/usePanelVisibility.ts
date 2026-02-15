@@ -9,6 +9,7 @@ export type PanelId =
   | 'pharmacy' | 'care-plans' | 'billing' | 'comm-hub'
   | 'lab-results-inline' | 'referrals-followup' | 'prior-auth'
   | 'chart-management' | 'drchrono-erx' | 'video-panel'
+  | 'insurance' | 'alerts' | 'ai-interactions' | 'quality-measures' | 'cohorts'
 
 export function usePanelVisibility() {
   const [openPanels, setOpenPanels] = useState<Set<PanelId>>(new Set())

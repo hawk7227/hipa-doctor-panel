@@ -5,7 +5,7 @@ import {
   Pill, ClipboardList, FileText, CalendarDays, AlertTriangle, AlertCircle,
   Activity, Stethoscope, User, FlaskConical, Syringe, FolderOpen, Users,
   Wine, Scissors, Building2, ClipboardCheck, DollarSign, MessageSquare,
-  ArrowRight, Shield,
+  ArrowRight, Shield, ShieldCheck, Bell, Brain, BarChart3,
 } from 'lucide-react'
 import type { PanelId } from '../hooks/usePanelVisibility'
 
@@ -38,7 +38,12 @@ export const EHR_PANELS: ReadonlyArray<{
   { id: 'comm-hub', label: 'Comms', icon: MessageSquare, color: '#3b82f6', hoverBg: 'hover:bg-blue-700' },
   { id: 'lab-results-inline', label: 'Lab Orders', icon: FlaskConical, color: '#0ea5e9', hoverBg: 'hover:bg-sky-700' },
   { id: 'referrals-followup', label: 'Referrals', icon: ArrowRight, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
-  { id: 'prior-auth', label: 'Prior Auth', icon: ClipboardCheck, color: '#8b5cf6', hoverBg: 'hover:bg-violet-700' },
+  { id: 'prior-auth', label: 'Prior Auth', icon: ShieldCheck, color: '#8b5cf6', hoverBg: 'hover:bg-violet-700' },
+  { id: 'insurance', label: 'Insurance', icon: Shield, color: '#0ea5e9', hoverBg: 'hover:bg-sky-700' },
+  { id: 'alerts', label: 'Alerts', icon: Bell, color: '#ef4444', hoverBg: 'hover:bg-red-700' },
+  { id: 'ai-interactions', label: 'AI Assist', icon: Brain, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
+  { id: 'quality-measures', label: 'Quality', icon: BarChart3, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
+  { id: 'cohorts', label: 'Cohorts', icon: Users, color: '#6366f1', hoverBg: 'hover:bg-indigo-700' },
   { id: 'chart-management', label: 'Chart', icon: Shield, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
   { id: 'drchrono-erx', label: 'eRx', icon: Stethoscope, color: '#22c55e', hoverBg: 'hover:bg-green-700' },
 ] as const

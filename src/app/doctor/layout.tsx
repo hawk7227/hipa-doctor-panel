@@ -14,7 +14,8 @@ import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/K
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
-  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search, Radio
+  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search, Radio,
+  FlaskConical, Pill, Bell, ShieldCheck, BarChart3,
 } from 'lucide-react'
 
 // ─── NAV ITEMS ───────────────────────────────────────────────
@@ -25,7 +26,13 @@ const NAV_ITEMS = [
   { href: '/doctor/new-patient', label: 'New Patient', icon: UserPlus },
   { href: '/doctor/records', label: 'Medical Records', icon: FileText },
   { href: '/doctor/communication', label: 'Communication', icon: MessageSquare },
+  { href: '/doctor/labs', label: 'Lab Orders', icon: FlaskConical },
+  { href: '/doctor/prescriptions', label: 'Prescriptions', icon: Pill },
+  { href: '/doctor/prior-auth', label: 'Prior Auth', icon: ShieldCheck },
+  { href: '/doctor/alerts', label: 'Clinical Alerts', icon: Bell },
   { href: '/doctor/billing', label: 'Billing & Reports', icon: DollarSign },
+  { href: '/doctor/referrals', label: 'Referrals', icon: ClipboardList },
+  { href: '/doctor/quality', label: 'Quality Measures', icon: BarChart3 },
   { href: '/doctor/profile', label: 'Profile & Credentials', icon: UserCircle },
   { href: '/doctor/availability', label: 'Availability', icon: Clock },
 ] as const
