@@ -12,7 +12,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { logViewAppointment } from '@/lib/audit'
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
@@ -98,11 +97,8 @@ import DailyMeetingEmbed from '@/components/DailycoMeetingPanel'
 import { EHR_PANELS } from '@/components/appointment/sections/ToolbarButtons'
 import type { PanelId } from '@/components/appointment/hooks/usePanelVisibility'
 
-// ── Dynamic import for react-grid-layout (SSR-unsafe) ──
-const ResponsiveGridLayout = dynamic(
-  () => import('react-grid-layout').then(mod => mod.ResponsiveGridLayout),
-  { ssr: false }
-)
+// ── react-grid-layout (direct import, SSR guarded in render) ──
+import { ResponsiveGridLayout as RGL } from 'react-grid-layout'
 
 // ═══════════════════════════════════════════════════════════════
 // GRID LAYOUT CONFIG
@@ -226,6 +222,10 @@ export default function WorkspaceCanvas({
       return next
     })
   }, [])
+
+  // ── SSR guard ──
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   // ── Grid container width measurement ──
   const gridContainerRef = useRef<HTMLDivElement>(null)
@@ -451,9 +451,9 @@ export default function WorkspaceCanvas({
           </div>
         )}
 
-        {!loading && !error && appointment && (
+        {!loading && !error && appointment && mounted && (
           <div ref={gridContainerRef} className="w-full">
-          <ResponsiveGridLayout
+          <RGL
             className="layout"
             width={gridWidth}
             layouts={layouts}
@@ -660,7 +660,7 @@ export default function WorkspaceCanvas({
                 </div>
               </div>
             )}
-          </ResponsiveGridLayout>
+          </RGL>
           </div>
         )}
       </div>
