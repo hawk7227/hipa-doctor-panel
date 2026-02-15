@@ -11,6 +11,7 @@ import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib
 import SyncIndicator from '@/components/SyncIndicator'
 import PatientSearchBar from '@/components/PatientSearchBar'
 import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/KeyboardShortcutsModal'
+import FloatingMessenger from '@/components/FloatingMessenger'
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
@@ -290,7 +291,7 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
         </aside>
 
         {/* ═══ MAIN CONTENT ═══ */}
-        <main id="main-content" className={`flex-1 h-full overflow-hidden transition-all duration-200 ${contentMargin}`}>
+        <main id="main-content" className={`flex-1 h-full overflow-y-auto transition-all duration-200 ${contentMargin}`}>
           {/* Mobile top padding for hamburger button */}
           <div className="h-full pt-12 lg:pt-0">
             <ErrorBoundary label="Page">
@@ -303,6 +304,7 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
         <NotificationToast />
         <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         <PatientSearchBar />
+        <FloatingMessenger />
       </div>
       </NotificationProvider>
     </AuthWrapper>
