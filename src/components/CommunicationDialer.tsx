@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import type { Device, Call } from '@twilio/voice-sdk'
 import Dialog from '@/components/Dialog'
-import PatientSearchBar, { type PatientSearchResult } from '@/components/PatientSearchBar'
+import PatientSearchBar, { type PatientSearchResult } from '@/components/PatientSearchBarInline'
 
 // ─── Types ───────────────────────────────────────────────────────────
 

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/drchrono/cron-sync",
+      "schedule": "0 */4 * * *"
+    }
+  ]
+}

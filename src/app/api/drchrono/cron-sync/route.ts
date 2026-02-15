@@ -1,0 +1,354 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+// ═══════════════════════════════════════════════════════════════
+// POST /api/drchrono/cron-sync
+// Full background sync — pages through ALL entities from DrChrono
+// Designed for scheduled cron (every 4-6 hours)
+//
+// Syncs: patients, medications, allergies, problems,
+//        lab_results, clinical_notes, vaccines
+//
+// To set up Vercel cron, add to vercel.json:
+// { "crons": [{ "path": "/api/drchrono/cron-sync", "schedule": "0 */4 * * *" }] }
+// ═══════════════════════════════════════════════════════════════
+
+export const maxDuration = 300 // 5 minutes (Vercel Pro)
+export const dynamic = 'force-dynamic'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+// ─── TOKEN MANAGEMENT ─────────────────────────────────────────
+async function getDrChronoToken(): Promise<string | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('drchrono_tokens')
+      .select('access_token, refresh_token, expires_at, id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!data) return null
+
+    const expiresAt = new Date(data.expires_at).getTime()
+    if (Date.now() < expiresAt - 60000) {
+      return data.access_token
+    }
+
+    // Refresh
+    console.log('[CronSync] Token expired, refreshing...')
+    const res = await fetch('https://drchrono.com/o/token/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: data.refresh_token,
+        client_id: process.env.DRCHRONO_CLIENT_ID || '',
+        client_secret: process.env.DRCHRONO_CLIENT_SECRET || '',
+      }),
+    })
+
+    if (!res.ok) {
+      console.error('[CronSync] Token refresh failed')
+      return null
+    }
+
+    const tokenData = await res.json()
+    await supabaseAdmin.from('drchrono_tokens').insert({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
+    })
+
+    return tokenData.access_token
+  } catch (err) {
+    console.error('[CronSync] Token error:', err)
+    return null
+  }
+}
+
+// ─── PAGINATED FETCH ──────────────────────────────────────────
+async function fetchAllPages(token: string, startUrl: string, maxPages = 50): Promise<any[]> {
+  const allResults: any[] = []
+  let url: string | null = startUrl
+  let page = 0
+
+  while (url && page < maxPages) {
+    const response: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      console.error(`[CronSync] Fetch failed at page ${page}: ${response.status}`)
+      break
+    }
+    const responseData: any = await response.json()
+    const results = responseData.results || (Array.isArray(responseData) ? responseData : [])
+    allResults.push(...results)
+    url = responseData.next || null
+    page++
+  }
+
+  return allResults
+}
+
+// ─── ENTITY SYNC FUNCTIONS ────────────────────────────────────
+const ENTITIES: Record<string, { url: string; table: string; conflict: string; map: (item: any) => any }> = {
+  patients: {
+    url: 'https://app.drchrono.com/api/patients?page_size=100',
+    table: 'drchrono_patients',
+    conflict: 'drchrono_patient_id',
+    map: (p: any) => ({
+      drchrono_patient_id: p.id,
+      first_name: p.first_name || '',
+      last_name: p.last_name || '',
+      middle_name: p.middle_name || null,
+      date_of_birth: p.date_of_birth || null,
+      gender: p.gender || null,
+      email: p.email || null,
+      cell_phone: p.cell_phone || null,
+      home_phone: p.home_phone || null,
+      office_phone: p.office_phone || null,
+      address: p.address || null,
+      city: p.city || null,
+      state: p.state || null,
+      zip_code: p.zip_code || null,
+      default_pharmacy: p.default_pharmacy ? String(p.default_pharmacy) : null,
+      preferred_pharmacies: p.preferred_pharmacies || null,
+      chart_id: p.chart_id || null,
+      doctor: p.doctor || null,
+      copay: p.copay || null,
+      primary_insurance: p.primary_insurance || null,
+      secondary_insurance: p.secondary_insurance || null,
+      emergency_contact_name: p.emergency_contact_name || null,
+      emergency_contact_phone: p.emergency_contact_phone || null,
+      emergency_contact_relation: p.emergency_contact_relation || null,
+      preferred_language: p.preferred_language || null,
+      race: p.race || null,
+      ethnicity: p.ethnicity || null,
+      patient_status: p.patient_status || null,
+      patient_photo: p.patient_photo || null,
+      custom_demographics: p.custom_demographics || null,
+      drchrono_updated_at: p.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  medications: {
+    url: 'https://app.drchrono.com/api/medications?page_size=100',
+    table: 'drchrono_medications',
+    conflict: 'drchrono_medication_id',
+    map: (m: any) => ({
+      drchrono_medication_id: m.id,
+      drchrono_patient_id: m.patient || null,
+      name: m.name || m.medication || '',
+      rxnorm: m.rxnorm || null,
+      ndc: m.ndc || null,
+      dosage_quantity: m.dosage_quantity || null,
+      dosage_unit: m.dosage_unit || null,
+      route: m.route || null,
+      frequency: m.frequency || null,
+      sig: m.sig || null,
+      quantity: m.quantity || null,
+      number_refills: m.number_refills || null,
+      prn: m.prn || false,
+      order_status: m.order_status || null,
+      status: m.status || 'active',
+      date_prescribed: m.date_prescribed || null,
+      date_started_taking: m.date_started_taking || null,
+      date_stopped_taking: m.date_stopped_taking || null,
+      pharmacy_note: m.pharmacy_note || null,
+      doctor: m.doctor || null,
+      appointment: m.appointment || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  allergies: {
+    url: 'https://app.drchrono.com/api/allergies?page_size=100',
+    table: 'drchrono_allergies',
+    conflict: 'drchrono_allergy_id',
+    map: (a: any) => ({
+      drchrono_allergy_id: a.id,
+      drchrono_patient_id: a.patient || null,
+      reaction: a.reaction || a.description || '',
+      status: a.status || 'active',
+      notes: a.notes || null,
+      snomed_reaction: a.snomed_reaction || null,
+      onset_date: a.onset_date || null,
+      severity: a.severity || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  problems: {
+    url: 'https://app.drchrono.com/api/problems?page_size=100',
+    table: 'drchrono_problems',
+    conflict: 'drchrono_problem_id',
+    map: (p: any) => ({
+      drchrono_problem_id: p.id,
+      drchrono_patient_id: p.patient || null,
+      name: p.name || '',
+      icd_code: p.icd_code || null,
+      status: p.status || 'active',
+      date_diagnosis: p.date_diagnosis || null,
+      date_changed: p.date_changed || null,
+      notes: p.notes || null,
+      snomed_ct_code: p.snomed_ct_code || null,
+      doctor: p.doctor || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  lab_results: {
+    url: 'https://app.drchrono.com/api/lab_results?page_size=100',
+    table: 'drchrono_lab_results',
+    conflict: 'drchrono_lab_result_id',
+    map: (lr: any) => ({
+      drchrono_lab_result_id: lr.id,
+      drchrono_lab_order_id: lr.order || null,
+      drchrono_patient_id: lr.patient || null,
+      test_code: lr.observation_code || null,
+      test_name: lr.observation_description || null,
+      value: lr.value || null,
+      unit: lr.value_units || null,
+      status: lr.status || null,
+      abnormal_flag: lr.lab_abnormal_flag || lr.abnormal_flag || null,
+      normal_range: lr.normal_range || null,
+      collection_date: lr.collection_date || null,
+      result_date: lr.result_date || lr.test_performed_date || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  clinical_notes: {
+    url: 'https://app.drchrono.com/api/clinical_notes?page_size=50',
+    table: 'drchrono_clinical_notes',
+    conflict: 'drchrono_note_id',
+    map: (cn: any) => ({
+      drchrono_note_id: cn.id,
+      drchrono_appointment_id: cn.appointment ? String(cn.appointment) : null,
+      drchrono_patient_id: cn.patient || null,
+      clinical_note_sections: cn.clinical_note_sections || null,
+      clinical_note_pdf: cn.clinical_note_pdf || null,
+      locked: cn.locked || false,
+      drchrono_created_at: cn.created_at || null,
+      drchrono_updated_at: cn.updated_at || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+
+  vaccines: {
+    url: 'https://app.drchrono.com/api/patient_vaccine_records?page_size=100',
+    table: 'drchrono_vaccines',
+    conflict: 'drchrono_vaccine_record_id',
+    map: (v: any) => ({
+      drchrono_vaccine_record_id: v.id,
+      drchrono_patient_id: v.patient || null,
+      vaccine_name: v.name || v.vaccine?.name || '',
+      cvx_code: v.cvx_code || null,
+      administered_date: v.administered_date || null,
+      administered_by: v.administered_by || null,
+      route: v.route || null,
+      site: v.site || null,
+      dose_quantity: v.dose_quantity || null,
+      dose_unit: v.dose_unit || null,
+      lot_number: v.lot_number || null,
+      manufacturer: v.manufacturer || null,
+      expiration_date: v.expiration_date || null,
+      last_synced_at: new Date().toISOString(),
+    }),
+  },
+}
+
+// ─── HANDLER ──────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  // Verify cron secret (optional security)
+  const authHeader = req.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    // Allow without auth in dev
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
+
+  const startTime = Date.now()
+  const token = await getDrChronoToken()
+
+  if (!token) {
+    return NextResponse.json({ error: 'No valid DrChrono token' }, { status: 401 })
+  }
+
+  const results: Record<string, { fetched: number; upserted: number; errored: number; elapsed_ms: number }> = {}
+
+  // Process each entity sequentially to avoid overwhelming the API
+  for (const [entityName, config] of Object.entries(ENTITIES)) {
+    const entityStart = Date.now()
+    console.log(`[CronSync] Starting ${entityName}...`)
+
+    try {
+      const allRecords = await fetchAllPages(token, config.url)
+      let upserted = 0
+      let errored = 0
+
+      // Batch upsert in chunks of 50
+      const BATCH_SIZE = 50
+      for (let i = 0; i < allRecords.length; i += BATCH_SIZE) {
+        const batch = allRecords.slice(i, i + BATCH_SIZE).map(config.map)
+        const { error } = await supabaseAdmin
+          .from(config.table)
+          .upsert(batch, { onConflict: config.conflict })
+
+        if (error) {
+          console.error(`[CronSync] ${entityName} batch error at ${i}:`, error.message)
+          errored += batch.length
+        } else {
+          upserted += batch.length
+        }
+      }
+
+      results[entityName] = {
+        fetched: allRecords.length,
+        upserted,
+        errored,
+        elapsed_ms: Date.now() - entityStart,
+      }
+      console.log(`[CronSync] ${entityName}: ${upserted} upserted, ${errored} errored in ${Date.now() - entityStart}ms`)
+    } catch (err: any) {
+      console.error(`[CronSync] ${entityName} fatal error:`, err.message)
+      results[entityName] = { fetched: 0, upserted: 0, errored: -1, elapsed_ms: Date.now() - entityStart }
+    }
+  }
+
+  const totalElapsed = Date.now() - startTime
+
+  // Log sync status
+  try {
+    await supabaseAdmin.from('drchrono_sync_log').insert({
+      sync_type: 'cron_full',
+      sync_mode: 'scheduled',
+      status: 'completed',
+      records_synced: Object.values(results).reduce((sum, r) => sum + r.upserted, 0),
+      records_errored: Object.values(results).reduce((sum, r) => sum + Math.max(0, r.errored), 0),
+      metadata: { results, total_elapsed_ms: totalElapsed },
+    })
+  } catch (logErr) {
+    console.error('[CronSync] Log insert failed:', logErr)
+  }
+
+  return NextResponse.json({
+    success: true,
+    results,
+    total_elapsed_ms: totalElapsed,
+    total_records: Object.values(results).reduce((sum, r) => sum + r.fetched, 0),
+    total_upserted: Object.values(results).reduce((sum, r) => sum + r.upserted, 0),
+  })
+}
+
+// Also support GET for Vercel cron (crons call GET by default)
+export async function GET(req: NextRequest) {
+  return POST(req)
+}
