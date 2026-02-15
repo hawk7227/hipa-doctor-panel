@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode, useState, useEffect, useCallback } from 'react'
+import { ReactNode, useState, useEffect, useCallback, Suspense } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
@@ -38,7 +38,7 @@ const ADMIN_ITEMS = [
 ] as const
 
 // ─── COMPONENT ───────────────────────────────────────────────
-export default function DoctorLayout({ children }: { children: ReactNode }) {
+function DoctorLayoutInner({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -296,5 +296,13 @@ export default function DoctorLayout({ children }: { children: ReactNode }) {
       </div>
       </NotificationProvider>
     </AuthWrapper>
+  )
+}
+
+export default function DoctorLayout({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900" />}>
+      <DoctorLayoutInner>{children}</DoctorLayoutInner>
+    </Suspense>
   )
 }
