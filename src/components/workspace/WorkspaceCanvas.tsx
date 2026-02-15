@@ -73,16 +73,16 @@ import { usePatientData } from '@/hooks/usePatientData'
 
 // ── Panel Components ──
 import ErxComposer from '@/components/appointment/sections/ErxComposer'
-import OrdersPanel from '@/components/OrdersPanel'
-import PrescriptionHistoryPanel from '@/components/PrescriptionHistoryPanel'
+import OrdersPanelV2 from '@/components/panels/OrdersPanelV2'
+import PrescriptionHistoryPanelV2 from '@/components/panels/PrescriptionHistoryPanelV2'
 import ChartManagementPanel from '@/components/ChartManagementPanel'
 import MedicationHistoryPanel from '@/components/MedicationHistoryPanel'
 import AppointmentsOverlayPanel from '@/components/AppointmentsOverlayPanel'
-import AllergiesPanel from '@/components/AllergiesPanel'
-import VitalsPanel from '@/components/VitalsPanel'
-import MedicationsPanel from '@/components/MedicationsPanel'
+import AllergiesPanelV2 from '@/components/panels/AllergiesPanelV2'
+import VitalsPanelV2 from '@/components/panels/VitalsPanelV2'
+import MedicationsPanelV2 from '@/components/panels/MedicationsPanelV2'
 import DemographicsPanel from '@/components/DemographicsPanel'
-import ProblemsPanel from '@/components/ProblemsPanel'
+import ProblemsPanelV2 from '@/components/panels/ProblemsPanelV2'
 import ClinicalNotesPanel from '@/components/ClinicalNotesPanel'
 import LabResultsPanel from '@/components/LabResultsPanel'
 import ImmunizationsPanel from '@/components/ImmunizationsPanel'
@@ -724,7 +724,7 @@ export default function WorkspaceCanvas({
                   </div>
                 )}
                 {activeTab === 'Orders' && patientId && (
-                  <OrdersPanel isOpen patientId={patientId} patientName={patientName} appointmentId={appointmentId || ''} onClose={() => setActiveTab('SOAP')} />
+                  <OrdersPanelV2 isOpen patientId={patientId} patientName={patientName} appointmentId={appointmentId || ''} onClose={() => setActiveTab('SOAP')} />
                 )}
                 {activeTab === 'Files' && (
                   <div className="space-y-2">
@@ -798,14 +798,14 @@ export default function WorkspaceCanvas({
 
         const PANEL_MAP: Record<string, React.ReactNode> = {
           'medication-history': <MedicationHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'orders': <OrdersPanel isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'prescription-history': <PrescriptionHistoryPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'orders': <OrdersPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+          'prescription-history': <PrescriptionHistoryPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
           'appointments': <AppointmentsOverlayPanel isOpen patientName={pname} appointments={[]} onClose={close} onViewAppointment={() => {}} />,
-          'allergies': <AllergiesPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'vitals': <VitalsPanel isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-          'medications': <MedicationsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'allergies': <AllergiesPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'vitals': <VitalsPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
+          'medications': <MedicationsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'demographics': <DemographicsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
-          'problems': <ProblemsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
+          'problems': <ProblemsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
           'clinical-notes': <ClinicalNotesPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
           'lab-results-panel': <LabResultsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
           'immunizations': <ImmunizationsPanel isOpen patientId={pid} patientName={pname} onClose={close} />,
