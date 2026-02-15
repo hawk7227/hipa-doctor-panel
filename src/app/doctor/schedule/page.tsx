@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Appointment } from '@/lib/supabase'
 import AppointmentDetailModal from '@/components/AppointmentDetailModal'
@@ -115,7 +115,7 @@ interface CalendarAppointment extends Omit<Appointment, 'patients' | 'requested_
 
 type ViewType = 'calendar' | 'list'
 
-export default function DoctorAppointments() {
+function DoctorAppointmentsInner() {
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
@@ -2252,3 +2252,10 @@ export default function DoctorAppointments() {
 
 
 
+export default function DoctorAppointments() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900" />}>
+      <DoctorAppointmentsInner />
+    </Suspense>
+  )
+}

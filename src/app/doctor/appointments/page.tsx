@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Appointment } from '@/lib/supabase'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
@@ -127,7 +127,7 @@ function getNowMinutes(): number {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export default function AppointmentsPage() {
+function AppointmentsPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const gridRef = useRef<HTMLDivElement>(null)
@@ -1018,5 +1018,13 @@ export default function AppointmentsPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function AppointmentsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900" />}>
+      <AppointmentsPageInner />
+    </Suspense>
   )
 }
