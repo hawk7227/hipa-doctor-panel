@@ -159,10 +159,24 @@ export default function FloatingMessenger() {
         setDoctorName(`Dr. ${user.doctor.first_name} ${user.doctor.last_name}`)
         // Staff lookup - may not exist, use maybeSingle to avoid 406
         try {
-          const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).maybeSingle()
-          if (staff) setStaffId(staff.id)
+          const { data: staffData } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).maybeSingle()
+          if (staffData) setStaffId(staffData.id)
           const { data: tm } = await supabase.from('practice_staff').select('id, first_name, last_name, role, email, active, last_login_at').eq('doctor_id', user.doctor.id).order('first_name')
           setTeam(tm || [])
+          // Staff convs
+          if (staffData) {
+            try {
+              const res = await authFetch(`/api/staff-messages?action=conversations&doctorId=${user.doctor.id}&staffId=${staffData.id}`)
+              const sData = await res.json()
+              setStaffConvs(sData.conversations || [])
+              try {
+                const uRes = await authFetch(`/api/staff-messages?action=unread&doctorId=${user.doctor.id}&staffId=${staffData.id}`)
+                const uData = await uRes.json()
+                const total = Object.values(uData.unreadCounts || {}).reduce((s: number, n: any) => s + (n || 0), 0)
+                setUnreadStaff(total as number)
+              } catch {}
+            } catch {}
+          }
         } catch { /* practice_staff table may not exist */ }
         // Admin conv
         try {
@@ -171,21 +185,6 @@ export default function FloatingMessenger() {
           const myConv = (d.conversations || []).find((c: any) => c.doctor_id === user?.doctor?.id)
           if (myConv) { setAdminConv(myConv); setUnreadAdmin(myConv.unread_count || 0) }
         } catch {}
-        // Staff convs
-        if (staff) {
-          try {
-            const res = await authFetch(`/api/staff-messages?action=conversations&doctorId=${user.doctor.id}&staffId=${staff.id}`)
-            const sData = await res.json()
-            setStaffConvs(sData.conversations || [])
-            // Fetch unread counts
-            try {
-              const uRes = await authFetch(`/api/staff-messages?action=unread&doctorId=${user.doctor.id}&staffId=${staff.id}`)
-              const uData = await uRes.json()
-              const total = Object.values(uData.unreadCounts || {}).reduce((s: number, n: any) => s + (n || 0), 0)
-              setUnreadStaff(total as number)
-            } catch {}
-          } catch {}
-        }
         // Desktop notif permission
         if ('Notification' in window && Notification.permission === 'granted') setDesktopNotifs(true)
       } catch {}
