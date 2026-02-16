@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 )
 
 // GET /api/drchrono/test?entity=appointments
-// Tests a single DrChrono API call and returns raw diagnostic info
+// Tests a single DrChrono API call AND tries to upsert one record
 // No auth required - this is a diagnostic endpoint (remove after debugging)
 export async function GET(req: NextRequest) {
 
@@ -78,6 +78,76 @@ export async function GET(req: NextRequest) {
       } catch (e: any) { tableStatus = `EXCEPTION: ${e.message}` }
     }
 
+    // TRY UPSERT: Actually insert the first result to see if it works
+    let upsertTest: any = null
+    if (parsed?.results?.[0] && tableMap[entity]) {
+      const mappings: Record<string, (item: any) => any> = {
+        appointments: (a: any) => ({
+          drchrono_appointment_id: a.id,
+          drchrono_patient_id: a.patient || null,
+          doctor: a.doctor || null,
+          office: a.office || null,
+          scheduled_time: a.scheduled_time || null,
+          duration: a.duration || null,
+          exam_room: a.exam_room || null,
+          status: a.status || null,
+          reason: a.reason || null,
+          notes: a.notes || null,
+          appt_is_break: a.appt_is_break || false,
+          recurring_appointment: a.recurring_appointment || false,
+          profile: a.profile || null,
+          base_recurring_appointment: a.base_recurring_appointment || null,
+          is_walk_in: a.is_walk_in || false,
+          drchrono_created_at: a.created_at || null,
+          drchrono_updated_at: a.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }),
+        documents: (d: any) => ({
+          drchrono_document_id: d.id,
+          drchrono_patient_id: d.patient || null,
+          description: d.description || '',
+          document_type: d.document_type || null,
+          document_url: typeof d.document === 'string' ? d.document : null,
+          date: d.date || d.created_at || null,
+          metatags: d.metatags || null,
+          doctor: d.doctor || null,
+          drchrono_updated_at: d.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }),
+        patients: (p: any) => ({
+          drchrono_patient_id: p.id,
+          first_name: p.first_name || '',
+          last_name: p.last_name || '',
+          date_of_birth: p.date_of_birth || null,
+          gender: p.gender || null,
+          email: p.email || null,
+          cell_phone: p.cell_phone || null,
+          last_synced_at: new Date().toISOString(),
+        }),
+      }
+      
+      const conflictMap: Record<string, string> = {
+        appointments: 'drchrono_appointment_id',
+        documents: 'drchrono_document_id',
+        patients: 'drchrono_patient_id',
+      }
+
+      if (mappings[entity]) {
+        const mapped = mappings[entity](parsed.results[0])
+        const { data: uData, error: uError } = await supabaseAdmin
+          .from(tableMap[entity])
+          .upsert(mapped, { onConflict: conflictMap[entity] })
+          .select()
+        
+        upsertTest = {
+          success: !uError,
+          error: uError ? { message: uError.message, code: uError.code, details: uError.details, hint: uError.hint } : null,
+          mapped_data: mapped,
+          returned_data: uData,
+        }
+      }
+    }
+
     return NextResponse.json({
       entity,
       token: tokenInfo,
@@ -91,6 +161,7 @@ export async function GET(req: NextRequest) {
         sample_keys: parsed?.results?.[0] ? Object.keys(parsed.results[0]) : null,
         sample_first: parsed?.results?.[0] ? JSON.stringify(parsed.results[0]).substring(0, 300) : null,
       },
+      upsert_test: upsertTest,
       supabase: {
         table: tableMap[entity] || 'unmapped',
         status: tableStatus,
