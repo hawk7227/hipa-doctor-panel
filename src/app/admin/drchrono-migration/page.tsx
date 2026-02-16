@@ -118,13 +118,13 @@ export default function DrChronoMigrationPage() {
     try {
       const token = await getToken()
       do {
-        const res = await fetch('/api/drchrono/bulk-sync', {
+        const resp: Response = await fetch('/api/drchrono/bulk-sync', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ entity, cursor }),
         })
-        const data = await res.json()
-        if (!res.ok) { alert(data.error || 'Sync failed'); break }
+        const data = await resp.json()
+        if (!resp.ok) { alert(data.error || 'Sync failed'); break }
         cursor = data.next_cursor || null
         totalSynced += data.upserted || 0
         totalErrored += data.errored || 0
