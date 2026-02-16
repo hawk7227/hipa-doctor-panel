@@ -76,7 +76,18 @@ export default function DrChronoMigrationPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchStatus(); const i = setInterval(fetchStatus, 30000); return () => clearInterval(i) }, [fetchStatus])
+  useEffect(() => { fetchStatus(); const i = setInterval(fetchStatus, 15000); return () => clearInterval(i) }, [fetchStatus])
+
+  // ── AUTO-SYNC: Trigger full sync automatically on load ──
+  const [autoSyncTriggered, setAutoSyncTriggered] = useState(false)
+  useEffect(() => {
+    if (autoSyncTriggered || loading) return
+    // Once status is loaded, auto-trigger if not already syncing
+    if (drchronoStatus === 'connected' && !syncing) {
+      setAutoSyncTriggered(true)
+      syncAll()
+    }
+  }, [loading, drchronoStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── SYNC ALL 25 entities at once via cron-sync ──
   const syncAll = async () => {
