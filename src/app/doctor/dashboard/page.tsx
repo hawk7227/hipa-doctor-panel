@@ -61,7 +61,7 @@ export default function DoctorDashboard() {
 
       // 2. Clinical inbox - each query wrapped independently so one failure doesn't block others
       try {
-        const safeQuery = async (promise: Promise<any>) => { try { const r = await promise; return r.data || [] } catch { return [] } }
+        const safeQuery = async (queryBuilder: PromiseLike<any>) => { try { const r = await queryBuilder; return r.data || [] } catch { return [] } }
         const [notes, labs, refs, auths, pendApts] = await Promise.all([
           safeQuery(supabase.from('clinical_notes').select('id, note_type, created_at').eq('doctor_id', docId).in('status', ['draft', 'in_progress']).order('created_at', { ascending: false }).limit(10)),
           safeQuery(supabase.from('lab_orders').select('id, lab_name, created_at').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10)),
