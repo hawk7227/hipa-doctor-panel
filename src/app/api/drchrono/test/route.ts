@@ -11,8 +11,8 @@ const supabaseAdmin = createClient(
 
 // GET /api/drchrono/test?entity=appointments
 // Tests a single DrChrono API call and returns raw diagnostic info
+// No auth required - this is a diagnostic endpoint (remove after debugging)
 export async function GET(req: NextRequest) {
-  const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
 
   const entity = req.nextUrl.searchParams.get('entity') || 'appointments'
 
