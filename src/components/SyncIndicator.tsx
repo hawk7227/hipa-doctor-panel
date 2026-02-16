@@ -1,3 +1,4 @@
+import { authFetch } from '@/lib/auth-fetch'
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -27,7 +28,7 @@ export default function SyncIndicator({ doctorId, compact = false }: SyncIndicat
 
   const checkStatus = async () => {
     try {
-      const res = await fetch('/api/drchrono/sync-status')
+      const res = await authFetch('/api/drchrono/sync-status')
       if (res.ok) {
         const data = await res.json()
         if (data.lastSynced) setLastSynced(data.lastSynced)

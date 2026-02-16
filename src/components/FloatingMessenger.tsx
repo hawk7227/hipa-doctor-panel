@@ -9,6 +9,7 @@ import {
   Loader2, Play, Pause, CheckCircle2
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { getCurrentUser } from '@/lib/auth'
 import { AttachButton, PendingAttachments, AttachmentDisplay, type Attachment } from '@/components/MessageAttachments'
 
@@ -156,13 +157,16 @@ export default function FloatingMessenger() {
         setDoctorId(user.doctor.id)
         setDoctorEmail(user.email || '')
         setDoctorName(`Dr. ${user.doctor.first_name} ${user.doctor.last_name}`)
-        const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).single()
-        if (staff) setStaffId(staff.id)
-        const { data: tm } = await supabase.from('practice_staff').select('id, first_name, last_name, role, email, active, last_login_at').eq('doctor_id', user.doctor.id).order('first_name')
-        setTeam(tm || [])
+        // Staff lookup - may not exist, use maybeSingle to avoid 406
+        try {
+          const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).maybeSingle()
+          if (staff) setStaffId(staff.id)
+          const { data: tm } = await supabase.from('practice_staff').select('id, first_name, last_name, role, email, active, last_login_at').eq('doctor_id', user.doctor.id).order('first_name')
+          setTeam(tm || [])
+        } catch { /* practice_staff table may not exist */ }
         // Admin conv
         try {
-          const res = await fetch('/api/admin/messaging?action=conversations')
+          const res = await authFetch('/api/admin/messaging?action=conversations')
           const d = await res.json()
           const myConv = (d.conversations || []).find((c: any) => c.doctor_id === user?.doctor?.id)
           if (myConv) { setAdminConv(myConv); setUnreadAdmin(myConv.unread_count || 0) }
@@ -170,12 +174,12 @@ export default function FloatingMessenger() {
         // Staff convs
         if (staff) {
           try {
-            const res = await fetch(`/api/staff-messages?action=conversations&doctorId=${user.doctor.id}&staffId=${staff.id}`)
+            const res = await authFetch(`/api/staff-messages?action=conversations&doctorId=${user.doctor.id}&staffId=${staff.id}`)
             const sData = await res.json()
             setStaffConvs(sData.conversations || [])
             // Fetch unread counts
             try {
-              const uRes = await fetch(`/api/staff-messages?action=unread&doctorId=${user.doctor.id}&staffId=${staff.id}`)
+              const uRes = await authFetch(`/api/staff-messages?action=unread&doctorId=${user.doctor.id}&staffId=${staff.id}`)
               const uData = await uRes.json()
               const total = Object.values(uData.unreadCounts || {}).reduce((s: number, n: any) => s + (n || 0), 0)
               setUnreadStaff(total as number)
@@ -212,7 +216,7 @@ export default function FloatingMessenger() {
   const fetchAdminMsgs = useCallback(async () => {
     if (!adminConv?.id) return
     try {
-      const res = await fetch(`/api/admin/messaging?action=messages&conversationId=${adminConv.id}`)
+      const res = await authFetch(`/api/admin/messaging?action=messages&conversationId=${adminConv.id}`)
       const d = await res.json()
       setAdminMsgs(d.messages || [])
       setTimeout(() => adminEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
@@ -221,7 +225,7 @@ export default function FloatingMessenger() {
 
   const fetchStaffMsgs = useCallback(async (convId: string) => {
     try {
-      const res = await fetch(`/api/staff-messages?action=messages&doctorId=${doctorId}&conversationId=${convId}`)
+      const res = await authFetch(`/api/staff-messages?action=messages&doctorId=${doctorId}&conversationId=${convId}`)
       setStaffMsgs((await res.json()).messages || [])
       setTimeout(() => staffEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     } catch {}
@@ -234,12 +238,12 @@ export default function FloatingMessenger() {
       let convId = adminConv?.id
       // Auto-create conversation if none exists
       if (!convId) {
-        const createRes = await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_conversation', doctorId, doctorName, doctorSpecialty: '' }) })
+        const createRes = await authFetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_conversation', doctorId, doctorName, doctorSpecialty: '' }) })
         const createData = await createRes.json()
         if (createData.conversation) { setAdminConv(createData.conversation); convId = createData.conversation.id }
         else { console.error('Failed to create conversation:', createData); return }
       }
-      const res = await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: convId, senderType: 'doctor', senderName: doctorName, content: adminMsg, attachments: pending.length > 0 ? pending : undefined }) })
+      const res = await authFetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: convId, senderType: 'doctor', senderName: doctorName, content: adminMsg, attachments: pending.length > 0 ? pending : undefined }) })
       const data = await res.json()
       if (data.error) { console.error('Send error:', data.error); return }
       if (soundEnabled) playSound(soundTheme, 'send')
@@ -248,7 +252,7 @@ export default function FloatingMessenger() {
   }
   const sendStaff = async () => {
     if (!activeStaffConv || !staffMsg.trim() || !staffId || !doctorId) return
-    await fetch('/api/staff-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_message', doctorId, staffId, conversationId: activeStaffConv.id, content: staffMsg, metadata: pending.length > 0 ? { attachments: pending } : {} }) })
+    await authFetch('/api/staff-messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_message', doctorId, staffId, conversationId: activeStaffConv.id, content: staffMsg, metadata: pending.length > 0 ? { attachments: pending } : {} }) })
     if (soundEnabled) playSound(soundTheme, 'send')
     setStaffMsg(''); setPending([]); fetchStaffMsgs(activeStaffConv.id)
   }
@@ -259,7 +263,7 @@ export default function FloatingMessenger() {
   const startCall = async (type: 'audio' | 'video', target: string) => {
     setCallLoading(true)
     try {
-      const res = await fetch('/api/messenger/call', {
+      const res = await authFetch('/api/messenger/call', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create', doctorId, doctorName, callType: type, targetType: target.includes('Admin') ? 'admin' : 'staff' })
       })

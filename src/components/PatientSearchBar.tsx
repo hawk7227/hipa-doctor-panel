@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { authFetch } from '@/lib/auth-fetch'
 import { Search, X, User, Phone, Mail, Calendar, Loader2, ExternalLink, Zap } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ export default function PatientSearchBar() {
     }
     setLoading(true)
     try {
-      const res = await fetch(`/api/patients/search?q=${encodeURIComponent(q)}`)
+      const res = await authFetch(`/api/patients/search?q=${encodeURIComponent(q)}`)
       if (res.ok) {
         const data = await res.json()
         setResults(data.results || [])
@@ -263,7 +264,7 @@ export default function PatientSearchBar() {
                         <button onClick={async () => {
                           try {
                             setLoading(true)
-                            const res = await fetch('/api/drchrono/bulk-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'patients' }) })
+                            const res = await authFetch('/api/drchrono/bulk-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'patients' }) })
                             const data = await res.json()
                             alert(data.error ? `Sync failed: ${data.error}` : `Synced ${data.patients?.upserted || 0} patients. Search again.`)
                           } catch (e: any) { alert('Sync error: ' + e.message) }

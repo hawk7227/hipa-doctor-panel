@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { authFetch } from '@/lib/auth-fetch'
 import PatientSearchTrigger from '@/components/PatientSearchTrigger'
 import {
   Calendar, Users, Clock, DollarSign, FileText,
@@ -49,7 +50,7 @@ export default function DoctorDashboard() {
     try {
       // 1. Dashboard stats API (DrChrono + local)
       try {
-        const res = await fetch('/api/dashboard/stats')
+        const res = await authFetch('/api/dashboard/stats')
         if (res.ok) {
           const d = await res.json()
           setStats({ totalPatients: d.totalPatients || 0, activePatients: d.activePatients || 0, newThisMonth: d.newThisMonth || 0, appointmentsToday: d.appointmentsToday || 0, avgAppointments: d.avgAppointments || 0 })
@@ -58,21 +59,22 @@ export default function DoctorDashboard() {
         }
       } catch (e) { console.error('Stats API:', e) }
 
-      // 2. Clinical inbox
+      // 2. Clinical inbox - each query wrapped independently so one failure doesn't block others
       try {
-        const [notesR, labsR, refsR, authsR, pendAptsR] = await Promise.all([
-          supabase.from('clinical_notes').select('id, note_type, created_at').eq('doctor_id', docId).in('status', ['draft', 'in_progress']).order('created_at', { ascending: false }).limit(10),
-          supabase.from('lab_orders').select('id, lab_name, created_at').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
-          supabase.from('referrals').select('id, referred_to_name, created_at').eq('doctor_id', docId).in('status', ['draft', 'pending']).order('created_at', { ascending: false }).limit(10),
-          supabase.from('prior_authorizations').select('id, service_description, created_at').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
-          supabase.from('appointments').select('id, requested_date_time, visit_type, patients!appointments_patient_id_fkey(first_name, last_name)').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
+        const safeQuery = async (promise: Promise<any>) => { try { const r = await promise; return r.data || [] } catch { return [] } }
+        const [notes, labs, refs, auths, pendApts] = await Promise.all([
+          safeQuery(supabase.from('clinical_notes').select('id, note_type, created_at').eq('doctor_id', docId).in('status', ['draft', 'in_progress']).order('created_at', { ascending: false }).limit(10)),
+          safeQuery(supabase.from('lab_orders').select('id, lab_name, created_at').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10)),
+          safeQuery(supabase.from('referrals').select('id, referred_to_name, created_at').eq('doctor_id', docId).in('status', ['draft', 'pending']).order('created_at', { ascending: false }).limit(10)),
+          safeQuery(supabase.from('prior_authorizations').select('id, service_description, created_at').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10)),
+          safeQuery(supabase.from('appointments').select('id, requested_date_time, visit_type, patients!appointments_patient_id_fkey(first_name, last_name)').eq('doctor_id', docId).eq('status', 'pending').order('created_at', { ascending: false }).limit(10)),
         ])
         const items: any[] = []
-        ;(notesR.data || []).forEach((n: any) => items.push({ type: 'unsigned_note', id: n.id, label: `Unsigned ${n.note_type || 'note'}`, sub: fmtAgo(n.created_at), time: n.created_at }))
-        ;(labsR.data || []).forEach((l: any) => items.push({ type: 'pending_lab', id: l.id, label: `Lab: ${l.lab_name || 'Pending'}`, sub: fmtAgo(l.created_at), time: l.created_at }))
-        ;(refsR.data || []).forEach((r: any) => items.push({ type: 'pending_ref', id: r.id, label: `Referral: ${r.referred_to_name || 'Pending'}`, sub: fmtAgo(r.created_at), time: r.created_at }))
-        ;(authsR.data || []).forEach((a: any) => items.push({ type: 'pending_auth', id: a.id, label: `Prior Auth: ${a.service_description || 'Pending'}`, sub: fmtAgo(a.created_at), time: a.created_at }))
-        ;(pendAptsR.data || []).map((a: any) => ({ ...a, patients: Array.isArray(a.patients) ? a.patients[0] : a.patients }))
+        ;(notes).forEach((n: any) => items.push({ type: 'unsigned_note', id: n.id, label: `Unsigned ${n.note_type || 'note'}`, sub: fmtAgo(n.created_at), time: n.created_at }))
+        ;(labs).forEach((l: any) => items.push({ type: 'pending_lab', id: l.id, label: `Lab: ${l.lab_name || 'Pending'}`, sub: fmtAgo(l.created_at), time: l.created_at }))
+        ;(refs).forEach((r: any) => items.push({ type: 'pending_ref', id: r.id, label: `Referral: ${r.referred_to_name || 'Pending'}`, sub: fmtAgo(r.created_at), time: r.created_at }))
+        ;(auths).forEach((a: any) => items.push({ type: 'pending_auth', id: a.id, label: `Prior Auth: ${a.service_description || 'Pending'}`, sub: fmtAgo(a.created_at), time: a.created_at }))
+        ;(pendApts).map((a: any) => ({ ...a, patients: Array.isArray(a.patients) ? a.patients[0] : a.patients }))
           .forEach((a: any) => items.push({ type: 'pending_apt', id: a.id, label: `New request: ${a.patients?.first_name || ''} ${a.patients?.last_name || ''}`.trim() || 'Patient', sub: a.visit_type || 'video', time: a.requested_date_time || '' }))
         items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
         setInbox(items.slice(0, 15))

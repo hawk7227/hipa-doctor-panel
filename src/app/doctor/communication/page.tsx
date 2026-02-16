@@ -112,7 +112,7 @@ export default function CommunicationCenter() {
         setDoctorName(`${user.doctor.first_name || ''} ${user.doctor.last_name || ''}`.trim())
 
         // Get staff record for this doctor (for staff chat)
-        const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).single()
+        const { data: staff } = await supabase.from('practice_staff').select('id').eq('email', user.email).limit(1).maybeSingle()
         if (staff) setStaffId(staff.id)
 
         await Promise.all([fetchHistory(user.doctor.id), fetchPatientMsgs(user.doctor.id), initTwilio(user.email || '')])
