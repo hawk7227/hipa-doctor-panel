@@ -44,17 +44,26 @@ export async function GET(req: NextRequest) {
 
     // Get record counts for each synced table
     const tableCounts: Record<string, number> = {}
+    // Check ALL DrChrono tables
     const tables = [
+      // Patient Core
       'drchrono_patients', 'drchrono_medications', 'drchrono_allergies',
-      'drchrono_problems', 'drchrono_appointments', 'drchrono_clinical_notes',
-      'drchrono_lab_orders', 'drchrono_lab_results', 'drchrono_vaccines',
-      'drchrono_documents', 'drchrono_procedures',
-      'drchrono_doctors', 'drchrono_offices', 'drchrono_appointment_profiles',
-      'drchrono_tasks', 'drchrono_messages',
+      'drchrono_problems', 'drchrono_vaccines',
+      // Clinical
+      'drchrono_appointments', 'drchrono_clinical_notes', 'drchrono_lab_orders',
+      'drchrono_lab_results', 'drchrono_lab_tests', 'drchrono_documents',
+      // Practice
+      'drchrono_doctors', 'drchrono_offices', 'drchrono_users',
+      'drchrono_appointment_profiles', 'drchrono_tasks', 'drchrono_task_categories',
+      'drchrono_messages', 'drchrono_reminder_profiles',
+      // Communication
+      'drchrono_amendments', 'drchrono_communications',
+      // Billing
       'drchrono_patient_payments', 'drchrono_line_items', 'drchrono_transactions',
-      'drchrono_amendments', 'drchrono_communications', 'drchrono_custom_demographics',
-      'drchrono_lab_tests', 'drchrono_reminder_profiles', 'drchrono_task_categories',
-      'drchrono_users',
+      // Custom
+      'drchrono_custom_demographics',
+      // Legacy (may exist from earlier migrations)
+      'drchrono_procedures',
     ]
 
     for (const table of tables) {

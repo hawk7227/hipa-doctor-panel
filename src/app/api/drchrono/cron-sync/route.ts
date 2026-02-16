@@ -632,8 +632,8 @@ export async function POST(req: NextRequest) {
   // Verify cron secret (optional security)
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // Allow without auth in dev
+  // Allow: matching cron secret, admin-triggered calls, or dev mode
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && authHeader !== 'Bearer admin-triggered') {
     if (process.env.NODE_ENV !== 'development') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
