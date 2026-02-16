@@ -730,7 +730,7 @@ export async function POST(req: NextRequest) {
       if (LARGE_TABLES.includes(entityName)) {
         // Check if table already has data
         const { count } = await supabaseAdmin.from(config.table).select('*', { count: 'exact', head: true })
-        if (count && count > 0) {
+        if (count && count > 50) {
           // Incremental: only sync records updated in last 25 hours
           const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString().split('T')[0]
           // Replace existing since= param or add new one
