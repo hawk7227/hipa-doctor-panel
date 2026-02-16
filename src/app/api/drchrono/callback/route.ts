@@ -74,16 +74,18 @@ export async function GET(req: NextRequest) {
 
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 7200) * 1000).toISOString()
 
-    // Store tokens in Supabase
+    // Store tokens in Supabase (upsert to handle existing row)
     const { data, error: dbError } = await supabase
       .from('drchrono_tokens')
-      .insert({
+      .upsert({
+        id: 1,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: expiresAt,
         token_type: tokens.token_type || 'Bearer',
         scope: tokens.scope || '',
-      })
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
       .select()
 
     if (dbError) {

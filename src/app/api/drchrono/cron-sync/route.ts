@@ -62,11 +62,13 @@ async function getDrChronoToken(): Promise<string | null> {
     }
 
     const tokenData = await res.json()
-    await supabaseAdmin.from('drchrono_tokens').insert({
+    await supabaseAdmin.from('drchrono_tokens').upsert({
+      id: 1,
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
-    })
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' })
 
     return tokenData.access_token
   } catch (err) {
