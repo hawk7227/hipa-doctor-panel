@@ -292,14 +292,14 @@ export default function FloatingMessenger() {
   return (
     <>
       {/* BUBBLE */}
-      <button onClick={() => setOpen(!open)} className="fixed bottom-6 right-6 z-[60] w-14 h-14 bg-emerald-600 hover:bg-emerald-700 rounded-full shadow-lg shadow-emerald-900/40 flex items-center justify-center transition-all hover:scale-105 active:scale-95">
+      <button onClick={() => setOpen(!open)} className="fixed bottom-6 right-6 z-[9999] w-14 h-14 bg-emerald-600 hover:bg-emerald-700 rounded-full shadow-lg shadow-emerald-900/40 flex items-center justify-center transition-all hover:scale-105 active:scale-95" style={{ position: 'fixed' }}>
         {open ? <X className="w-6 h-6 text-white" /> : <MessageCircle className="w-6 h-6 text-white" />}
         {!open && totalUnread > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">{totalUnread}</span>}
       </button>
 
       {/* PANEL */}
       {open && (
-        <div className={`fixed z-[60] bg-[#071414] border border-[#1a3d3d]/60 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden transition-all ${callActive && callType === 'video' ? 'bottom-6 right-6 w-[480px] h-[600px]' : 'bottom-24 right-6 w-[380px] h-[520px]'}`}>
+        <div className={`fixed z-[9998] bg-[#071414] border border-[#1a3d3d]/60 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden transition-all ${callActive && callType === 'video' ? 'bottom-6 right-6 w-[480px] h-[600px]' : 'bottom-24 right-6 w-[380px] h-[520px]'}`}>
           {/* Header */}
           <div className="bg-[#0a1f1f] px-4 py-2.5 border-b border-[#1a3d3d]/40 flex items-center gap-2 shrink-0">
             {view !== 'home' && !callActive && <button onClick={() => { if (view === 'staff_chat') { setView('staff_list'); setActiveStaffConv(null) } else setView('home') }} className="p-1 hover:bg-[#1a3d3d]/30 rounded"><ArrowLeft className="w-4 h-4 text-gray-400" /></button>}

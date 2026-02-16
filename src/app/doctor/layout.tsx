@@ -304,8 +304,8 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
         <NotificationToast />
         <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         <PatientSearchBar />
-        <FloatingMessenger />
       </div>
+      <FloatingMessenger />
       </NotificationProvider>
     </AuthWrapper>
   )
