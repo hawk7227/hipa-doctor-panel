@@ -283,7 +283,7 @@ const ENTITY_HANDLERS: Record<string, (token: string, cursor: string | null) => 
   },
 
   lab_results: async (token, cursor) => {
-    const url = cursor || 'https://app.drchrono.com/api/lab_results?page_size=100&since=2015-01-01'
+    const url = cursor || 'https://app.drchrono.com/api/lab_results?page_size=100&since=2022-01-01'
     const { results, next } = await fetchDrChronoPage(token, url)
 
     let upserted = 0
@@ -323,7 +323,7 @@ const ENTITY_HANDLERS: Record<string, (token: string, cursor: string | null) => 
   },
 
   clinical_notes: async (token, cursor) => {
-    const url = cursor || 'https://app.drchrono.com/api/clinical_notes?page_size=50&since=2015-01-01'
+    const url = cursor || 'https://app.drchrono.com/api/clinical_notes?page_size=50&since=2022-01-01'
     const { results, next } = await fetchDrChronoPage(token, url)
 
     let upserted = 0
@@ -389,7 +389,7 @@ const ENTITY_HANDLERS: Record<string, (token: string, cursor: string | null) => 
 
   // ── APPOINTMENTS ──
   appointments: async (token, cursor) => {
-    const url = cursor || 'https://app.drchrono.com/api/appointments?page_size=100&since=2015-01-01'
+    const url = cursor || 'https://app.drchrono.com/api/appointments?page_size=100&since=2022-01-01'
     const { results, next } = await fetchDrChronoPage(token, url)
     let upserted = 0, errored = 0
     for (const a of results) {
@@ -431,7 +431,7 @@ const ENTITY_HANDLERS: Record<string, (token: string, cursor: string | null) => 
 
   // ── LAB ORDERS ──
   lab_orders: async (token, cursor) => {
-    const url = cursor || 'https://app.drchrono.com/api/lab_orders?page_size=100&since=2015-01-01'
+    const url = cursor || 'https://app.drchrono.com/api/lab_orders?page_size=100&since=2022-01-01'
     const { results, next } = await fetchDrChronoPage(token, url)
     let upserted = 0, errored = 0
     for (const l of results) {

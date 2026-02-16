@@ -78,7 +78,7 @@ async function getDrChronoToken(): Promise<string | null> {
 }
 
 // ─── PAGINATED FETCH ──────────────────────────────────────────
-async function fetchAllPages(token: string, startUrl: string, maxPages = 50): Promise<any[]> {
+async function fetchAllPages(token: string, startUrl: string, maxPages = 200): Promise<any[]> {
   const allResults: any[] = []
   let url: string | null = startUrl
   let page = 0
@@ -210,7 +210,7 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
   },
 
   lab_results: {
-    url: 'https://app.drchrono.com/api/lab_results?page_size=100&since=2015-01-01',
+    url: 'https://app.drchrono.com/api/lab_results?page_size=100&since=2022-01-01',
     table: 'drchrono_lab_results',
     conflict: 'drchrono_lab_result_id',
     map: (lr: any) => ({
@@ -231,7 +231,7 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
   },
 
   clinical_notes: {
-    url: 'https://app.drchrono.com/api/clinical_notes?page_size=50&since=2015-01-01',
+    url: 'https://app.drchrono.com/api/clinical_notes?page_size=50&since=2022-01-01',
     table: 'drchrono_clinical_notes',
     conflict: 'drchrono_note_id',
     map: (cn: any) => ({
@@ -288,7 +288,7 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
   },
 
   appointments: {
-    url: 'https://app.drchrono.com/api/appointments?page_size=100&since=2015-01-01',
+    url: 'https://app.drchrono.com/api/appointments?page_size=250&since=2022-01-01',
     table: 'drchrono_appointments',
     conflict: 'drchrono_appointment_id',
     map: (a: any) => ({
@@ -314,7 +314,7 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
   },
 
   lab_orders: {
-    url: 'https://app.drchrono.com/api/lab_orders?page_size=100&since=2015-01-01',
+    url: 'https://app.drchrono.com/api/lab_orders?page_size=100&since=2022-01-01',
     table: 'drchrono_lab_orders',
     conflict: 'drchrono_lab_order_id',
     map: (lo: any) => ({
@@ -563,7 +563,7 @@ const ENTITIES: Record<string, { url: string; table: string; conflict: string; m
   },
 
   lab_tests: {
-    url: 'https://app.drchrono.com/api/lab_tests?page_size=100&since=2015-01-01',
+    url: 'https://app.drchrono.com/api/lab_tests?page_size=100&since=2022-01-01',
     table: 'drchrono_lab_tests',
     conflict: 'drchrono_lab_test_id',
     map: (lt: any) => ({
@@ -730,7 +730,7 @@ export async function POST(req: NextRequest) {
       if (LARGE_TABLES.includes(entityName)) {
         // Check if table already has data
         const { count } = await supabaseAdmin.from(config.table).select('*', { count: 'exact', head: true })
-        if (count && count > 100) {
+        if (count && count > 0) {
           // Incremental: only sync records updated in last 25 hours
           const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString().split('T')[0]
           // Replace existing since= param or add new one
