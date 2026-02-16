@@ -56,6 +56,22 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
   const [doctorId, setDoctorId] = useState<string | null>(null)
   const { isOpen: shortcutsOpen, setIsOpen: setShortcutsOpen } = useKeyboardShortcutsHelp()
 
+  // Auto-sync patient data to IndexedDB for offline fallback
+  useEffect(() => {
+    const initCache = async () => {
+      try {
+        const { PatientCache } = await import('@/lib/patient-cache')
+        const status = await PatientCache.getCacheStatus()
+        const lastSync = status.lastSync ? new Date(status.lastSync).getTime() : 0
+        const isStale = Date.now() - lastSync > 30 * 60 * 1000 // 30 min
+        if (isStale || Object.values(status.counts).every(c => c === 0)) {
+          await PatientCache.syncFromSupabase(supabase, doctorId || undefined)
+        }
+      } catch {} // IndexedDB not available
+    }
+    if (doctorId) initCache()
+  }, [doctorId])
+
   const isActive = (path: string) => pathname === path
 
   // Fetch doctor ID for notification provider
