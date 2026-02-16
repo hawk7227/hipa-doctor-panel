@@ -727,6 +727,14 @@ export default function DoctorAvailability() {
           // Ensure exact date match
           return e.date === dateStr
         })
+
+        // Check if this day has default availability (recurring hours or default 9am-10pm)
+        const dayOfWeek = new Date(year, month, dayNumber).getDay()
+        const hasRecurringHours = weeklyHours[dayOfWeek] && weeklyHours[dayOfWeek].length > 0
+        const hasAvailableEvent = dayEvents.some(e => e.type === 'available')
+        const hasBlockedAll = dayEvents.some(e => e.type === 'blocked' || e.type === 'holiday')
+        const isAvailableDay = (hasAvailableEvent || hasRecurringHours || dayEvents.length === 0) && !hasBlockedAll
+        const isPastDay = new Date(year, month, dayNumber) < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
         
         cells.push(
           <div
@@ -734,9 +742,16 @@ export default function DoctorAvailability() {
             className="availability-mcell"
             data-day={dayNumber}
             onClick={() => openDrawer(createMode, dayNumber)}
-            style={{ cursor: 'pointer' }}
+            style={{ 
+              cursor: 'pointer',
+              background: isAvailableDay && !isPastDay ? 'rgba(0, 203, 169, 0.12)' : undefined,
+              borderColor: isAvailableDay && !isPastDay ? 'rgba(0, 203, 169, 0.3)' : undefined,
+            }}
           >
-            <div className="availability-d">{dayNumber}</div>
+            <div className="availability-d" style={{ color: isAvailableDay && !isPastDay ? '#00CBA9' : undefined, fontWeight: isAvailableDay && !isPastDay ? 700 : undefined }}>{dayNumber}</div>
+            {isAvailableDay && !isPastDay && dayEvents.length === 0 && (
+              <span className="availability-tag a" style={{ fontSize: '9px', opacity: 0.7 }}>I&apos;m Available</span>
+            )}
             {dayEvents.map((event, idx) => (
               <span
                 key={event.id || idx}
