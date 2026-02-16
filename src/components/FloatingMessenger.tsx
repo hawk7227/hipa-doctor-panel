@@ -96,6 +96,8 @@ export default function FloatingMessenger() {
   const [adminMsgs, setAdminMsgs] = useState<AdminMsg[]>([])
   const [adminMsg, setAdminMsg] = useState('')
   const [unreadAdmin, setUnreadAdmin] = useState(0)
+  const [unreadStaff, setUnreadStaff] = useState(0)
+  const [lastSender, setLastSender] = useState<string | null>(null)
   const adminEndRef = useRef<HTMLDivElement>(null)
   const prevAdminCount = useRef(0)
 
@@ -169,7 +171,15 @@ export default function FloatingMessenger() {
         if (staff) {
           try {
             const res = await fetch(`/api/staff-messages?action=conversations&doctorId=${user.doctor.id}&staffId=${staff.id}`)
-            setStaffConvs((await res.json()).conversations || [])
+            const sData = await res.json()
+            setStaffConvs(sData.conversations || [])
+            // Fetch unread counts
+            try {
+              const uRes = await fetch(`/api/staff-messages?action=unread&doctorId=${user.doctor.id}&staffId=${staff.id}`)
+              const uData = await uRes.json()
+              const total = Object.values(uData.unreadCounts || {}).reduce((s: number, n: any) => s + (n || 0), 0)
+              setUnreadStaff(total as number)
+            } catch {}
           } catch {}
         }
         // Desktop notif permission
@@ -309,16 +319,39 @@ export default function FloatingMessenger() {
     }
   }
 
-  const totalUnread = unreadAdmin
+  const totalUnread = unreadAdmin + unreadStaff
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
+
+  // Track last sender for preview
+  useEffect(() => {
+    if (totalUnread > 0) {
+      if (unreadAdmin > 0) setLastSender('Admin')
+      else if (staffConvs.length > 0) {
+        const latest = staffConvs.filter((c: any) => c.last_message_preview).sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime())[0]
+        if (latest) setLastSender(latest.name || 'Staff')
+      }
+    } else setLastSender(null)
+  }, [totalUnread, unreadAdmin, staffConvs])
 
   return (
     <>
       {/* BUBBLE */}
       <button onClick={() => setOpen(!open)} className="fixed bottom-6 right-6 z-[9999] w-14 h-14 bg-emerald-600 hover:bg-emerald-700 rounded-full shadow-lg shadow-emerald-900/40 flex items-center justify-center transition-all hover:scale-105 active:scale-95" style={{ position: 'fixed' }}>
         {open ? <X className="w-6 h-6 text-white" /> : <MessageCircle className="w-6 h-6 text-white" />}
-        {!open && totalUnread > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">{totalUnread}</span>}
+        {!open && totalUnread > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center animate-pulse">
+            {totalUnread}
+          </span>
+        )}
       </button>
+
+      {/* UNREAD PREVIEW — shows who messaged */}
+      {!open && lastSender && totalUnread > 0 && (
+        <div onClick={() => setOpen(true)} className="fixed bottom-[88px] right-6 z-[9999] bg-[#0a1f1f] border border-emerald-500/30 rounded-xl px-3 py-2 shadow-lg cursor-pointer hover:bg-[#0c2828] transition-colors max-w-[220px]" style={{ position: 'fixed' }}>
+          <div className="text-[10px] text-emerald-400 font-bold">New message</div>
+          <div className="text-xs text-white font-medium truncate">from {lastSender}</div>
+        </div>
+      )}
 
       {/* PANEL */}
       {open && (
@@ -366,7 +399,7 @@ export default function FloatingMessenger() {
             <>
               {/* Body */}
               <div className="flex-1 overflow-y-auto">
-                {view === 'home' && <HomeView unreadAdmin={unreadAdmin} staffConvCount={staffConvs.length} teamCount={team.length} onNav={setView} hasAdminConv={!!adminConv} isRecording={isRecording} recordedBlob={recordedBlob} recordingTime={recordingTime} startRecording={startRecording} stopRecording={stopRecording} sendRecording={sendRecording} fmtDur={fmtDur} />}
+                {view === 'home' && <HomeView unreadAdmin={unreadAdmin} unreadStaff={unreadStaff} staffConvCount={staffConvs.length} teamCount={team.length} onNav={setView} hasAdminConv={!!adminConv} isRecording={isRecording} recordedBlob={recordedBlob} recordingTime={recordingTime} startRecording={startRecording} stopRecording={stopRecording} sendRecording={sendRecording} fmtDur={fmtDur} />}
                 {view === 'admin' && <ChatView msgs={adminMsgs} doctorName={doctorName} isStaff={false} endRef={adminEndRef} />}
                 {view === 'staff_list' && <StaffListView convs={staffConvs} onSelect={(c: StaffConv) => { setActiveStaffConv(c); setView('staff_chat'); fetchStaffMsgs(c.id) }} />}
                 {view === 'staff_chat' && <ChatView msgs={staffMsgs} doctorName={doctorName} isStaff endRef={staffEndRef} />}
@@ -396,11 +429,11 @@ export default function FloatingMessenger() {
 
 // ═══ SUB-VIEWS ═══
 
-function HomeView({ unreadAdmin, staffConvCount, teamCount, onNav, hasAdminConv, isRecording, recordedBlob, recordingTime, startRecording, stopRecording, sendRecording, fmtDur }: any) {
+function HomeView({ unreadAdmin, unreadStaff, staffConvCount, teamCount, onNav, hasAdminConv, isRecording, recordedBlob, recordingTime, startRecording, stopRecording, sendRecording, fmtDur }: any) {
   return (
     <div className="p-3 space-y-2">
       <NavBtn icon={Shield} iconBg="bg-amber-600/20" iconColor="text-amber-400" label="Admin Support" sub={hasAdminConv ? 'Message platform admin' : 'Start conversation'} badge={unreadAdmin} onClick={() => onNav('admin')} />
-      <NavBtn icon={Users} iconBg="bg-blue-600/20" iconColor="text-blue-400" label="Staff Chat" sub={`${staffConvCount} conversation${staffConvCount !== 1 ? 's' : ''}`} onClick={() => onNav('staff_list')} />
+      <NavBtn icon={Users} iconBg="bg-blue-600/20" iconColor="text-blue-400" label="Staff Chat" sub={`${staffConvCount} conversation${staffConvCount !== 1 ? 's' : ''}`} badge={unreadStaff} onClick={() => onNav('staff_list')} />
       <NavBtn icon={Clock} iconBg="bg-purple-600/20" iconColor="text-purple-400" label="Team Status" sub={`${teamCount} staff — activity log`} onClick={() => onNav('team_status')} />
 
       {/* Screen Recording */}

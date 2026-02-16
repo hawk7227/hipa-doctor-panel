@@ -1,28 +1,61 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Shield, MessageSquare, Bell, Bug, Settings,
   ChevronLeft, ChevronRight, LogOut, ClipboardList, Calendar, BarChart3
 } from 'lucide-react'
+import AdminFloatingMessenger from '@/components/AdminFloatingMessenger'
 
 const NAV_ITEMS = [
-  { href: '/admin/doctors/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/doctors', label: 'Doctor Approvals', icon: Users },
-  { href: '/admin/messaging', label: 'Messaging', icon: MessageSquare },
-  { href: '/admin/appointments', label: 'Appointments', icon: Calendar },
-  { href: '/admin/notifications', label: 'Notifications', icon: Bell },
-  { href: '/admin/bug-reports', label: 'Bug Reports', icon: Bug },
-  { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList },
-  { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin/doctors/dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: '' },
+  { href: '/admin/doctors', label: 'Doctor Approvals', icon: Users, badgeKey: 'approvals' },
+  { href: '/admin/messaging', label: 'Messaging', icon: MessageSquare, badgeKey: 'messaging' },
+  { href: '/admin/appointments', label: 'Appointments', icon: Calendar, badgeKey: '' },
+  { href: '/admin/notifications', label: 'Notifications', icon: Bell, badgeKey: 'notifications' },
+  { href: '/admin/bug-reports', label: 'Bug Reports', icon: Bug, badgeKey: 'bugs' },
+  { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList, badgeKey: '' },
+  { href: '/admin/analytics', label: 'Analytics', icon: BarChart3, badgeKey: '' },
+  { href: '/admin/settings', label: 'Settings', icon: Settings, badgeKey: '' },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [badges, setBadges] = useState<Record<string, number>>({})
+
+  // Fetch unread counts for sidebar badges
+  useEffect(() => {
+    const fetchBadges = async () => {
+      try {
+        const { supabase } = await import('@/lib/supabase')
+
+        // Messaging unread
+        const msgRes = await fetch('/api/admin/messaging?action=conversations')
+        const msgData = await msgRes.json()
+        const msgUnread = (msgData.conversations || []).reduce((s: number, c: any) => s + (c.unread_count || 0), 0)
+
+        // Pending doctor approvals
+        const { count: pendingDocs } = await supabase
+          .from('doctors').select('id', { count: 'exact', head: true }).eq('is_approved', false)
+
+        // Open bug reports
+        const { count: openBugs } = await supabase
+          .from('bug_reports').select('id', { count: 'exact', head: true }).in('status', ['open', 'in_progress'])
+
+        setBadges({
+          messaging: msgUnread,
+          approvals: pendingDocs || 0,
+          bugs: openBugs || 0,
+        })
+      } catch {}
+    }
+    fetchBadges()
+    const interval = setInterval(fetchBadges, 20000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <div className="min-h-screen bg-[#030f0f] flex">
@@ -46,13 +79,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {NAV_ITEMS.map(item => {
             const Icon = item.icon
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const badge = item.badgeKey ? (badges[item.badgeKey] || 0) : 0
             return (
               <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg text-sm transition-colors ${
+                className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg text-sm transition-colors relative ${
                   isActive ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}>
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                <div className="relative flex-shrink-0">
+                  <Icon className="w-4 h-4" />
+                  {badge > 0 && collapsed && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 rounded-full text-[8px] text-white font-bold flex items-center justify-center">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </div>
+                {!collapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {badge > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full text-[9px] text-white font-bold flex items-center justify-center">
+                        {badge > 99 ? '99+' : badge}
+                      </span>
+                    )}
+                  </>
+                )}
               </Link>
             )
           })}
@@ -71,6 +121,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      {/* Floating Messenger — always visible even when sidebar collapsed */}
+      <AdminFloatingMessenger />
     </div>
   )
 }
