@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
   const startTime = performance.now()
   const { type, parsed } = detectSearchType(q)
 
-  // Search all sources in parallel
+  // Search all sources in parallel — DrChrono API first until full sync complete
   const [drchronoResults, localResults, drchronoLocalResults] = await Promise.all([
     searchDrChrono(type, parsed).catch(e => { console.error('[PatientSearch] DrChrono API failed:', e); return [] }),
     searchLocal(type, parsed).catch(e => { console.error('[PatientSearch] Local search failed:', e); return [] }),
