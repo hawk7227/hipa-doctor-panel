@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   MessageCircle, X, Send, Shield, Users, ChevronRight,
-  Phone, Clock, ArrowLeft, Video, VideoOff, Mic, MicOff,
-  PhoneOff, Monitor, MonitorOff, Circle, Square,
+  Phone, Clock, ArrowLeft, Video,
+  PhoneOff, Circle, Square,
   Volume2, VolumeX, Bell, BellOff, Settings, Download,
   Loader2, Play, Pause, CheckCircle2
 } from 'lucide-react'
@@ -118,12 +118,9 @@ export default function FloatingMessenger() {
   const [callType, setCallType] = useState<'audio' | 'video'>('audio')
   const [callTarget, setCallTarget] = useState('')
   const [callDuration, setCallDuration] = useState(0)
-  const [isMuted, setIsMuted] = useState(false)
-  const [isVideoOff, setIsVideoOff] = useState(false)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
-  const localVideoRef = useRef<HTMLVideoElement>(null)
-  const localStreamRef = useRef<MediaStream | null>(null)
-  const screenStreamRef = useRef<MediaStream | null>(null)
+  const [callRoomUrl, setCallRoomUrl] = useState('')
+  const [callRoomName, setCallRoomName] = useState('')
+  const [callLoading, setCallLoading] = useState(false)
   const callTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Screen recording
@@ -248,42 +245,26 @@ export default function FloatingMessenger() {
 
   useEffect(() => { if (view === 'admin' && adminConv) fetchAdminMsgs() }, [view, adminConv, fetchAdminMsgs])
 
-  // ═══ CALL ═══
+  // ═══ CALL — Daily.co real video rooms ═══
   const startCall = async (type: 'audio' | 'video', target: string) => {
+    setCallLoading(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' })
-      localStreamRef.current = stream
-      if (type === 'video' && localVideoRef.current) { localVideoRef.current.srcObject = stream }
+      const res = await fetch('/api/messenger/call', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', doctorId, doctorName, callType: type, targetType: target.includes('Admin') ? 'admin' : 'staff' })
+      })
+      const data = await res.json()
+      if (!data.room_url) throw new Error(data.error || 'Failed to create call')
+      setCallRoomUrl(data.room_url); setCallRoomName(data.room_name)
       setCallActive(true); setCallType(type); setCallTarget(target); setCallDuration(0)
       if (soundEnabled) playSound(soundTheme, 'call')
       callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000)
-    } catch { alert('Could not access microphone/camera') }
+    } catch (e: any) { alert('Call failed: ' + (e.message || 'Unknown error')) }
+    finally { setCallLoading(false) }
   }
   const stopCall = () => {
-    localStreamRef.current?.getTracks().forEach(t => t.stop())
-    screenStreamRef.current?.getTracks().forEach(t => t.stop())
-    localStreamRef.current = null; screenStreamRef.current = null
     if (callTimerRef.current) clearInterval(callTimerRef.current)
-    setCallActive(false); setIsScreenSharing(false); setIsMuted(false); setIsVideoOff(false)
-  }
-  const toggleMute = () => {
-    const audio = localStreamRef.current?.getAudioTracks()[0]
-    if (audio) { audio.enabled = !audio.enabled; setIsMuted(!audio.enabled) }
-  }
-  const toggleVideo = () => {
-    const video = localStreamRef.current?.getVideoTracks()[0]
-    if (video) { video.enabled = !video.enabled; setIsVideoOff(!video.enabled) }
-  }
-  const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      screenStreamRef.current?.getTracks().forEach(t => t.stop()); screenStreamRef.current = null; setIsScreenSharing(false)
-    } else {
-      try {
-        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-        screenStreamRef.current = screen; setIsScreenSharing(true)
-        screen.getVideoTracks()[0].onended = () => { setIsScreenSharing(false); screenStreamRef.current = null }
-      } catch {}
-    }
+    setCallActive(false); setCallRoomUrl(''); setCallRoomName('')
   }
 
   // ═══ SCREEN RECORDING ═══
@@ -341,7 +322,7 @@ export default function FloatingMessenger() {
 
       {/* PANEL */}
       {open && (
-        <div className={`fixed z-[9998] bg-[#071414] border border-[#1a3d3d]/60 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden transition-all ${callActive && callType === 'video' ? 'bottom-6 right-6 w-[480px] h-[600px]' : 'bottom-24 right-6 w-[380px] h-[520px]'}`}>
+        <div className={`fixed z-[9998] bg-[#071414] border border-[#1a3d3d]/60 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden transition-all ${callActive ? 'bottom-6 right-6 w-[520px] h-[640px]' : 'bottom-24 right-6 w-[380px] h-[520px]'}`}>
           {/* Header */}
           <div className="bg-[#0a1f1f] px-4 py-2.5 border-b border-[#1a3d3d]/40 flex items-center gap-2 shrink-0">
             {view !== 'home' && !callActive && <button onClick={() => { if (view === 'staff_chat') { setView('staff_list'); setActiveStaffConv(null) } else setView('home') }} className="p-1 hover:bg-[#1a3d3d]/30 rounded"><ArrowLeft className="w-4 h-4 text-gray-400" /></button>}
@@ -354,35 +335,31 @@ export default function FloatingMessenger() {
             <div className="flex items-center gap-1">
               {(view === 'admin' || view === 'staff_chat') && !callActive && (
                 <>
-                  <button onClick={() => startCall('audio', view === 'admin' ? 'Admin' : activeStaffConv?.name || 'Staff')} className="p-1.5 hover:bg-green-600/20 rounded-lg" title="Audio Call"><Phone className="w-3.5 h-3.5 text-green-400" /></button>
-                  <button onClick={() => startCall('video', view === 'admin' ? 'Admin' : activeStaffConv?.name || 'Staff')} className="p-1.5 hover:bg-blue-600/20 rounded-lg" title="Video Call"><Video className="w-3.5 h-3.5 text-blue-400" /></button>
+                  <button onClick={() => startCall('audio', view === 'admin' ? 'Admin' : activeStaffConv?.name || 'Staff')} disabled={callLoading} className="p-1.5 hover:bg-green-600/20 rounded-lg disabled:opacity-40" title="Audio Call">{callLoading ? <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" /> : <Phone className="w-3.5 h-3.5 text-green-400" />}</button>
+                  <button onClick={() => startCall('video', view === 'admin' ? 'Admin' : activeStaffConv?.name || 'Staff')} disabled={callLoading} className="p-1.5 hover:bg-blue-600/20 rounded-lg disabled:opacity-40" title="Video Call"><Video className="w-3.5 h-3.5 text-blue-400" /></button>
                 </>
               )}
               {view === 'home' && <button onClick={() => setView('settings')} className="p-1.5 hover:bg-[#1a3d3d]/30 rounded-lg"><Settings className="w-3.5 h-3.5 text-gray-400" /></button>}
             </div>
           </div>
 
-          {/* CALL UI */}
+          {/* CALL UI — Daily.co embedded */}
           {callActive ? (
             <div className="flex-1 flex flex-col">
-              {callType === 'video' && (
-                <div className="flex-1 bg-black relative">
-                  <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-                  {isVideoOff && <div className="absolute inset-0 bg-[#071414] flex items-center justify-center"><VideoOff className="w-12 h-12 text-gray-600" /></div>}
-                  {isScreenSharing && <div className="absolute top-2 left-2 px-2 py-1 bg-red-600/80 rounded text-[10px] text-white font-bold flex items-center gap-1"><Monitor className="w-3 h-3" />Sharing Screen</div>}
+              <div className="flex-1 bg-black relative">
+                <iframe
+                  src={`${callRoomUrl}?t=${Date.now()}`}
+                  allow="camera; microphone; fullscreen; display-capture; autoplay"
+                  className="w-full h-full border-0"
+                  style={{ minHeight: '300px' }}
+                />
+              </div>
+              <div className="p-2 bg-[#0a1f1f] border-t border-[#1a3d3d]/40 flex items-center justify-between">
+                <span className="text-emerald-400 font-mono text-xs">{fmtDur(callDuration)}</span>
+                <div className="flex items-center gap-2">
+                  <a href={callRoomUrl} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-600/20 text-blue-400 text-[10px] rounded hover:bg-blue-600/30">Open Full</a>
+                  <button onClick={stopCall} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 flex items-center gap-1"><PhoneOff className="w-3.5 h-3.5" />End</button>
                 </div>
-              )}
-              {callType === 'audio' && (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center"><div className="w-20 h-20 rounded-full bg-emerald-600/20 flex items-center justify-center mx-auto mb-3"><Phone className="w-8 h-8 text-emerald-400" /></div><p className="text-sm font-bold">{callTarget}</p><p className="text-emerald-400 font-mono text-lg">{fmtDur(callDuration)}</p></div>
-                </div>
-              )}
-              {/* Call controls */}
-              <div className="p-3 bg-[#0a1f1f] border-t border-[#1a3d3d]/40 flex items-center justify-center gap-3">
-                <button onClick={toggleMute} className={`p-2.5 rounded-full ${isMuted ? 'bg-red-600/20 text-red-400' : 'bg-[#1a3d3d]/30 text-white'}`}>{isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}</button>
-                {callType === 'video' && <button onClick={toggleVideo} className={`p-2.5 rounded-full ${isVideoOff ? 'bg-red-600/20 text-red-400' : 'bg-[#1a3d3d]/30 text-white'}`}>{isVideoOff ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}</button>}
-                <button onClick={toggleScreenShare} className={`p-2.5 rounded-full ${isScreenSharing ? 'bg-blue-600/20 text-blue-400' : 'bg-[#1a3d3d]/30 text-white'}`} title="Share Screen">{isScreenSharing ? <MonitorOff className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}</button>
-                <button onClick={stopCall} className="p-2.5 rounded-full bg-red-600 text-white hover:bg-red-700"><PhoneOff className="w-4 h-4" /></button>
               </div>
             </div>
           ) : (
