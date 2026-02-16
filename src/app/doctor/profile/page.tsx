@@ -41,11 +41,17 @@ export default function DoctorProfile() {
 
   const fetchDoctorProfile = async () => {
     try {
-      // For demo purposes, we'll use the first doctor
+      // Get the currently logged-in doctor
+      const { getCurrentUser } = await import('@/lib/auth')
+      const user = await getCurrentUser()
+      if (!user?.doctor?.id) {
+        console.error('No logged-in doctor found')
+        return
+      }
       const { data, error } = await supabase
         .from('doctors')
         .select('*')
-        .limit(1)
+        .eq('id', user.doctor.id)
         .single()
 
       if (error) {

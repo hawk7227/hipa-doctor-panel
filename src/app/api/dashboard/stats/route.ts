@@ -15,10 +15,13 @@ export async function GET(req: NextRequest) {
 
     // ── Total Patients ──
     // Local patients
-    const { count: localPatients } = await db.from('patients').select('*', { count: 'exact', head: true })
+    const { count: localPatients, error: lpErr } = await db.from('patients').select('*', { count: 'exact', head: true })
+    if (lpErr) console.error('[Stats] patients count error:', lpErr.message)
     // DrChrono patients
-    const { count: dcPatients } = await db.from('drchrono_patients').select('*', { count: 'exact', head: true })
+    const { count: dcPatients, error: dcErr } = await db.from('drchrono_patients').select('*', { count: 'exact', head: true })
+    if (dcErr) console.error('[Stats] drchrono_patients count error:', dcErr.message)
     const totalPatients = Math.max(localPatients || 0, dcPatients || 0)
+    console.log(`[Stats] Patients: local=${localPatients}, drchrono=${dcPatients}, total=${totalPatients}`)
 
     // ── Active Patients (appointments in last 30 days) ──
     let activePatients = 0

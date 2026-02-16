@@ -113,6 +113,12 @@ export default function PatientSearchBar() {
           elapsed: data.elapsed_ms,
         })
         setSelectedIndex(0)
+      } else {
+        console.error('[PatientSearch] API error:', res.status, res.statusText)
+        // Still try to parse error
+        try { const errData = await res.json(); console.error('[PatientSearch] Error details:', errData) } catch {}
+        setResults([])
+        setSearchMeta({ type: 'name', sources: { drchrono_api: 0, drchrono_local: 0, local: 0 }, elapsed: 0 })
       }
     } catch (err) {
       console.error('[PatientSearch] Error:', err)
