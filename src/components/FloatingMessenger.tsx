@@ -19,38 +19,67 @@ interface StaffMsg { id: string; content: string; message_type: string; created_
 interface StaffMember { id: string; first_name: string; last_name: string; role: string; email: string; active: boolean; last_login_at?: string }
 
 type View = 'home' | 'admin' | 'staff_list' | 'staff_chat' | 'team_status' | 'call' | 'settings'
-type SoundTheme = 'chime' | 'pop' | 'ding' | 'retro' | 'none'
-const THEMES: { key: SoundTheme; label: string }[] = [
-  { key: 'chime', label: '🔔 Chime' }, { key: 'pop', label: '💬 Pop' },
-  { key: 'ding', label: '🛎️ Ding' }, { key: 'retro', label: '🕹️ Retro' },
-  { key: 'none', label: '🔇 Silent' },
+type SoundTheme = 'chime' | 'pop' | 'ding' | 'retro' | 'bubble' | 'marimba' | 'arcade' | 'xylophone' | 'doorbell' | 'none'
+const THEMES: { key: SoundTheme; label: string; desc: string }[] = [
+  { key: 'chime', label: '🔔 Chime', desc: 'Melodic 4-note bell' },
+  { key: 'pop', label: '💬 Pop', desc: 'Bouncy triple pop' },
+  { key: 'ding', label: '🛎️ Ding', desc: 'Rich resonant bell' },
+  { key: 'retro', label: '🕹️ Retro', desc: '8-bit game sound' },
+  { key: 'bubble', label: '🫧 Bubble', desc: 'Rising underwater bubbles' },
+  { key: 'marimba', label: '🎵 Marimba', desc: 'Warm wooden notes' },
+  { key: 'arcade', label: '🪙 Arcade', desc: 'Coin collect cascade' },
+  { key: 'xylophone', label: '🎶 Xylophone', desc: 'Bright sparkling notes' },
+  { key: 'doorbell', label: '🚪 Doorbell', desc: 'Classic ding-dong' },
+  { key: 'none', label: '🔇 Silent', desc: 'No sound' },
 ]
 
 const INP = "w-full px-3 py-2 bg-[#061818] border border-[#1a3d3d]/50 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500/50 placeholder:text-gray-600"
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 const fmtDate = (d: string) => { const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 86400000) return fmtTime(d); if (diff < 172800000) return 'Yesterday'; return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
 
-// ═══ SOUND ENGINE ═══
-function playSound(theme: SoundTheme, type: 'message' | 'call' | 'send' = 'message') {
+// ═══ SOUND ENGINE — LOUDER, LONGER, MORE FUN ═══
+function playSound(theme: SoundTheme, type: 'message' | 'call' | 'send' = 'message', volume = 0.8, repeat = 1) {
   if (theme === 'none') return
   try {
     const AC = window.AudioContext || (window as any).webkitAudioContext
     if (!AC) return
     const ctx = new AC()
-    const play = (freq: number, start: number, dur: number, wave: OscillatorType = 'sine', vol = 0.12) => {
+    const v = volume * 0.5 // scale to safe range but much louder than before
+    const p = (freq: number, start: number, dur: number, wave: OscillatorType = 'sine', vol = v) => {
       const o = ctx.createOscillator(); const g = ctx.createGain()
       o.connect(g); g.connect(ctx.destination); o.frequency.value = freq; o.type = wave
       g.gain.setValueAtTime(vol, ctx.currentTime + start)
+      g.gain.setValueAtTime(vol, ctx.currentTime + start + dur * 0.6)
       g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
       o.start(ctx.currentTime + start); o.stop(ctx.currentTime + start + dur)
     }
-    if (type === 'call') { // Ring
-      for (let i = 0; i < 3; i++) { play(800, i * 0.3, 0.15); play(1000, i * 0.3 + 0.15, 0.12) }
-    } else if (theme === 'chime') { play(880, 0, 0.2); play(1320, 0.12, 0.2) }
-    else if (theme === 'pop') { play(600, 0, 0.08, 'triangle', 0.15); play(900, 0.06, 0.1, 'triangle', 0.1) }
-    else if (theme === 'ding') { play(1200, 0, 0.3, 'sine', 0.08) }
-    else if (theme === 'retro') { play(440, 0, 0.05, 'square', 0.08); play(660, 0.06, 0.05, 'square', 0.08); play(880, 0.12, 0.08, 'square', 0.06) }
-    setTimeout(() => ctx.close(), 3000)
+    const playOnce = (offset: number) => {
+      if (type === 'call') { // Long ring — 6 alternating tones
+        for (let i = 0; i < 6; i++) { p(880, offset + i * 0.18, 0.12, 'sine', v * 1.2); p(1100, offset + i * 0.18 + 0.09, 0.12, 'sine', v * 1.2) }
+      } else if (type === 'send') { // Quick whoosh-up
+        p(400, offset, 0.06, 'sine', v * 0.5); p(800, offset + 0.05, 0.06, 'sine', v * 0.4); p(1200, offset + 0.1, 0.1, 'sine', v * 0.3)
+      } else if (theme === 'chime') { // Melodic 4-note chime — C E G C
+        p(523, offset, 0.2, 'sine', v); p(659, offset + 0.15, 0.2, 'sine', v); p(784, offset + 0.3, 0.2, 'sine', v * 1.1); p(1047, offset + 0.45, 0.4, 'sine', v * 1.3)
+      } else if (theme === 'pop') { // Bouncy double pop
+        p(600, offset, 0.1, 'triangle', v * 1.2); p(900, offset + 0.08, 0.12, 'triangle', v * 1.0); p(1200, offset + 0.2, 0.15, 'triangle', v * 0.8)
+      } else if (theme === 'ding') { // Rich bell with harmonics
+        p(1200, offset, 0.5, 'sine', v * 1.0); p(2400, offset, 0.3, 'sine', v * 0.3); p(3600, offset, 0.15, 'sine', v * 0.1)
+      } else if (theme === 'retro') { // 8-bit game notification
+        p(440, offset, 0.06, 'square', v * 0.6); p(554, offset + 0.07, 0.06, 'square', v * 0.6); p(659, offset + 0.14, 0.06, 'square', v * 0.6); p(880, offset + 0.21, 0.12, 'square', v * 0.8)
+      } else if (theme === 'bubble') { // Underwater bubble rising
+        p(300, offset, 0.08, 'sine', v * 0.8); p(500, offset + 0.06, 0.08, 'sine', v * 0.9); p(800, offset + 0.12, 0.1, 'sine', v * 1.0); p(1300, offset + 0.2, 0.15, 'sine', v * 0.7)
+      } else if (theme === 'marimba') { // Warm marimba hit
+        p(523, offset, 0.3, 'triangle', v * 1.0); p(659, offset + 0.12, 0.3, 'triangle', v * 0.9); p(784, offset + 0.24, 0.4, 'triangle', v * 1.1)
+      } else if (theme === 'arcade') { // Coin collect
+        [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => p(f, offset + i * 0.06, 0.08, 'square', v * (0.4 + i * 0.1)))
+      } else if (theme === 'xylophone') { // Bright xylophone
+        p(1047, offset, 0.2, 'sine', v * 1.0); p(1319, offset + 0.1, 0.2, 'sine', v * 0.9); p(1568, offset + 0.2, 0.3, 'sine', v * 1.1); p(2093, offset + 0.35, 0.5, 'sine', v * 0.6)
+      } else if (theme === 'doorbell') { // Classic ding-dong
+        p(659, offset, 0.4, 'sine', v * 1.2); p(523, offset + 0.45, 0.6, 'sine', v * 1.2)
+      }
+    }
+    for (let r = 0; r < Math.min(repeat, 5); r++) playOnce(r * 1.2)
+    setTimeout(() => ctx.close(), 8000)
   } catch {}
 }
 
@@ -501,27 +530,87 @@ function TeamStatusView({ team }: { team: StaffMember[] }) {
 }
 
 function SettingsView({ soundTheme, setSoundTheme, soundEnabled, setSoundEnabled, desktopNotifs, requestDesktopNotifs }: any) {
+  const [volume, setVolume] = useState(() => { try { return parseFloat(localStorage.getItem('msg_sound_volume') || '0.8') } catch { return 0.8 } })
+  const [repeat, setRepeat] = useState(() => { try { return parseInt(localStorage.getItem('msg_sound_repeat') || '1') } catch { return 1 } })
+  const [msgNotif, setMsgNotif] = useState(true)
+  const [callNotif, setCallNotif] = useState(true)
+  const [flashTab, setFlashTab] = useState(() => localStorage.getItem('msg_flash_tab') === 'true')
+
+  useEffect(() => { localStorage.setItem('msg_sound_volume', String(volume)) }, [volume])
+  useEffect(() => { localStorage.setItem('msg_sound_repeat', String(repeat)) }, [repeat])
+  useEffect(() => { localStorage.setItem('msg_flash_tab', String(flashTab)) }, [flashTab])
+
+  // Sync with global notification system
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('medazon_notification_settings')
+      if (raw) {
+        const ns = JSON.parse(raw)
+        ns.soundEnabled = soundEnabled
+        ns.soundVolume = volume
+        if (soundTheme === 'retro') ns.soundTheme = 'retro'
+        else if (soundTheme === 'none') ns.soundTheme = 'minimal'
+        else if (soundTheme === 'chime' || soundTheme === 'doorbell') ns.soundTheme = 'default'
+        else ns.soundTheme = 'gentle'
+        ns.soundRepeat = repeat
+        localStorage.setItem('medazon_notification_settings', JSON.stringify(ns))
+      }
+    } catch {}
+  }, [soundEnabled, soundTheme, volume, repeat])
+
+  const Toggle = ({ val, onChange }: { val: boolean; onChange: () => void }) => (
+    <button onClick={onChange} className={`w-10 h-5 rounded-full transition-colors flex items-center ${val ? 'bg-emerald-600 justify-end' : 'bg-gray-700 justify-start'}`}>
+      <div className="w-4 h-4 bg-white rounded-full mx-0.5" />
+    </button>
+  )
+
   return (
-    <div className="p-4 space-y-4">
-      {/* Sound toggle */}
+    <div className="p-4 space-y-4 text-white">
+      {/* Master sound */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2"><Volume2 className="w-4 h-4 text-gray-400" /><span className="text-sm">Message Sounds</span></div>
-        <button onClick={() => setSoundEnabled(!soundEnabled)} className={`w-10 h-5 rounded-full transition-colors flex items-center ${soundEnabled ? 'bg-emerald-600 justify-end' : 'bg-gray-700 justify-start'}`}>
-          <div className="w-4 h-4 bg-white rounded-full mx-0.5" />
-        </button>
+        <div className="flex items-center gap-2"><Volume2 className="w-4 h-4 text-emerald-400" /><span className="text-sm font-medium">Message Sounds</span></div>
+        <Toggle val={soundEnabled} onChange={() => setSoundEnabled(!soundEnabled)} />
+      </div>
+
+      {/* Volume slider */}
+      <div>
+        <div className="flex items-center justify-between mb-1"><span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Volume</span><span className="text-[10px] text-emerald-400 font-mono">{Math.round(volume * 100)}%</span></div>
+        <input type="range" min="0.1" max="1" step="0.05" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-[#1a3d3d] rounded-lg appearance-none cursor-pointer accent-emerald-500" />
+        <div className="flex justify-between text-[9px] text-gray-600"><span>Quiet</span><span>Loud</span></div>
+      </div>
+
+      {/* Repeat count */}
+      <div>
+        <div className="flex items-center justify-between mb-1"><span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Alert Repeat</span><span className="text-[10px] text-emerald-400">{repeat}×</span></div>
+        <div className="flex gap-1.5">
+          {[1, 2, 3, 4, 5].map(n => (
+            <button key={n} onClick={() => setRepeat(n)} className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${repeat === n ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/40' : 'bg-[#0a1f1f] text-gray-500 hover:text-gray-300'}`}>{n}×</button>
+          ))}
+        </div>
       </div>
 
       {/* Sound theme */}
       <div>
         <p className="text-[10px] text-gray-500 mb-2 uppercase tracking-wider font-medium">Sound Theme</p>
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-1 gap-1 max-h-[180px] overflow-y-auto pr-1">
           {THEMES.map(t => (
-            <button key={t.key} onClick={() => { setSoundTheme(t.key); if (t.key !== 'none') playSound(t.key) }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-colors ${soundTheme === t.key ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400' : 'bg-[#0a1f1f] text-gray-400 hover:bg-[#0c2828]'}`}>
-              <span>{t.label}</span>
-              {soundTheme === t.key && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 ml-auto" />}
+            <button key={t.key} onClick={() => { setSoundTheme(t.key); if (t.key !== 'none') playSound(t.key, 'message', volume) }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${soundTheme === t.key ? 'bg-emerald-600/20 border border-emerald-500/30' : 'bg-[#0a1f1f] hover:bg-[#0c2828] border border-transparent'}`}>
+              <span className={`text-xs ${soundTheme === t.key ? 'text-emerald-400 font-medium' : 'text-gray-400'}`}>{t.label}</span>
+              <span className="text-[9px] text-gray-600 flex-1">{t.desc}</span>
+              {soundTheme === t.key && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Per-type toggles */}
+      <div>
+        <p className="text-[10px] text-gray-500 mb-2 uppercase tracking-wider font-medium">Notify For</p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-3 py-2 bg-[#0a1f1f] rounded-lg"><span className="text-xs">New Messages</span><Toggle val={msgNotif} onChange={() => setMsgNotif(!msgNotif)} /></div>
+          <div className="flex items-center justify-between px-3 py-2 bg-[#0a1f1f] rounded-lg"><span className="text-xs">Incoming Calls</span><Toggle val={callNotif} onChange={() => setCallNotif(!callNotif)} /></div>
+          <div className="flex items-center justify-between px-3 py-2 bg-[#0a1f1f] rounded-lg"><span className="text-xs">Flash Browser Tab</span><Toggle val={flashTab} onChange={() => setFlashTab(!flashTab)} /></div>
         </div>
       </div>
 
@@ -529,16 +618,22 @@ function SettingsView({ soundTheme, setSoundTheme, soundEnabled, setSoundEnabled
       <div>
         <p className="text-[10px] text-gray-500 mb-2 uppercase tracking-wider font-medium">Desktop Notifications</p>
         {desktopNotifs ? (
-          <div className="flex items-center gap-2 px-3 py-2 bg-emerald-600/10 border border-emerald-500/20 rounded-lg"><Bell className="w-4 h-4 text-emerald-400" /><span className="text-xs text-emerald-400">Enabled</span></div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-emerald-600/10 border border-emerald-500/20 rounded-lg"><Bell className="w-4 h-4 text-emerald-400" /><span className="text-xs text-emerald-400">Enabled — you'll see pop-ups</span></div>
         ) : (
           <button onClick={requestDesktopNotifs} className="w-full px-3 py-2 bg-[#0a1f1f] hover:bg-[#0c2828] rounded-lg text-xs text-gray-400 flex items-center gap-2"><BellOff className="w-4 h-4" />Enable Desktop Notifications</button>
         )}
       </div>
 
-      {/* Preview */}
-      <button onClick={() => playSound(soundTheme)} disabled={soundTheme === 'none'} className="w-full px-3 py-2.5 bg-blue-600/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-600/30 disabled:opacity-40 flex items-center justify-center gap-2">
-        <Play className="w-3.5 h-3.5" />Preview Sound
-      </button>
+      {/* Preview buttons */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <button onClick={() => playSound(soundTheme, 'message', volume, repeat)} disabled={soundTheme === 'none'} className="px-3 py-2 bg-blue-600/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-600/30 disabled:opacity-40 flex items-center justify-center gap-1.5">
+          <Play className="w-3 h-3" />Message
+        </button>
+        <button onClick={() => playSound(soundTheme, 'call', volume, 1)} disabled={soundTheme === 'none'} className="px-3 py-2 bg-green-600/20 text-green-400 rounded-lg text-xs font-medium hover:bg-green-600/30 disabled:opacity-40 flex items-center justify-center gap-1.5">
+          <Phone className="w-3 h-3" />Ring
+        </button>
+      </div>
+      <p className="text-[9px] text-gray-600 text-center">Settings sync with global notification system</p>
     </div>
   )
 }
