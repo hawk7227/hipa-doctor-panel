@@ -384,6 +384,235 @@ const ENTITY_HANDLERS: Record<string, (token: string, cursor: string | null) => 
 
     return { results, next, upserted, errored }
   },
+
+  // ── APPOINTMENTS ──
+  appointments: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/appointments?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const a of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_appointments').upsert({
+          drchrono_appointment_id: a.id, drchrono_patient_id: a.patient || null, doctor: a.doctor || null,
+          office: a.office || null, scheduled_time: a.scheduled_time || null, duration: a.duration || null,
+          exam_room: a.exam_room || null, status: a.status || null, reason: a.reason || null, notes: a.notes || null,
+          appt_is_break: a.appt_is_break || false, recurring_appointment: a.recurring_appointment || false,
+          profile: a.profile || null, is_walk_in: a.is_walk_in || false,
+          drchrono_created_at: a.created_at || null, drchrono_updated_at: a.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_appointment_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── DOCUMENTS ──
+  documents: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/documents?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const d of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_documents').upsert({
+          drchrono_document_id: d.id, drchrono_patient_id: d.patient || null,
+          description: d.description || null, document_type: d.document_type || null,
+          document_url: d.document || null, date: d.date || null, metatags: d.metatags || null,
+          doctor: d.doctor || null, drchrono_updated_at: d.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_document_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── LAB ORDERS ──
+  lab_orders: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/lab_orders?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const l of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_lab_orders').upsert({
+          drchrono_lab_order_id: l.id, drchrono_patient_id: l.patient || null, doctor: l.doctor || null,
+          requisition_id: l.requisition_id || null, status: l.status || null, notes: l.notes || null,
+          priority: l.priority || 'normal', lab_type: l.type || null,
+          drchrono_created_at: l.created_at || null, drchrono_updated_at: l.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_lab_order_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── OFFICES ──
+  offices: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/offices?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const o of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_offices').upsert({
+          drchrono_office_id: o.id, name: o.name || null, address: o.address || null,
+          city: o.city || null, state: o.state || null, zip_code: o.zip_code || null,
+          phone_number: o.phone_number || null, fax_number: o.fax_number || null,
+          online_scheduling: o.online_scheduling || false, online_timezones: o.online_timezones || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_office_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── DOCTORS ──
+  doctors: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/doctors?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const d of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_doctors').upsert({
+          drchrono_doctor_id: d.id, first_name: d.first_name || null, last_name: d.last_name || null,
+          suffix: d.suffix || null, specialty: d.specialty || null, email: d.email || null,
+          job_title: d.job_title || null, npi_number: d.npi_number || null,
+          practice_group: d.practice_group || null, profile_picture: d.profile_picture || null,
+          is_account_suspended: d.is_account_suspended || false,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_doctor_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── TASKS ──
+  tasks: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/tasks?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const t of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_tasks').upsert({
+          drchrono_task_id: t.id, title: t.title || null, body: t.body || null,
+          status: t.status || null, category: t.category || null,
+          due_date: t.due_date || null, assignee_user: t.assignee_user || null,
+          associated_items: t.associated_items || null,
+          drchrono_created_at: t.created_at || null, drchrono_updated_at: t.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_task_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── PATIENT PAYMENTS ──
+  patient_payments: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/patient_payments?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const p of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_patient_payments').upsert({
+          drchrono_payment_id: p.id, drchrono_patient_id: p.patient || null,
+          amount: p.amount || null, payment_method: p.payment_method || null,
+          posted_date: p.posted_date || null, trace_number: p.trace_number || null,
+          notes: p.notes || null, appointment: p.appointment || null, doctor: p.doctor || null,
+          drchrono_created_at: p.created_at || null, drchrono_updated_at: p.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_payment_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── LINE ITEMS (Billing) ──
+  line_items: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/line_items?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const l of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_line_items').upsert({
+          drchrono_line_item_id: l.id, drchrono_patient_id: l.patient || null,
+          appointment: l.appointment || null, doctor: l.doctor || null,
+          code: l.code || null, description: l.description || null,
+          quantity: l.quantity || null, price: l.price || null,
+          procedure_type: l.procedure_type || null, service_date: l.service_date || null,
+          drchrono_created_at: l.created_at || null, drchrono_updated_at: l.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_line_item_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── TRANSACTIONS (Insurance) ──
+  transactions: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/transactions?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const t of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_transactions').upsert({
+          drchrono_transaction_id: t.id, drchrono_patient_id: t.patient || null,
+          doctor: t.doctor || null, appointment: t.appointment || null,
+          line_item: t.line_item || null, posted_date: t.posted_date || null,
+          amount: t.amount || null, adjustment_reason: t.adjustment_reason || null,
+          ins_name: t.ins_name || null, claim_status: t.claim_status || null,
+          drchrono_created_at: t.created_at || null, drchrono_updated_at: t.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_transaction_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── MESSAGES ──
+  messages: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/messages?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const m of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_messages').upsert({
+          drchrono_message_id: m.id, drchrono_patient_id: m.patient || null,
+          doctor: m.doctor || null, owner: m.owner || null, type: m.type || null,
+          subject: m.subject || null, body: m.body || null, read: m.read || false,
+          starred: m.starred || false, archived: m.archived || false,
+          drchrono_created_at: m.created_at || null, drchrono_updated_at: m.updated_at || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_message_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
+
+  // ── APPOINTMENT PROFILES (Templates) ──
+  appointment_profiles: async (token, cursor) => {
+    const url = cursor || 'https://app.drchrono.com/api/appointment_profiles?page_size=100'
+    const { results, next } = await fetchDrChronoPage(token, url)
+    let upserted = 0, errored = 0
+    for (const p of results) {
+      try {
+        const { error } = await supabaseAdmin.from('drchrono_appointment_profiles').upsert({
+          drchrono_profile_id: p.id, name: p.name || null, color: p.color || null,
+          duration: p.duration || null, reason: p.reason || null, online_scheduling: p.online_scheduling || false,
+          sort_order: p.sort_order || null,
+          last_synced_at: new Date().toISOString(),
+        }, { onConflict: 'drchrono_profile_id' })
+        if (error) { errored++ } else { upserted++ }
+      } catch { errored++ }
+    }
+    return { results, next, upserted, errored }
+  },
 }
 
 export async function POST(req: NextRequest) {

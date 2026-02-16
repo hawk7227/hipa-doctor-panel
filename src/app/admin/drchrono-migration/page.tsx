@@ -7,23 +7,37 @@ interface TableCount { [key: string]: number }
 interface SyncLog { id: number; sync_type: string; sync_mode: string; status: string; records_synced: number; records_errored: number; started_at: string; completed_at: string; metadata: any }
 
 const ENTITIES = [
-  { key: 'patients', label: 'Patients', icon: '👤', description: 'Demographics, contact info, insurance' },
-  { key: 'medications', label: 'Medications', icon: '💊', description: 'Active & historical medications' },
-  { key: 'allergies', label: 'Allergies', icon: '⚠️', description: 'Drug & environmental allergies' },
-  { key: 'problems', label: 'Problems', icon: '🏥', description: 'Active diagnoses & conditions' },
-  { key: 'lab_results', label: 'Lab Results', icon: '🧪', description: 'Lab orders & results' },
-  { key: 'clinical_notes', label: 'Clinical Notes', icon: '📋', description: 'Visit notes & documentation' },
-  { key: 'vaccines', label: 'Vaccines', icon: '💉', description: 'Immunization records' },
+  // ── Patient Core ──
+  { key: 'patients', label: 'Patients', icon: '👤', description: 'Demographics, contact, insurance', group: 'Patient Core' },
+  { key: 'medications', label: 'Medications', icon: '💊', description: 'Active & historical medications', group: 'Patient Core' },
+  { key: 'allergies', label: 'Allergies', icon: '⚠️', description: 'Drug & environmental allergies', group: 'Patient Core' },
+  { key: 'problems', label: 'Problems', icon: '🏥', description: 'Active diagnoses & conditions', group: 'Patient Core' },
+  { key: 'vaccines', label: 'Vaccines', icon: '💉', description: 'Immunization records', group: 'Patient Core' },
+  // ── Clinical ──
+  { key: 'appointments', label: 'Appointments', icon: '📅', description: 'All appointment records', group: 'Clinical' },
+  { key: 'clinical_notes', label: 'Clinical Notes', icon: '📋', description: 'Visit notes & documentation', group: 'Clinical' },
+  { key: 'lab_orders', label: 'Lab Orders', icon: '📝', description: 'Lab order requests', group: 'Clinical' },
+  { key: 'lab_results', label: 'Lab Results', icon: '🧪', description: 'Lab test results', group: 'Clinical' },
+  { key: 'documents', label: 'Documents', icon: '📄', description: 'Patient documents & files', group: 'Clinical' },
+  // ── Practice ──
+  { key: 'doctors', label: 'Providers', icon: '🩺', description: 'Doctor/provider records', group: 'Practice' },
+  { key: 'offices', label: 'Offices', icon: '🏢', description: 'Office locations & info', group: 'Practice' },
+  { key: 'appointment_profiles', label: 'Appt Profiles', icon: '📑', description: 'Appointment type templates', group: 'Practice' },
+  { key: 'tasks', label: 'Tasks', icon: '✅', description: 'Staff tasks & to-dos', group: 'Practice' },
+  { key: 'messages', label: 'Messages', icon: '✉️', description: 'Patient & internal messages', group: 'Practice' },
+  // ── Billing ──
+  { key: 'patient_payments', label: 'Payments', icon: '💳', description: 'Patient payment records', group: 'Billing' },
+  { key: 'line_items', label: 'Line Items', icon: '🧾', description: 'Billing codes & charges', group: 'Billing' },
+  { key: 'transactions', label: 'Transactions', icon: '💰', description: 'Insurance transactions & claims', group: 'Billing' },
 ]
 
 const TABLE_MAP: Record<string, string> = {
-  patients: 'drchrono_patients',
-  medications: 'drchrono_medications',
-  allergies: 'drchrono_allergies',
-  problems: 'drchrono_problems',
-  lab_results: 'drchrono_lab_results',
-  clinical_notes: 'drchrono_clinical_notes',
-  vaccines: 'drchrono_vaccines',
+  patients: 'drchrono_patients', medications: 'drchrono_medications', allergies: 'drchrono_allergies',
+  problems: 'drchrono_problems', lab_results: 'drchrono_lab_results', clinical_notes: 'drchrono_clinical_notes',
+  vaccines: 'drchrono_vaccines', appointments: 'drchrono_appointments', documents: 'drchrono_documents',
+  lab_orders: 'drchrono_lab_orders', offices: 'drchrono_offices', doctors: 'drchrono_doctors',
+  tasks: 'drchrono_tasks', patient_payments: 'drchrono_patient_payments', line_items: 'drchrono_line_items',
+  transactions: 'drchrono_transactions', messages: 'drchrono_messages', appointment_profiles: 'drchrono_appointment_profiles',
 }
 
 export default function DrChronoMigrationPage() {
@@ -184,47 +198,47 @@ export default function DrChronoMigrationPage() {
         )}
       </div>
 
-      {/* Entity cards */}
-      <div className="space-y-2 mb-6">
-        <h2 className="text-sm font-bold text-gray-400 mb-2">Data Types</h2>
-        {ENTITIES.map(e => {
-          const count = tableCounts[TABLE_MAP[e.key]] || 0
-          const progress = syncProgress[e.key]
-          const isSyncing = syncing === e.key
-          return (
-            <div key={e.key} className={`bg-[#0a1f1f] border rounded-xl p-4 flex items-center gap-4 ${isSyncing ? 'border-teal-500/40' : 'border-[#1a3d3d]'}`}>
-              <div className="text-2xl">{e.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold">{e.label}</span>
-                  {count > 0 && <CheckCircle className="w-3.5 h-3.5 text-green-400" />}
-                </div>
-                <div className="text-[10px] text-gray-500">{e.description}</div>
-                {progress && (
-                  <div className="mt-1 flex items-center gap-2">
-                    {progress.running && <RefreshCw className="w-3 h-3 text-teal-400 animate-spin" />}
-                    <span className="text-[10px] text-teal-400">{progress.synced.toLocaleString()} synced</span>
-                    {progress.errored > 0 && <span className="text-[10px] text-red-400">{progress.errored} errors</span>}
-                    <span className="text-[10px] text-gray-600">({progress.pages} pages)</span>
+      {/* Entity cards — grouped */}
+      {['Patient Core', 'Clinical', 'Practice', 'Billing'].map(group => (
+        <div key={group} className="mb-4">
+          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">{group}</h2>
+          <div className="space-y-1.5">
+            {ENTITIES.filter(e => e.group === group).map(e => {
+              const count = tableCounts[TABLE_MAP[e.key]] || 0
+              const progress = syncProgress[e.key]
+              const isSyncing = syncing === e.key
+              return (
+                <div key={e.key} className={`bg-[#0a1f1f] border rounded-xl p-3 flex items-center gap-3 ${isSyncing ? 'border-teal-500/40' : 'border-[#1a3d3d]'}`}>
+                  <div className="text-lg">{e.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">{e.label}</span>
+                      {count > 0 && <CheckCircle className="w-3 h-3 text-green-400" />}
+                    </div>
+                    <div className="text-[9px] text-gray-600">{e.description}</div>
+                    {progress && (
+                      <div className="mt-0.5 flex items-center gap-2">
+                        {progress.running && <RefreshCw className="w-2.5 h-2.5 text-teal-400 animate-spin" />}
+                        <span className="text-[9px] text-teal-400">{progress.synced.toLocaleString()} synced</span>
+                        {progress.errored > 0 && <span className="text-[9px] text-red-400">{progress.errored} err</span>}
+                        <span className="text-[9px] text-gray-600">p{progress.pages}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="text-right shrink-0">
-                <div className={`text-lg font-bold ${count > 0 ? 'text-white' : 'text-gray-600'}`}>{count.toLocaleString()}</div>
-                <div className="text-[9px] text-gray-600">records</div>
-              </div>
-              <button
-                onClick={() => runFullSync(e.key)}
-                disabled={syncing !== null || drchronoStatus === 'expired'}
-                className="px-3 py-1.5 bg-teal-600/20 text-teal-400 rounded-lg text-xs font-medium hover:bg-teal-600/30 disabled:opacity-30 shrink-0 flex items-center gap-1"
-              >
-                {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                {count > 0 ? 'Re-sync' : 'Sync'}
-              </button>
-            </div>
-          )
-        })}
-      </div>
+                  <div className="text-right shrink-0 min-w-[60px]">
+                    <div className={`text-sm font-bold ${count > 0 ? 'text-white' : 'text-gray-600'}`}>{count.toLocaleString()}</div>
+                  </div>
+                  <button onClick={() => runFullSync(e.key)} disabled={syncing !== null || drchronoStatus === 'expired'}
+                    className="px-2.5 py-1 bg-teal-600/20 text-teal-400 rounded-lg text-[10px] font-medium hover:bg-teal-600/30 disabled:opacity-30 shrink-0 flex items-center gap-1">
+                    {isSyncing ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Play className="w-2.5 h-2.5" />}
+                    {count > 0 ? 'Re-sync' : 'Sync'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
 
       {/* Recent sync logs */}
       <div className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-xl p-4">

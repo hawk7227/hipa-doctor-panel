@@ -45,17 +45,16 @@ export async function GET(req: NextRequest) {
     // Get record counts for each synced table
     const tableCounts: Record<string, number> = {}
     const tables = [
-      'drchrono_patients',
-      'drchrono_medications',
-      'drchrono_allergies',
-      'drchrono_problems',
-      'drchrono_appointments',
-      'drchrono_clinical_notes',
-      'drchrono_lab_orders',
-      'drchrono_lab_results',
-      'drchrono_vaccines',
-      'drchrono_documents',
-      'drchrono_procedures',
+      'drchrono_patients', 'drchrono_medications', 'drchrono_allergies',
+      'drchrono_problems', 'drchrono_appointments', 'drchrono_clinical_notes',
+      'drchrono_lab_orders', 'drchrono_lab_results', 'drchrono_vaccines',
+      'drchrono_documents', 'drchrono_procedures',
+      'drchrono_doctors', 'drchrono_offices', 'drchrono_appointment_profiles',
+      'drchrono_tasks', 'drchrono_messages',
+      'drchrono_patient_payments', 'drchrono_line_items', 'drchrono_transactions',
+      'drchrono_amendments', 'drchrono_communications', 'drchrono_custom_demographics',
+      'drchrono_lab_tests', 'drchrono_reminder_profiles', 'drchrono_task_categories',
+      'drchrono_users',
     ]
 
     for (const table of tables) {
