@@ -197,9 +197,9 @@ export async function GET(req: NextRequest) {
 
   // Search all sources in parallel
   const [drchronoResults, localResults, drchronoLocalResults] = await Promise.all([
-    searchDrChrono(type, parsed),
-    searchLocal(type, parsed),
-    searchDrChronoLocal(type, parsed),
+    searchDrChrono(type, parsed).catch(e => { console.error('[PatientSearch] DrChrono API failed:', e); return [] }),
+    searchLocal(type, parsed).catch(e => { console.error('[PatientSearch] Local search failed:', e); return [] }),
+    searchDrChronoLocal(type, parsed).catch(e => { console.error('[PatientSearch] DrChrono local failed:', e); return [] }),
   ])
 
   // Normalize all results
