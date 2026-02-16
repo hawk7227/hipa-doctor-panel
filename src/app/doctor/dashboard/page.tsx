@@ -86,7 +86,7 @@ export default function DoctorDashboard() {
         ])
         const collected = (paysR.data || []).filter((p: any) => !p.voided).reduce((s: number, p: any) => s + (p.amount || 0), 0)
         const charges = (claimsR.data || []).reduce((s: number, c: any) => s + (c.total_charge || 0), 0)
-        setRevenue({ collected, outstanding: charges - collected, pendingLabs: (labsR.data || []).length, pendingAuths: (authsR.data || []).length })
+        setRevenue({ collected, outstanding: charges - collected, pendingLabs: labs.length, pendingAuths: auths.length })
       } catch (e) { console.error('Inbox:', e) }
     } catch (err) { console.error('Dashboard:', err) }
     finally { setLoading(false) }
