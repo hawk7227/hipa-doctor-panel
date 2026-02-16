@@ -239,18 +239,34 @@ export default function PatientSearchBar() {
           <div className="max-h-[50vh] overflow-y-auto">
             {/* Empty state */}
             {results.length === 0 && query.length >= 2 && !loading && (
-              <div className="px-4 py-8 text-center">
+              <div className="px-4 py-6 text-center">
                 <User className="w-8 h-8 text-gray-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-400">No patients found</p>
                 <p className="text-xs text-gray-600 mt-1">Try a different name, DOB, email, or phone</p>
                 {searchMeta && (
-                  <div className="mt-3 space-y-1">
+                  <div className="mt-3 space-y-2">
                     <p className="text-[10px] text-gray-600">Sources searched:</p>
                     <div className="flex justify-center gap-2 flex-wrap">
                       <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.drchrono_api > 0 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>DrChrono API: {searchMeta.sources.drchrono_api}</span>
                       <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.drchrono_local > 0 ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>DrChrono DB: {searchMeta.sources.drchrono_local}</span>
                       <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.local > 0 ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>Local: {searchMeta.sources.local}</span>
                     </div>
+                    {searchMeta.sources.drchrono_api === 0 && searchMeta.sources.drchrono_local === 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-[10px] text-amber-400">⚠️ DrChrono may need re-authorization or patient sync</p>
+                        <button onClick={async () => {
+                          try {
+                            setLoading(true)
+                            const res = await fetch('/api/drchrono/bulk-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'patients' }) })
+                            const data = await res.json()
+                            alert(data.error ? `Sync failed: ${data.error}` : `Synced ${data.patients?.upserted || 0} patients. Search again.`)
+                          } catch (e: any) { alert('Sync error: ' + e.message) }
+                          finally { setLoading(false) }
+                        }} className="px-3 py-1.5 bg-teal-600/20 text-teal-400 text-[10px] rounded-lg hover:bg-teal-600/30 font-medium">
+                          🔄 Sync Patients from DrChrono
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
