@@ -174,12 +174,13 @@ export default function FloatingMessenger() {
 
   // ═══ FETCH ═══
   const fetchAdminMsgs = useCallback(async () => {
-    if (!adminConv) return
+    if (!adminConv?.id) return
     try {
       const res = await fetch(`/api/admin/messaging?action=messages&conversationId=${adminConv.id}`)
-      setAdminMsgs((await res.json()).messages || [])
+      const d = await res.json()
+      setAdminMsgs(d.messages || [])
       setTimeout(() => adminEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-    } catch {}
+    } catch (e) { console.error('fetchAdminMsgs:', e) }
   }, [adminConv])
 
   const fetchStaffMsgs = useCallback(async (convId: string) => {
@@ -192,10 +193,22 @@ export default function FloatingMessenger() {
 
   // ═══ SEND ═══
   const sendAdmin = async () => {
-    if (!adminConv || !adminMsg.trim()) return
-    await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: adminConv.id, senderType: 'doctor', senderName: doctorName, content: adminMsg, attachments: pending.length > 0 ? pending : undefined }) })
-    if (soundEnabled) playSound(soundTheme, 'send')
-    setAdminMsg(''); setPending([]); fetchAdminMsgs()
+    if (!adminMsg.trim() || !doctorId) return
+    try {
+      let convId = adminConv?.id
+      // Auto-create conversation if none exists
+      if (!convId) {
+        const createRes = await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create_conversation', doctorId, doctorName, doctorSpecialty: '' }) })
+        const createData = await createRes.json()
+        if (createData.conversation) { setAdminConv(createData.conversation); convId = createData.conversation.id }
+        else { console.error('Failed to create conversation:', createData); return }
+      }
+      const res = await fetch('/api/admin/messaging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', conversationId: convId, senderType: 'doctor', senderName: doctorName, content: adminMsg, attachments: pending.length > 0 ? pending : undefined }) })
+      const data = await res.json()
+      if (data.error) { console.error('Send error:', data.error); return }
+      if (soundEnabled) playSound(soundTheme, 'send')
+      setAdminMsg(''); setPending([]); fetchAdminMsgs()
+    } catch (e) { console.error('sendAdmin error:', e) }
   }
   const sendStaff = async () => {
     if (!activeStaffConv || !staffMsg.trim() || !staffId || !doctorId) return
