@@ -634,11 +634,28 @@ export async function POST(req: NextRequest) {
   // Verify cron secret (optional security)
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
-  // Allow: matching cron secret, admin-triggered calls, or dev mode
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && authHeader !== 'Bearer admin-triggered') {
-    if (process.env.NODE_ENV !== 'development') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  
+  // Allow: matching cron secret, admin-triggered, or valid doctor Bearer token
+  let authorized = false
+  if (!cronSecret) authorized = true // no secret configured = allow all
+  if (authHeader === `Bearer ${cronSecret}`) authorized = true
+  if (authHeader === 'Bearer admin-triggered') authorized = true
+  
+  // Also allow doctor auth via Bearer token
+  if (!authorized && authHeader?.startsWith('Bearer ')) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const supabaseAuth = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+      const { data: { user } } = await supabaseAuth.auth.getUser(authHeader.substring(7))
+      if (user?.email) {
+        const { data: doc } = await supabaseAdmin.from('doctors').select('id').eq('email', user.email).single()
+        if (doc) authorized = true
+      }
+    } catch {}
+  }
+
+  if (!authorized) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const startTime = Date.now()

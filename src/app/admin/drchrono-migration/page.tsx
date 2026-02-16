@@ -101,7 +101,7 @@ export default function DrChronoMigrationPage() {
     setSyncError(null)
     try {
       const token = await getToken()
-      const res = await fetch('/api/drchrono/sync-all', {
+      const res = await fetch('/api/drchrono/cron-sync', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       })
