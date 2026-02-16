@@ -68,7 +68,10 @@ export default function DrChronoMigrationPage() {
         const data = await res.json()
         setTableCounts(data.table_counts || {})
         setSyncLogs(data.syncs || [])
-        setDrchronoStatus('connected')
+        // Use actual token health check from API
+        if (data.token_status === 'valid') setDrchronoStatus('connected')
+        else if (data.token_status === 'expired') setDrchronoStatus('expired')
+        else setDrchronoStatus('expired') // missing = expired
       } else if (res.status === 401) {
         setDrchronoStatus('expired')
       }
@@ -89,10 +92,13 @@ export default function DrChronoMigrationPage() {
     }
   }, [loading, drchronoStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [syncError, setSyncError] = useState<string | null>(null)
+
   // ── SYNC ALL 25 entities at once via cron-sync ──
   const syncAll = async () => {
     setSyncing('all')
     setSyncResult(null)
+    setSyncError(null)
     try {
       const token = await getToken()
       const res = await fetch('/api/drchrono/sync-all', {
@@ -101,9 +107,15 @@ export default function DrChronoMigrationPage() {
       })
       const data = await res.json()
       setSyncResult(data)
-      if (!res.ok) alert(data.error || 'Sync failed')
+      if (!res.ok) {
+        const errMsg = data.error || 'Sync failed'
+        setSyncError(errMsg)
+        if (errMsg.includes('token') || errMsg.includes('Token') || res.status === 401) {
+          setDrchronoStatus('expired')
+        }
+      }
     } catch (e: any) {
-      alert('Sync error: ' + e.message)
+      setSyncError(e.message || 'Network error')
     }
     setSyncing(null)
     fetchStatus()
@@ -193,8 +205,14 @@ export default function DrChronoMigrationPage() {
           {syncing === 'all' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
           {syncing === 'all' ? 'Syncing All 25 Types...' : 'Sync Everything Now'}
         </button>
-        {syncing === 'all' && <span className="text-xs text-teal-400 animate-pulse">This may take up to 5 minutes...</span>}
-        {syncResult && !syncing && (
+        {syncing === 'all' && <span className="text-xs text-teal-400 animate-pulse">Syncing all 25 types — may take up to 5 minutes...</span>}
+        {syncError && !syncing && (
+          <div className="text-xs text-red-400 bg-red-600/10 border border-red-500/20 px-3 py-1.5 rounded-lg">
+            ⚠️ {syncError}
+            {syncError.toLowerCase().includes('token') && <a href="/api/drchrono/auth" className="ml-2 text-red-300 underline">Re-authorize →</a>}
+          </div>
+        )}
+        {syncResult && !syncing && !syncError && (
           <div className="text-xs text-gray-400">
             Last sync: <span className="text-green-400">{syncResult.total_upserted?.toLocaleString()} records</span> in {((syncResult.total_elapsed_ms || 0) / 1000).toFixed(1)}s
           </div>

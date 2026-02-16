@@ -76,10 +76,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Check DrChrono token health
+    let tokenStatus: 'valid' | 'expired' | 'missing' = 'missing'
+    try {
+      const { data: tokenData } = await supabaseAdmin
+        .from('drchrono_tokens')
+        .select('access_token, expires_at')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      
+      if (tokenData) {
+        const expiresAt = new Date(tokenData.expires_at).getTime()
+        tokenStatus = Date.now() < expiresAt - 60000 ? 'valid' : 'expired'
+      }
+    } catch {}
+
     return NextResponse.json({
       syncs: data || [],
       table_counts: tableCounts,
       last_sync: data && data.length > 0 ? data[0] : null,
+      token_status: tokenStatus,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
