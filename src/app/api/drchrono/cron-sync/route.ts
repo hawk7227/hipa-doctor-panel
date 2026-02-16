@@ -675,13 +675,13 @@ export async function POST(req: NextRequest) {
     'reminder_profiles', 'custom_demographics',
     // Medium clinical/practice data
     'tasks', 'amendments', 'messages',
-    // Patient data (can be large)
-    'patients', 'appointments', 'documents',
-    'allergies', 'problems', 'vaccines', 'patient_communications',
-    // Large clinical data
-    'medications', 'clinical_notes', 'lab_orders', 'lab_results', 'lab_tests',
-    // Large billing data (often biggest tables)
+    // PRIORITY: These need initial full sync (currently 0 records)
+    'appointments', 'documents', 'clinical_notes', 'lab_orders', 'lab_results', 'lab_tests',
+    'vaccines', 'patient_communications',
+    // Billing (may need initial sync)
     'line_items', 'transactions', 'patient_payments',
+    // Large tables that already have data (incremental only)
+    'patients', 'allergies', 'problems', 'medications',
   ]
 
   const TIME_BUDGET_MS = 270_000 // 4.5 minutes — leave 30s buffer for response + logging
@@ -696,7 +696,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  for (const [entityName, config] of orderedEntities) {
+  // Smart reorder: check which tables are empty and prioritize them
+  // This ensures initial sync completes for all types across multiple cron runs
+  const emptyFirst: typeof orderedEntities = []
+  const populated: typeof orderedEntities = []
+  for (const entry of orderedEntities) {
+    const { count } = await supabaseAdmin.from(entry[1].table).select('*', { count: 'exact', head: true })
+    if (!count || count === 0) {
+      emptyFirst.push(entry)
+    } else {
+      populated.push(entry)
+    }
+  }
+  const smartOrdered = [...emptyFirst, ...populated]
+  console.log(`[CronSync] Order: ${emptyFirst.length} empty tables first, then ${populated.length} populated`)
+
+  for (const [entityName, config] of smartOrdered) {
     // Check time budget before starting entity
     const elapsed = Date.now() - startTime
     if (elapsed > TIME_BUDGET_MS) {
