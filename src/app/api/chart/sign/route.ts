@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
+import { fireAutoRouting } from '@/lib/auto-routing'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     // Fetch current appointment
     const { data: appointment, error: fetchErr } = await supabaseAdmin
       .from('appointments')
-      .select('id, chart_status, is_locked')
+      .select('id, chart_status, is_locked, doctor_id, patient_id')
       .eq('id', appointmentId)
       .single()
 
@@ -73,6 +74,16 @@ export async function POST(req: NextRequest) {
       ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null,
       user_agent: req.headers.get('user-agent') || null,
     })
+
+    // Fire auto-routing rules (create tasks for assistants)
+    const routingResult = await fireAutoRouting(
+      'on_sign',
+      appointment.doctor_id,
+      appointmentId,
+      appointment.patient_id || null,
+      providerName,
+    )
+    console.log(`[Chart/Sign] Auto-routing: ${routingResult.tasksCreated} tasks created`)
 
     return NextResponse.json({
       success: true,

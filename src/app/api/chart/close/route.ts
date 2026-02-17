@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
 import { generateClinicalNotePDF } from '@/lib/generateClinicalNotePDF'
+import { fireAutoRouting } from '@/lib/auto-routing'
 import type { ClinicalNotePDFInput, SOAPNotes } from '@/lib/generateClinicalNotePDF'
 
 const supabaseAdmin = createClient(
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       .from('appointments')
       .select(`
         id, chart_status, is_locked, chart_signed_at, chart_signed_by,
+        doctor_id, patient_id,
         scheduled_time, visit_type, reason,
         soap_notes, doctor_notes,
         patient_name, patient_email, patient_phone, patient_dob,
@@ -218,6 +220,16 @@ export async function POST(req: NextRequest) {
     ])
 
     console.log(`[Chart/Close] Chart closed. PDF: ${fileName} (${pdfBytes.length} bytes)`)
+
+    // Fire auto-routing rules (create tasks for assistants on close)
+    const routingResult = await fireAutoRouting(
+      'on_close',
+      appointment.doctor_id || '',
+      appointmentId,
+      appointment.patient_id || null,
+      providerName,
+    )
+    console.log(`[Chart/Close] Auto-routing: ${routingResult.tasksCreated} tasks created`)
 
     return NextResponse.json({
       success: true,

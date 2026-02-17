@@ -95,12 +95,25 @@ export async function POST(req: NextRequest) {
       reason: reason?.trim() || null,
       details: {
         unlocked_at: now,
-        previous_status: 'signed',
+        previous_status: appointment.chart_status,
         new_status: 'draft',
       },
       ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || null,
       user_agent: req.headers.get('user-agent') || null,
     })
+
+    // Auto-create addendum documenting the unlock (HIPAA compliance)
+    if (appointment.chart_status === 'closed' || appointment.chart_status === 'amended' || appointment.chart_status === 'signed') {
+      await supabaseAdmin.from('chart_addendums').insert({
+        appointment_id: appointmentId,
+        addendum_type: 'late_entry',
+        text: `Chart unlocked from "${appointment.chart_status}" status. Reason: ${reason?.trim() || 'No reason provided'}`,
+        reason: reason?.trim() || 'Chart reopened for editing',
+        created_by_name: providerName,
+        created_by_role: providerRole || 'provider',
+      }).catch(err => console.error('[Chart/Unlock] Auto-addendum error:', err))
+      console.log(`[Chart/Unlock] Auto-addendum created for unlock of ${appointment.chart_status} chart`)
+    }
 
     console.log(`[Chart/Unlock] Chart ${appointmentId} unlocked by ${providerName}. Reason: ${reason}`)
 
