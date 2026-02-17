@@ -58,11 +58,11 @@ export default function AdminAppointmentsPage() {
                 <td className="px-4 py-3 text-gray-400">Dr. {a.doctors?.first_name} {a.doctors?.last_name}</td>
                 <td className="px-4 py-3 text-gray-400">{a.requested_date_time ? new Date(a.requested_date_time).toLocaleString() : '—'}</td>
                 <td className="px-4 py-3">{
-                  a.visit_type === 'video' ? <Video className="w-4 h-4 text-blue-400" title="Video Visit" /> 
-                  : a.visit_type === 'phone' ? <Phone className="w-4 h-4 text-green-400" title="Phone Visit" />
-                  : a.visit_type === 'instant' ? <Zap className="w-4 h-4 text-yellow-400" title="Instant Visit (Async)" />
-                  : a.visit_type === 'refill' ? <Pill className="w-4 h-4 text-purple-400" title="Rx Refill (Async)" />
-                  : <MessageSquare className="w-4 h-4 text-orange-400" title="Async Consultation" />
+                  a.visit_type === 'video' ? <span title="Video Visit"><Video className="w-4 h-4 text-blue-400" /></span>
+                  : a.visit_type === 'phone' ? <span title="Phone Visit"><Phone className="w-4 h-4 text-green-400" /></span>
+                  : a.visit_type === 'instant' ? <span title="Instant Visit (Async)"><Zap className="w-4 h-4 text-yellow-400" /></span>
+                  : a.visit_type === 'refill' ? <span title="Rx Refill (Async)"><Pill className="w-4 h-4 text-purple-400" /></span>
+                  : <span title="Async Consultation"><MessageSquare className="w-4 h-4 text-orange-400" /></span>
                 }</td>
                 <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${STATUS_COLORS[a.status] || 'bg-gray-600/20 text-gray-400'}`}>{a.status}</span></td>
               </tr>
