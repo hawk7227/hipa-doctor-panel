@@ -21,7 +21,7 @@ import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
   Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search, Radio,
-  FlaskConical, Pill, Bell, ShieldCheck, BarChart3, Brain, TrendingUp,
+  FlaskConical, Pill, Bell, ShieldCheck, BarChart3, Brain, TrendingUp, Megaphone,
 } from 'lucide-react'
 
 // ─── NAV ITEMS ───────────────────────────────────────────────
@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   { href: '/doctor/patients', label: 'Patients', icon: Users },
   { href: '/doctor/new-patient', label: 'New Patient', icon: UserPlus },
   { href: '/doctor/communication', label: 'Communication', icon: MessageSquare },
+  { href: '/doctor/campaigns', label: 'Campaigns', icon: Megaphone },
   { href: '/doctor/labs', label: 'Lab Orders', icon: FlaskConical },
   { href: '/doctor/prescriptions', label: 'Prescriptions', icon: Pill },
   { href: '/doctor/prior-auth', label: 'Prior Auth', icon: ShieldCheck },
