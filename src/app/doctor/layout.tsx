@@ -42,6 +42,7 @@ const NAV_ITEMS = [
 ] as const
 
 const ADMIN_ITEMS = [
+  { href: '/doctor/system-health', label: 'System Health', icon: Shield },
   { href: '/doctor/settings', label: 'Settings', icon: Settings },
   { href: '/doctor/settings/staff', label: 'Staff Management', icon: UsersRound },
   { href: '/doctor/staff-hub', label: 'Staff Hub', icon: Radio },
