@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
-import AppointmentDetailModal from '@/components/AppointmentDetailModal'
+import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
 
 interface Patient {
   id: string
@@ -2334,16 +2334,21 @@ const handleSuggestionClick = (patient: Patient) => {
         </div>
       )}
 
-      {/* Appointment Detail Modal */}
-      <AppointmentDetailModal
-        appointmentId={selectedAppointmentId}
-        isOpen={showAppointmentModal}
-        onClose={() => {
-          setShowAppointmentModal(false)
-          setSelectedAppointmentId(null)
-        }}
-        onStatusChange={handleAppointmentStatusChange}
-      />
+      {/* Workspace Canvas (replaces old modal) */}
+      {showAppointmentModal && (
+        <div className="fixed inset-0 z-50 bg-[#0a1118]">
+          <WorkspaceCanvas
+            appointmentId={selectedAppointmentId}
+            patientId={!selectedAppointmentId && selectedPatient ? selectedPatient.id : undefined}
+            isOpen={showAppointmentModal}
+            onClose={() => {
+              setShowAppointmentModal(false)
+              setSelectedAppointmentId(null)
+            }}
+            onStatusChange={handleAppointmentStatusChange}
+          />
+        </div>
+      )}
     </div>
   )
 }

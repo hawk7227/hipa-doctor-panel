@@ -611,7 +611,7 @@ export default function WorkspaceCanvas({
             rowHeight={ROW_HEIGHT}
             margin={MARGIN}
             containerPadding={[4, 4]}
-            dragConfig={{ handle: '.grid-drag-handle' }}
+            draggableHandle=".grid-drag-handle"
             onLayoutChange={handleLayoutChange as any}
           >
             {/* ── PATIENT INFO PANEL ── */}
@@ -886,6 +886,8 @@ export default function WorkspaceCanvas({
                 'ai-interactions': <AIInteractionsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'quality-measures': <QualityMeasuresPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'cohorts': <CohortsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'lab-results-inline': <LabResultsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
+                'referrals-followup': <PriorAuthPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
               }
 
               const content = PANEL_CONTENT[panelId]
