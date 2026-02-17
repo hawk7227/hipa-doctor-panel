@@ -315,8 +315,8 @@ export async function POST(req: NextRequest) {
               properties: {
                 enable_screenshare: true,
                 enable_chat: true,
-                enable_knocking: true,
-                enable_prejoin_ui: true,
+                enable_knocking: false,
+                enable_prejoin_ui: false,
                 start_audio_off: false,
                 start_video_off: false,
                 enable_recording: 'cloud', // Enable cloud recording
