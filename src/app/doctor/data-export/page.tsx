@@ -31,26 +31,12 @@ export default function DataExportPage() {
   const runSync = async () => {
     setSyncing(true); setError(null);
     try {
-      const res = await fetch("/api/export-patient-data");
+      const res = await fetch("/api/cron-export");
       const data = await res.json();
-      if (data.patients) {
-        const pts = data.patients;
-        await supabase.from("patient_data_exports").upsert({
-          id: "00000000-0000-0000-0000-000000000001",
-          export_type: "full_patient_data",
-          generated_at: new Date().toISOString(),
-          summary: {
-            total_patients: pts.length,
-            total_medications: pts.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0),
-            total_allergies: pts.reduce((s: number, p: any) => s + (p.allergies?.length || 0), 0),
-            total_problems: pts.reduce((s: number, p: any) => s + (p.problems?.length || 0), 0),
-            total_appointments: pts.reduce((s: number, p: any) => s + (p.appointments?.length || 0), 0),
-          },
-          patient_count: pts.length,
-          medication_count: pts.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0),
-          data: pts,
-        });
+      if (data.success) {
         await loadStatus();
+      } else {
+        setError(data.error || "Export failed");
       }
     } catch (e: any) { setError(e.message); }
     setSyncing(false);

@@ -321,20 +321,13 @@ function DataHealthTracker() {
   const runExport = async () => {
     setSyncing(true)
     try {
-      const res = await fetch('/api/export-patient-data')
+      // Use cron-export API — fetches and saves to Supabase server-side (no 7MB browser transfer)
+      const res = await fetch('/api/cron-export')
       const data = await res.json()
-      if (data.patients) {
-        // Save to Supabase
-        await supabase.from('patient_data_exports').upsert({
-          id: '00000000-0000-0000-0000-000000000001',
-          export_type: 'full_patient_data',
-          generated_at: new Date().toISOString(),
-          summary: data.export_info ? { total_patients: data.patients.length, total_medications: data.patients.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0), total_allergies: data.patients.reduce((s: number, p: any) => s + (p.allergies?.length || 0), 0), total_problems: data.patients.reduce((s: number, p: any) => s + (p.problems?.length || 0), 0), total_appointments: data.patients.reduce((s: number, p: any) => s + (p.appointments?.length || 0), 0) } : data.summary,
-          patient_count: data.patients?.length || data.summary?.total_patients || 0,
-          medication_count: data.patients?.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0) || data.summary?.total_medications || 0,
-          data: data.patients,
-        })
+      if (data.success) {
         await checkExportStatus()
+      } else {
+        console.error('Export error:', data.error)
       }
     } catch (e) { console.error('Export failed:', e) }
     setSyncing(false)
