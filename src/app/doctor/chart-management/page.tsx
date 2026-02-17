@@ -17,6 +17,28 @@ import {
   BarChart3, Users, AlertCircle, Eye, History,
   Unlock, UserCheck, GitBranch
 } from 'lucide-react'
+import InlinePanel from '@/components/InlinePanel'
+
+const CHART_HOW_TO = {
+  title: 'How to Use Chart Management',
+  description: 'Review, sign, close, and manage patient charts. HIPAA-compliant workflow with full audit trail.',
+  steps: [
+    'Charts appear in the table below — filter by status (Draft, Preliminary, Signed, Closed, Amended)',
+    'Click a chart row to expand and view details, SOAP notes summary, and actions',
+    'Use "Sign" to lock the chart — this makes it read-only and timestamps your signature',
+    'Use "Close" on signed charts to finalize them (no further edits without unlock)',
+    'To edit a signed/closed chart: click "Unlock" and provide a written reason (HIPAA required)',
+    'Use "Amend" to add an addendum to a signed chart without unlocking it',
+    'The audit trail tracks every action: who signed, when, unlock reasons, amendments',
+    'Use bulk actions (checkboxes) to sign or close multiple charts at once',
+  ],
+  tips: [
+    'Draft charts older than 48 hours show as "overdue" with red warning badges',
+    'The timeline view shows the full history of a chart from creation to close',
+    'All chart actions are logged in the audit system for HIPAA compliance',
+    'Charts flow: Draft → Preliminary → Signed → Closed. Each step is irreversible without unlock.',
+  ],
+}
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -431,6 +453,9 @@ export default function ChartManagementPage() {
           </div>
         )}
 
+        <InlinePanel title="Chart Management" icon={Shield} accentColor="#a855f7" howTo={CHART_HOW_TO} showHowToOnMount={false}>
+        <div className="p-4 space-y-5">
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -659,6 +684,7 @@ export default function ChartManagementPage() {
           <span>Last refreshed: {new Date().toLocaleTimeString()}</span>
         </div>
       </div>
+      </InlinePanel>
 
       {/* ═══ SIGN MODAL ═══ */}
       {signModal && (
@@ -898,6 +924,7 @@ export default function ChartManagementPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

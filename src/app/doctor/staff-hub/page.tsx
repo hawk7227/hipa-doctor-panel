@@ -16,6 +16,69 @@ import {
   PhoneCall, PhoneOff, VideoOff, Mic, MicOff,
   ChevronRight, Edit3, Trash2, Pin, Star, Archive
 } from 'lucide-react'
+import InlinePanel from '@/components/InlinePanel'
+
+const STAFF_HOW_TO = {
+  messages: {
+    title: 'How to Use Messages',
+    description: 'Internal messaging between staff members. All messages are logged for HIPAA compliance.',
+    steps: [
+      'Select a conversation from the left sidebar, or click "+" to start a new one',
+      'Type your message in the input box at the bottom and press Enter or click Send',
+      'Click the phone/video icons in the conversation header to start a call',
+      'Use the search bar to find specific conversations by name or content',
+      'Pin important conversations by clicking the pin icon',
+    ],
+    tips: [
+      'Unread message counts show as red badges on the Messages tab',
+      'You can create group conversations by adding multiple staff members',
+      'All messages are stored in Supabase and included in audit logs',
+    ],
+  },
+  tasks: {
+    title: 'How to Use Tasks',
+    description: 'Create, assign, and track tasks for your clinical team.',
+    steps: [
+      'Click "+ New Task" to create a task',
+      'Set the title, description, priority (low/medium/high/urgent), and due date',
+      'Assign the task to a specific staff member or leave unassigned',
+      'Click a task to view details, update status, or add comments',
+      'Filter tasks by status: pending, in-progress, completed, overdue',
+    ],
+    tips: [
+      'Overdue tasks show with a red border and alert icon',
+      'Task counts appear as badges on the Tasks tab',
+      'Completed tasks are kept for audit trail — they are never deleted',
+    ],
+  },
+  notifications: {
+    title: 'How to Use Alerts',
+    description: 'System notifications and alerts for your team.',
+    steps: [
+      'Notifications appear automatically when events occur (new messages, task updates, etc.)',
+      'Click a notification to navigate to the relevant item',
+      'Use "Mark all read" to clear notification badges',
+    ],
+    tips: [
+      'Critical alerts appear with red badges and require acknowledgment',
+      'Notification preferences can be configured in Settings',
+    ],
+  },
+  team: {
+    title: 'How to Use Team Management',
+    description: 'View and manage your clinical staff members.',
+    steps: [
+      'View all team members with their roles, contact info, and online status',
+      'Click a team member to view their profile and assigned tasks',
+      'Green dots indicate staff members who are currently online',
+      'Use the search bar to find specific staff members',
+    ],
+    tips: [
+      'Staff roles (Doctor, Nurse, Admin, Receptionist) control access permissions via RBAC',
+      'Online status is tracked via Supabase realtime presence',
+    ],
+  },
+}
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -585,6 +648,7 @@ export default function StaffHubPage() {
 
         {/* ═══ MESSAGES TAB ═══ */}
         {activeTab === 'messages' && (
+          <InlinePanel title="Messages" icon={MessageSquare} accentColor="#14b8a6" howTo={STAFF_HOW_TO.messages} showHowToOnMount={false}>
           <div className="flex h-[calc(100vh-130px)]">
             {/* Conversation List */}
             <div className={`${activeConv ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 border-r border-[#1a3d3d] bg-[#0d2626]`}>
@@ -747,10 +811,12 @@ export default function StaffHubPage() {
               )}
             </div>
           </div>
+          </InlinePanel>
         )}
 
         {/* ═══ TASKS TAB ═══ */}
         {activeTab === 'tasks' && (
+          <InlinePanel title="Tasks" icon={CheckSquare} accentColor="#f59e0b" howTo={STAFF_HOW_TO.tasks}>
           <div className="p-4 space-y-4 max-h-[calc(100vh-130px)] overflow-y-auto">
             {/* Task Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -849,10 +915,12 @@ export default function StaffHubPage() {
               )}
             </div>
           </div>
+          </InlinePanel>
         )}
 
         {/* ═══ NOTIFICATIONS TAB ═══ */}
         {activeTab === 'notifications' && (
+          <InlinePanel title="Notifications & Alerts" icon={Bell} accentColor="#ef4444" howTo={STAFF_HOW_TO.notifications}>
           <div className="p-4 space-y-3 max-h-[calc(100vh-130px)] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-white">Notifications ({notifUnread} unread)</h2>
@@ -905,10 +973,12 @@ export default function StaffHubPage() {
               })
             )}
           </div>
+          </InlinePanel>
         )}
 
         {/* ═══ TEAM TAB ═══ */}
         {activeTab === 'team' && (
+          <InlinePanel title="Team Management" icon={Users} accentColor="#8b5cf6" howTo={STAFF_HOW_TO.team}>
           <div className="p-4 space-y-4 max-h-[calc(100vh-130px)] overflow-y-auto">
             <h2 className="text-sm font-bold text-white">Team Members ({allStaff.length})</h2>
             <div className="grid gap-2">
@@ -962,6 +1032,7 @@ export default function StaffHubPage() {
               })}
             </div>
           </div>
+          </InlinePanel>
         )}
       </div>
 
