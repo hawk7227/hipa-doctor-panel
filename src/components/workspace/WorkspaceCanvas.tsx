@@ -325,8 +325,16 @@ export default function WorkspaceCanvas({
         const bottom = (item.y || 0) + (item.h || 6)
         if (bottom > maxBottom) maxBottom = bottom
       }
-      const panelItems: LayoutItem[] = openPanels
-        .filter(pid => !base.some(b => b.i === pid))
+      const newPanelIds = openPanels.filter(pid => !base.some(b => b.i === pid))
+      // New panels go at TOP (y:0), push existing base items down
+      const newPanelHeight = newPanelIds.length > 0 ? 8 : 0
+      const totalNewRows = Math.ceil(newPanelIds.length / Math.max(1, Math.floor((COLS[bp] || 12) / (bp === 'xxs' ? 1 : bp === 'xs' ? 2 : bp === 'sm' ? 4 : 6))))
+      const pushDown = totalNewRows * newPanelHeight
+      // Shift existing base items down to make room
+      const shiftedBase: LayoutItem[] = newPanelIds.length > 0
+        ? base.map(item => ({ ...item, y: (item.y || 0) + pushDown }))
+        : base
+      const panelItems: LayoutItem[] = newPanelIds
         .map((pid, idx) => {
           const cols = COLS[bp] || 12
           const w = bp === 'xxs' ? 1 : bp === 'xs' ? 2 : bp === 'sm' ? 4 : Math.min(6, cols)
@@ -336,14 +344,14 @@ export default function WorkspaceCanvas({
           return {
             i: pid,
             x: col * w,
-            y: maxBottom + row * 8,
+            y: row * 8,
             w,
             h: 8,
             minW: bp === 'xxs' ? 1 : 2,
             minH: 4,
           } as LayoutItem
         })
-      merged[bp] = [...base, ...panelItems]
+      merged[bp] = [...shiftedBase, ...panelItems]
     }
     return merged as unknown as ResponsiveLayouts
   }, [baseLayouts, openPanels])
