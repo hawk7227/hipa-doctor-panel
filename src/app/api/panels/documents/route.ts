@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
   try {
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
 
     // DrChrono documents
     let drchronoDocs: any[] = []
@@ -81,10 +81,10 @@ export async function POST(req: NextRequest) {
       const body = await req.json()
       const { patient_id, description, document_type, file_url, file_name, tags, doctor_id, uploaded_by } = body
       if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
+      const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
 
       const { data, error } = await db.from('patient_documents').insert({
-        patient_id,
+        patient_id: resolvedUuid || patient_id,
         description: description || file_name || 'Document',
         document_type: document_type || 'general',
         file_url,

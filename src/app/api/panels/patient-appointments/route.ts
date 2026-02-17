@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
   const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
   try {
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
     const { data, error } = await db.from('appointments').select('id, status, visit_type, chief_complaint, requested_date_time, chart_status, reason, created_at').eq('patient_id', resolvedUuid || patient_id).order('requested_date_time', { ascending: false }).limit(50)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

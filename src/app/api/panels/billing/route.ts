@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   const type = req.nextUrl.searchParams.get('type') || 'claims'
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
   try {
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
     if (type === 'payments') {
       const { data } = await db.from('billing_payments').select('*').eq('patient_id', resolvedUuid || patient_id).order('payment_date', { ascending: false })
       return NextResponse.json({ data: data || [], drchrono_data: [] })

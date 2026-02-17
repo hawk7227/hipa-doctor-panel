@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
   try {
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
     const { data: patient } = await db.from('patients').select('*').eq('id', resolvedUuid || patient_id).single()
     let dcPatient: any = null
     if (dcId) {
