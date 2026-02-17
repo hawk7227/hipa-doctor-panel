@@ -1,3 +1,5 @@
+'use client';
+
 // ============================================================================
 // src/app/doctor/campaigns/page.tsx
 // MEDAZON HEALTH — SET & FORGET PATIENT RETENTION ENGINE
@@ -6,8 +8,6 @@
 // Wired to real patient data via /api/campaigns/patients
 // 10 automated flows • Email + SMS • Real 2025/2026 healthcare data
 // ============================================================================
-
-'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
