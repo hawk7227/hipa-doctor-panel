@@ -28,6 +28,7 @@ Critical files have `BUILD_HISTORY` comments at the bottom documenting what was 
 - [ ] After fixing a bug, ADD a new entry to FIX_HISTORY in the manifest
 
 ### 5. KNOWN CRITICAL RULES
+- **NEVER DELETE FILES OR CODE** — Do not remove, rename, or delete any file or code without explicit written permission from the project owner (Marcus). This includes comments, console.logs, imports, unused functions, and "dead code". If you think something should be removed, ASK FIRST and wait for approval.
 - **MINIMAL CHANGES** — Fix X = only X. Never remove code/comments/logs.
 - **RLS is DISABLED** on all drchrono_* tables — DO NOT re-enable
 - **Interface names MUST match DB columns** (created_at not createdAt)
@@ -64,3 +65,7 @@ If you are an AI assistant (Claude, GPT, Copilot, etc):
 3. You MUST update BUILD_HISTORY after making changes
 4. You MUST add new fixes to FIX_HISTORY in the manifest
 5. You MUST NOT proceed until you confirm you have read the above
+6. You MUST NOT delete, remove, or rename any file or code without explicit permission from Marcus
+7. You MUST NOT remove comments, console.logs, imports, or "unused" code — if you think it should go, ASK FIRST
+8. If you think changes beyond the request are needed, STOP and ASK before making them
+9. When fixing a bug: fix ONLY that bug. Do not "clean up" or "refactor" surrounding code
