@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
+import { getExportMedications } from '@/lib/export-fallback'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -15,41 +16,9 @@ export async function GET(req: NextRequest) {
       drchrono = data || []
     }
 
-    // Export fallback: if live DrChrono returned 0, try saved export
+    // Export fallback (Supabase → static file)
     if (drchrono.length === 0) {
-      try {
-        const { data: exportRow } = await db
-          .from('patient_data_exports')
-          .select('data')
-          .eq('id', '00000000-0000-0000-0000-000000000001')
-          .single()
-
-        if (exportRow?.data) {
-          const patients = exportRow.data as any[]
-          let match = dcId ? patients.find((p: any) => p.drchrono_patient_id === dcId) : null
-          if (!match) {
-            const { data: pt } = await db.from('patients').select('email').eq('id', patient_id).single()
-            if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase())
-          }
-          if (match?.medications?.length > 0) {
-            drchrono = match.medications.map((m: any, i: number) => ({
-              id: `export-${i}`,
-              drchrono_patient_id: match.drchrono_patient_id,
-              name: m.name,
-              dosage_quantity: m.dosage?.split(' ')[0] || '',
-              dosage_unit: m.dosage?.split(' ').slice(1).join(' ') || '',
-              sig: m.sig || '',
-              status: m.status || 'active',
-              date_prescribed: m.date_prescribed || '',
-              date_stopped_taking: m.date_stopped || null,
-              _source: 'export',
-            }))
-            console.log(`[med-history] Export fallback: ${drchrono.length} meds for patient ${patient_id}`)
-          }
-        }
-      } catch (e) {
-        console.log('[med-history] Export fallback failed:', (e as Error).message)
-      }
+      drchrono = await getExportMedications(db, dcId, patient_id)
     }
 
     return NextResponse.json({ data: local || [], drchrono_data: drchrono })
