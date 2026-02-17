@@ -1,56 +1,347 @@
-08:47:48.683 Running build in Washington, D.C., USA (East) – iad1
-08:47:48.684 Build machine configuration: 4 cores, 8 GB
-08:47:48.697 Cloning github.com/hawk7227/dropshipping-management (Branch: main, Commit: a0e7a61)
-08:47:48.698 Skipping build cache, deployment was triggered without cache.
-08:47:50.002 Cloning completed: 1.305s
-08:47:50.363 Running "vercel build"
-08:47:51.290 Vercel CLI 50.4.10
-08:47:51.597 WARNING: You should not upload the `.next` directory.
-08:47:51.604 Installing dependencies...
-08:47:54.116 npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
-08:47:54.224 npm warn deprecated scmp@2.1.0: Just use Node.js's crypto.timingSafeEqual()
-08:47:54.749 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
-08:47:54.895 npm warn deprecated glob@7.1.7: Glob versions prior to v9 are no longer supported
-08:47:55.717 npm warn deprecated @supabase/auth-helpers-shared@0.6.3: This package is now deprecated - please use the @supabase/ssr package instead.
-08:47:55.730 npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
-08:47:55.730 npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
-08:47:55.972 npm warn deprecated @supabase/auth-helpers-nextjs@0.8.7: This package is now deprecated - please use the @supabase/ssr package instead.
-08:47:56.035 npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
-08:47:58.357 npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
-08:48:02.983 npm warn deprecated next@14.0.4: This version has a security vulnerability. Please upgrade to a patched version. See https://nextjs.org/blog/security-update-2025-12-11 for more details.
-08:48:03.229 
-08:48:03.229 added 435 packages in 11s
-08:48:03.229 
-08:48:03.230 141 packages are looking for funding
-08:48:03.230   run `npm fund` for details
-08:48:03.289 Detected Next.js version: 14.0.4
-08:48:03.293 Running "npm run build"
-08:48:03.395 
-08:48:03.395 > dropshipping-platform@1.0.0 build
-08:48:03.395 > next build
-08:48:03.395 
-08:48:03.873 Attention: Next.js now collects completely anonymous telemetry regarding usage.
-08:48:03.873 This information is used to shape Next.js' roadmap and prioritize features.
-08:48:03.873 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
-08:48:03.873 https://nextjs.org/telemetry
-08:48:03.873 
-08:48:03.961    ▲ Next.js 14.0.4
-08:48:03.961 
-08:48:03.961    Creating an optimized production build ...
-08:48:11.186 <w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (102kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
-08:48:11.194 <w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (140kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
-08:48:14.548  ✓ Compiled successfully
-08:48:14.549    Linting and checking validity of types ...
-08:48:22.812 Failed to compile.
-08:48:22.813 
-08:48:22.813 ./app/api/cron/price-sync/route.ts:36:30
-08:48:22.813 Type error: Property 'total' does not exist on type '{ synced: number; errors: number; results: any[]; updated?: number | undefined; skipped?: number | undefined; }'.
-08:48:22.813 
-08:48:22.813 [0m [90m 34 |[39m       success[33m:[39m [36mtrue[39m[33m,[39m[0m
-08:48:22.813 [0m [90m 35 |[39m       duration_seconds[33m:[39m duration[33m,[39m[0m
-08:48:22.813 [0m[31m[1m>[22m[39m[90m 36 |[39m       total_products[33m:[39m result[33m.[39mtotal[33m,[39m[0m
-08:48:22.813 [0m [90m    |[39m                              [31m[1m^[22m[39m[0m
-08:48:22.813 [0m [90m 37 |[39m       updated[33m:[39m result[33m.[39mupdated[33m,[39m[0m
-08:48:22.813 [0m [90m 38 |[39m       skipped[33m:[39m result[33m.[39mskipped[33m,[39m[0m
-08:48:22.814 [0m [90m 39 |[39m       errors[33m:[39m result[33m.[39merrors[33m,[39m[0m
-08:48:22.894 Error: Command "npm run build" exited with 1
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
+// ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
+// ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
+'use client'
+
+import { ReactNode, useState, useEffect, useCallback, Suspense } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import AuthWrapper from '@/components/AuthWrapper'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import { signOutAndRedirect } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
+import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib/notifications'
+import SyncIndicator from '@/components/SyncIndicator'
+import PatientSearchBar from '@/components/PatientSearchBar'
+import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/KeyboardShortcutsModal'
+import FloatingMessenger from '@/components/FloatingMessenger'
+import PageGuideSelector from '@/components/PageGuideSelector'
+import { useAccessControl } from '@/hooks/useAccessControl'
+import {
+  Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
+  FileText, MessageSquare, DollarSign, UserCircle, Clock,
+  Shield, UsersRound, LogOut, ChevronLeft, ChevronRight, ClipboardList, Settings, Search, Radio,
+  FlaskConical, Pill, Bell, ShieldCheck, BarChart3, Brain, TrendingUp, Megaphone,
+} from 'lucide-react'
+
+// ─── NAV ITEMS ───────────────────────────────────────────────
+const NAV_ITEMS = [
+  { href: '/doctor/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/doctor/appointments', label: 'Appointments', icon: Calendar },
+  { href: '/doctor/patients', label: 'Patients', icon: Users },
+  { href: '/doctor/new-patient', label: 'New Patient', icon: UserPlus },
+  { href: '/doctor/communication', label: 'Communication', icon: MessageSquare },
+  { href: '/doctor/campaigns', label: 'Campaigns', icon: Megaphone },
+  { href: '/doctor/labs', label: 'Lab Orders', icon: FlaskConical },
+  { href: '/doctor/prescriptions', label: 'Prescriptions', icon: Pill },
+  { href: '/doctor/prior-auth', label: 'Prior Auth', icon: ShieldCheck },
+  { href: '/doctor/alerts', label: 'Clinical Alerts', icon: Bell },
+  { href: '/doctor/billing', label: 'Billing', icon: DollarSign },
+  { href: '/doctor/reports', label: 'Reports', icon: TrendingUp },
+  { href: '/doctor/referrals', label: 'Referrals', icon: ClipboardList },
+  { href: '/doctor/quality', label: 'Quality Measures', icon: BarChart3 },
+  { href: '/doctor/data-export', label: 'Data Export', icon: FileText },
+  { href: '/doctor/ai-assistant', label: 'AI Assistant', icon: Brain },
+  { href: '/doctor/admin-messages', label: 'Admin Messages', icon: Shield },
+  { href: '/doctor/profile', label: 'Profile & Credentials', icon: UserCircle },
+  { href: '/doctor/availability', label: 'Availability', icon: Clock },
+] as const
+
+const ADMIN_ITEMS = [
+  { href: '/doctor/system-health', label: 'System Health', icon: Shield },
+  { href: '/doctor/settings', label: 'Settings', icon: Settings },
+  { href: '/doctor/settings/staff', label: 'Staff Management', icon: UsersRound },
+  { href: '/doctor/staff-hub', label: 'Staff Hub', icon: Radio },
+  { href: '/doctor/chart-management', label: 'Chart Management', icon: Shield },
+  { href: '/doctor/settings/audit', label: 'Audit Log', icon: ClipboardList },
+] as const
+
+// ─── COMPONENT ───────────────────────────────────────────────
+function DoctorLayoutInner({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const { isOpen: shortcutsOpen, setIsOpen: setShortcutsOpen } = useKeyboardShortcutsHelp()
+  const { filterNavItems } = useAccessControl(doctorId)
+
+  // Auto-sync patient data to IndexedDB for offline fallback
+  useEffect(() => {
+    const initCache = async () => {
+      try {
+        const { PatientCache } = await import('@/lib/patient-cache')
+        const status = await PatientCache.getCacheStatus()
+        const lastSync = status.lastSync ? new Date(status.lastSync).getTime() : 0
+        const isStale = Date.now() - lastSync > 30 * 60 * 1000 // 30 min
+        if (isStale || Object.values(status.counts).every(c => c === 0)) {
+          await PatientCache.syncFromSupabase(supabase, doctorId || undefined)
+        }
+      } catch {} // IndexedDB not available
+    }
+    if (doctorId) initCache()
+  }, [doctorId])
+
+  const isActive = (path: string) => pathname === path
+
+  // Fetch doctor ID for notification provider
+  useEffect(() => {
+    const fetchDoctorId = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: doctor } = await supabase.from('doctors').select('id').eq('email', user.email).single()
+        if (doctor) setDoctorId(doctor.id)
+      } catch { /* silent */ }
+    }
+    fetchDoctorId()
+  }, [])
+
+  // Close mobile menu on route change
+  useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // Global keyboard navigation: G+D, G+A, G+P, G+S
+  useEffect(() => {
+    let gPressed = false
+    let gTimer: ReturnType<typeof setTimeout>
+    const handleKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      if (e.key === 'g' || e.key === 'G') {
+        if (!gPressed) { gPressed = true; gTimer = setTimeout(() => { gPressed = false }, 800) }
+        return
+      }
+      if (gPressed) {
+        gPressed = false
+        clearTimeout(gTimer)
+        const nav: Record<string, string> = { d: '/doctor/dashboard', a: '/doctor/appointments', p: '/doctor/patients', s: '/doctor/settings' }
+        const dest = nav[e.key.toLowerCase()]
+        if (dest) { e.preventDefault(); window.location.href = dest }
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
+  // Lock body scroll when mobile menu open
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [mobileOpen])
+
+  // Persist collapse state
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('sidebar-collapsed') : null
+    if (saved === 'true') setCollapsed(true)
+  }, [])
+
+  // Auto-collapse on workspace-heavy pages (calendar, chart management)
+  const isWorkspacePage = pathname === '/doctor/appointments' || pathname === '/doctor/chart-management'
+  const searchParams = useSearchParams()
+  const isWorkspaceActive = isWorkspacePage && !!(searchParams.get('apt') || searchParams.get('patient'))
+  
+  useEffect(() => {
+    if (isWorkspacePage && !collapsed && window.innerWidth >= 1024) {
+      setCollapsed(true)
+    }
+  }, [isWorkspacePage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Force collapse when workspace appointment is open
+  useEffect(() => {
+    if (isWorkspaceActive && !collapsed) {
+      setCollapsed(true)
+    }
+  }, [isWorkspaceActive]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('sidebar-collapsed', String(next))
+      return next
+    })
+  }, [])
+
+  const sidebarWidth = collapsed ? 'w-16' : 'w-56'
+  const contentMargin = collapsed ? 'lg:ml-16' : 'lg:ml-56'
+
+  // ─── NAV LINK COMPONENT ───────────────────────────────────
+  const NavLink = ({ href, label, icon: Icon }: { href: string; label: string; icon: typeof LayoutDashboard }) => {
+    const active = isActive(href)
+    return (
+      <Link
+        href={href}
+        onClick={() => setMobileOpen(false)}
+        className={`
+          flex items-center rounded-lg transition-colors group relative
+          ${collapsed ? 'justify-center p-2.5 mx-1' : 'px-3 py-2.5 mx-2'}
+          ${active
+            ? 'bg-teal-500/15 text-teal-400'
+            : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          }
+        `}
+        title={collapsed ? label : undefined}
+      >
+        <Icon className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-4 h-4'}`} />
+        {!collapsed && <span className="ml-3 text-sm font-medium truncate">{label}</span>}
+        {/* Active indicator bar */}
+        {active && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-teal-400 rounded-r-full" />
+        )}
+        {/* Tooltip for collapsed mode */}
+        {collapsed && (
+          <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[#1a3d3d] text-white text-xs font-medium rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-lg pointer-events-none">
+            {label}
+          </div>
+        )}
+      </Link>
+    )
+  }
+
+  return (
+    <AuthWrapper>
+      <NotificationProvider doctorId={doctorId}>
+      <div className="h-screen bg-[#0a1f1f] flex overflow-hidden">
+        {/* Skip to content — accessibility */}
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:bg-teal-400 focus:text-[#0a1f1f] focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm focus:font-bold">
+          Skip to main content
+        </a>
+
+        {/* ═══ MOBILE: Hamburger Button ═══ */}
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="lg:hidden fixed top-3 left-3 z-[60] p-2 bg-[#0d2626] text-gray-300 rounded-lg border border-[#1a3d3d] hover:bg-[#164e4e] hover:text-white transition-colors"
+          aria-label="Toggle menu"
+        >
+          {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+
+        {/* ═══ MOBILE: Backdrop ═══ */}
+        {mobileOpen && (
+          <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={() => setMobileOpen(false)} />
+        )}
+
+        {/* ═══ SIDEBAR ═══ */}
+        <aside
+          role="navigation"
+          aria-label="Main navigation"
+          className={`
+            fixed left-0 top-0 h-full bg-[#0d2626] border-r border-[#1a3d3d] z-50
+            flex flex-col transition-all duration-200 ease-out
+            ${sidebarWidth}
+            ${mobileOpen ? 'translate-x-0 w-56' : '-translate-x-full lg:translate-x-0'}
+          `}
+        >
+          {/* Header */}
+          <div className={`flex items-center flex-shrink-0 border-b border-[#1a3d3d] ${collapsed ? 'justify-center py-4 px-2' : 'px-4 py-4'}`}>
+            <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className="w-4 h-4 bg-white rounded-full" />
+            </div>
+            {(!collapsed || mobileOpen) && (
+              <div className="ml-3 min-w-0">
+                <h1 className="text-sm font-bold text-white truncate">Medazon Health</h1>
+                <p className="text-[10px] text-teal-400">Doctor Panel</p>
+              </div>
+            )}
+          </div>
+
+          {/* Patient Search (Ctrl+K) */}
+          <div className={`px-2 pt-2 pb-1 ${collapsed ? 'px-2' : 'px-3'}`}>
+            <button
+              onClick={() => {
+                // Dispatch Ctrl+K event to open search
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+              }}
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-[#1a3d3d] bg-[#0a1f1f] hover:border-teal-500/50 hover:bg-[#0a1f1f]/80 text-gray-400 hover:text-teal-400 transition-colors ${
+                collapsed ? 'justify-center' : ''
+              }`}
+              title="Search patients (Ctrl+K)"
+            >
+              <Search className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && (
+                <>
+                  <span className="text-xs flex-1 text-left">Search patients...</span>
+                  <kbd className="text-[9px] font-bold text-gray-600 bg-[#0d2626] px-1 py-0.5 rounded border border-[#1a3d3d]">⌘K</kbd>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
+            {filterNavItems(NAV_ITEMS).map(item => (
+              <NavLink key={item.href} {...item} />
+            ))}
+
+            <div className={`border-t border-[#1a3d3d] my-2 ${collapsed ? 'mx-2' : 'mx-4'}`} />
+
+            {filterNavItems(ADMIN_ITEMS).map(item => (
+              <NavLink key={item.href} {...item} />
+            ))}
+          </nav>
+
+          {/* Footer: Notifications + Sign out + Collapse toggle */}
+          <div className="flex-shrink-0 border-t border-[#1a3d3d] p-2 space-y-1">
+            {/* Notification Bell */}
+            <div className={`flex ${collapsed ? 'justify-center' : 'px-1'}`}>
+              <NotificationBell />
+            </div>
+
+            {/* DrChrono Sync */}
+            <div className={`flex ${collapsed ? 'justify-center' : 'px-1'}`}>
+              <SyncIndicator doctorId={doctorId} compact={collapsed} />
+            </div>
+
+            {/* Sign Out */}
+            <button
+              onClick={signOutAndRedirect}
+              className={`
+                flex items-center rounded-lg transition-colors w-full text-gray-400 hover:bg-white/5 hover:text-gray-200
+                ${collapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'}
+              `}
+              title={collapsed ? 'Sign Out' : undefined}
+            >
+              <LogOut className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-4 h-4'}`} />
+              {!collapsed && <span className="ml-3 text-sm font-medium">Sign Out</span>}
+            </button>
+
+            {/* Collapse toggle (desktop only) */}
+            <button
+              onClick={toggleCollapsed}
+              className="hidden lg:flex items-center justify-center w-full p-2 rounded-lg text-gray-500 hover:bg-white/5 hover:text-gray-300 transition-colors"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+          </div>
+        </aside>
+
+        {/* ═══ MAIN CONTENT ═══ */}
+        <main id="main-content" className={`flex-1 h-full overflow-y-auto transition-all duration-200 ${contentMargin}`}>
+          {/* Mobile top padding for hamburger button */}
+          <div className="h-full pt-12 lg:pt-0">
+            <ErrorBoundary label="Page">
+              {children}
+            </ErrorBoundary>
+          </div>
+        </main>
+
+        {/* Global notification toast */}
+        <NotificationToast />
+        <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        <PatientSearchBar />
+      </div>
+      <FloatingMessenger />
+      <PageGuideSelector />
+      </NotificationProvider>
+    </AuthWrapper>
+  )
+}
+
+export default function DoctorLayout({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900" />}>
+      <DoctorLayoutInner>{children}</DoctorLayoutInner>
+    </Suspense>
+  )
+}
