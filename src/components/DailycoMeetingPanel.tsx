@@ -1,1019 +1,1256 @@
-// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
-// @see CONTRIBUTING.md for mandatory development rules.
-// ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
-// ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
-'use client'
+"use client";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
-import MedazonScribe, { SoapNotes } from './MedazonScribe'
-import CommunicationDialer from './CommunicationDialer'
-import {
-  Video, Phone, PhoneOff, PhoneCall, Mail, Stethoscope,
-  Maximize2, Minimize2, X, ExternalLink, Clock, Copy,
-  MessageSquare, Send, Circle, Square, Lock, Unlock, RefreshCw,
-  ChevronLeft, ChevronRight, Loader2, Hash, ArrowLeft
-} from 'lucide-react'
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import { createPortal } from "react-dom";
+import DailyIframe from "@daily-co/daily-js";
 
-// ═══════════════════════════════════════════════════════════════
+// =============================================
 // TYPES
-// ═══════════════════════════════════════════════════════════════
-
-interface AppointmentData {
-  id: string
-  requested_date_time: string | null
-  dailyco_meeting_url: string | null
-  dailyco_room_name: string | null
-  dailyco_owner_token: string | null
-  recording_url: string | null
-}
-
-interface CurrentUser {
-  name?: string
-  email?: string
-  id?: string
-}
-
+// =============================================
 interface DailyMeetingEmbedProps {
-  appointment: AppointmentData | null
-  currentUser: CurrentUser | null
-  isCustomizeMode?: boolean
-  sectionProps?: Record<string, unknown>
-  sectionId?: string
-  patientPhone?: string
-  patientName?: string
-  patientEmail?: string
-  providerId?: string
-  providerEmail?: string
-  onOpenCommHub?: (tab?: 'sms' | 'call' | 'email') => void
-  onSendQuickSms?: (message: string) => void
-  onSoapGenerated?: (soap: SoapNotes) => void
-  onClose?: () => void
+  appointment: {
+    id: string;
+    dailyco_meeting_url: string | null;
+    dailyco_room_name: string | null;
+    dailyco_owner_token: string | null;
+    requested_date_time: string | null;
+    recording_url?: string | null;
+  } | null;
+  patientName?: string;
+  patientPhone?: string;
+  currentUser?: {
+    email?: string;
+    name?: string;
+  } | null;
+  isCustomizeMode?: boolean;
+  sectionProps?: Record<string, unknown>;
+  sectionId?: string;
+  onTranscriptUpdate?: (transcript: string) => void;
+  onSOAPGenerated?: (soap: SOAPNote) => void;
 }
 
-interface VideoPanelPrefs {
-  posX: number
-  posY: number
-  width: number
-  height: number
-  locked: boolean
-  minimized: boolean
+interface TranscriptEntry {
+  id: string;
+  speaker: "patient" | "doctor" | "system";
+  text: string;
+  timestamp: Date;
+  isFinal: boolean;
 }
 
-type CallStatus = 'idle' | 'connecting' | 'connected' | 'ended' | 'failed'
-type SidePanel = 'dialpad' | 'sms' | 'email' | 'scribe'
-
-interface SmsMessage {
-  id: string
-  direction: 'inbound' | 'outbound'
-  body: string
-  created_at: string
-  status?: string
+interface SOAPNote {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PHONE NORMALIZATION (+1 for US)
-// ═══════════════════════════════════════════════════════════════
-
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/[^\d+]/g, '')
-  const justDigits = digits.replace(/\+/g, '')
-  if (justDigits.length === 10) return `+1${justDigits}`
-  if (justDigits.length === 11 && justDigits.startsWith('1')) return `+${justDigits}`
-  if (digits.startsWith('+1') && justDigits.length === 11) return digits
-  if (digits.startsWith('+')) return digits
-  return `+1${justDigits}`
+interface BillingCode {
+  code: string;
+  description: string;
+  confidence: number;
+  type: "icd10" | "cpt";
 }
 
-function formatPhoneDisplay(phone: string): string {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('1')) {
-    const area = digits.slice(1, 4)
-    const pre = digits.slice(4, 7)
-    const line = digits.slice(7, 11)
-    return `+1 (${area}) ${pre}-${line}`
-  }
-  return normalized
-}
+// Daily Frame type
+type DailyFrame = ReturnType<typeof DailyIframe.createFrame>;
 
-// ═══════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════
+// =============================================
+// PANEL STATES
+// =============================================
+type PanelState = "closed" | "expanded" | "minimized";
+type ActiveTab = "transcript" | "soap" | "codes" | "instructions";
+type CallState = "idle" | "joining" | "joined" | "error" | "left";
 
-const DEFAULT_POS = { x: 60, y: 40 }
-const DEFAULT_SIZE = { width: 580, height: 640 }
-const MIN_WIDTH = 420
-const MIN_HEIGHT = 400
-const PREFS_KEY = 'video_panel_layout'
-
-// ═══════════════════════════════════════════════════════════════
-// SMALL COMPONENTS
-// ═══════════════════════════════════════════════════════════════
-
-function DialpadBtn({ digit, sub, onClick }: { digit: string; sub?: string; onClick: (d: string) => void }) {
-  return (
-    <button onClick={() => onClick(digit)}
-      className="w-12 h-12 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
-      <span className="text-base font-bold text-white leading-none">{digit}</span>
-      {sub && <span className="text-[7px] text-white/25 uppercase tracking-widest leading-none mt-0.5">{sub}</span>}
-    </button>
-  )
-}
-
-function DailyIframe({ roomUrl }: { roomUrl: string }) {
-  if (!roomUrl) return <div className="text-white p-4 text-sm">No meeting URL found.</div>
-  return (
-    <iframe src={roomUrl} title="Daily.co Meeting" className="w-full h-full border-0 bg-black"
-      allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; screen-wake-lock *"
-      allowFullScreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals"
-      referrerPolicy="no-referrer-when-downgrade" />
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════
+// =============================================
 // MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════
-
+// =============================================
 export default function DailyMeetingEmbed({
   appointment,
-  currentUser: _currentUser,
+  patientName = "Patient",
+  patientPhone = "",
+  currentUser,
   isCustomizeMode = false,
   sectionProps = {},
-  sectionId,
-  patientPhone = '',
-  patientName = '',
-  patientEmail = '',
-  providerId,
-  providerEmail = '',
-  onOpenCommHub,
-  onSendQuickSms,
-  onSoapGenerated,
-  onClose,
+  sectionId = "daily-meeting-info",
+  onTranscriptUpdate,
+  onSOAPGenerated,
 }: DailyMeetingEmbedProps) {
+  // =============================================
+  // PORTAL & MOUNTING
+  // =============================================
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // ─── Layout prefs ───
-  const [position, setPosition] = useState(DEFAULT_POS)
-  const [size, setSize] = useState(DEFAULT_SIZE)
-  const [locked, setLocked] = useState(false)
-  const [minimized, setMinimized] = useState(false)
-  const [prefsLoaded, setPrefsLoaded] = useState(false)
+  useEffect(() => {
+    setIsMounted(true);
+    setIsMobile(window.innerWidth < 768);
 
-  // ─── Video state ───
-  const [meetingActive, setMeetingActive] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
 
-  // ─── Side panel carousel ───
-  const [openPanels, setOpenPanels] = useState<SidePanel[]>([])
-  const [activePanelIdx, setActivePanelIdx] = useState(0)
+    // Create portal container
+    const existing = document.getElementById("medazon-video-portal");
+    if (existing) {
+      setPortalContainer(existing);
+    } else {
+      const container = document.createElement("div");
+      container.id = "medazon-video-portal";
+      container.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 2147483647;
+      `;
+      document.body.appendChild(container);
+      setPortalContainer(container);
+    }
 
-  // ─── Dialpad ───
-  const [dialNumber, setDialNumber] = useState(patientPhone ? normalizePhone(patientPhone) : '')
-  const [callStatus, setCallStatus] = useState<CallStatus>('idle')
-  const [callDuration, setCallDuration] = useState(0)
-  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
-  // ─── SMS ───
-  const [smsText, setSmsText] = useState('')
-  const [smsSending, setSmsSending] = useState(false)
-  const [smsMessages, setSmsMessages] = useState<SmsMessage[]>([])
-  const [smsLoading, setSmsLoading] = useState(false)
-  const smsEndRef = useRef<HTMLDivElement>(null)
-
-  // ─── Email ───
-  const [emailTo, setEmailTo] = useState(patientEmail)
-  const [emailSubject, setEmailSubject] = useState('')
-  const [emailBody, setEmailBody] = useState('')
-  const [emailSending, setEmailSending] = useState(false)
-  const [emailSuccess, setEmailSuccess] = useState(false)
-
-  // ─── Countdown ───
-  const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number; isPast: boolean } | null>(null)
-
-  // ─── Drag / resize refs ───
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; edge: string } | null>(null)
-  const prefsRef = useRef<VideoPanelPrefs>({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false })
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Sync props
-  useEffect(() => { if (patientPhone) setDialNumber(normalizePhone(patientPhone)) }, [patientPhone])
-  useEffect(() => { setEmailTo(patientEmail) }, [patientEmail])
-
-  const hasOpenPanel = openPanels.length > 0
-  const activePanel = openPanels[activePanelIdx] || null
-
-  // ═══════════════════════════════════════════════════════════════
-  // PANEL ACTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  const togglePanel = useCallback((panel: SidePanel) => {
-    setOpenPanels(prev => {
-      const idx = prev.indexOf(panel)
-      if (idx >= 0) {
-        const next = prev.filter(p => p !== panel)
-        setActivePanelIdx(i => Math.min(i, Math.max(0, next.length - 1)))
-        return next
+  // Cleanup portal on unmount
+  useEffect(() => {
+    return () => {
+      const el = document.getElementById("medazon-video-portal");
+      if (el && document.body.contains(el)) {
+        document.body.removeChild(el);
       }
-      const next = [...prev, panel]
-      setActivePanelIdx(next.length - 1)
-      return next
-    })
-  }, [])
+    };
+  }, []);
 
-  const closePanel = useCallback((panel: SidePanel) => {
-    setOpenPanels(prev => {
-      const next = prev.filter(p => p !== panel)
-      setActivePanelIdx(i => Math.min(i, Math.max(0, next.length - 1)))
-      return next
-    })
-  }, [])
+  // =============================================
+  // PANEL STATE
+  // =============================================
+  const [panelState, setPanelState] = useState<PanelState>("closed");
+  const [position, setPosition] = useState({ x: 50, y: 50 });
+  const [size, setSize] = useState({ width: 950, height: 680 });
+  const [isDragging, setIsDragging] = useState(false);
+  const posRef = useRef(position);
+  const sizeRef = useRef(size);
 
-  const navPrev = useCallback(() => setActivePanelIdx(i => Math.max(0, i - 1)), [])
-  const navNext = useCallback(() => setActivePanelIdx(i => Math.min(openPanels.length - 1, i + 1)), [openPanels.length])
+  useEffect(() => { posRef.current = position; }, [position]);
+  useEffect(() => { sizeRef.current = size; }, [size]);
 
-  // ═══════════════════════════════════════════════════════════════
-  // PREFS PERSISTENCE
-  // ═══════════════════════════════════════════════════════════════
+  // =============================================
+  // DAILY.CO STATE - Single Frame Connection
+  // =============================================
+  const dailyFrameRef = useRef<DailyFrame | null>(null);
+  const prebuiltContainerRef = useRef<HTMLDivElement>(null);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [callState, setCallState] = useState<CallState>("idle");
+  const [callError, setCallError] = useState<string | null>(null);
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [participantCount, setParticipantCount] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [networkQuality, setNetworkQuality] = useState<"good" | "low" | "very-low">("good");
+
+  // =============================================
+  // AI SCRIBE STATE
+  // =============================================
+  const [activeTab, setActiveTab] = useState<ActiveTab>("transcript");
+  const [isAIScribeActive, setIsAIScribeActive] = useState(false);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [soapNote, setSoapNote] = useState<SOAPNote>({
+    subjective: "",
+    objective: "",
+    assessment: "",
+    plan: "",
+  });
+  const [billingCodes, setBillingCodes] = useState<BillingCode[]>([]);
+  const [patientInstructions, setPatientInstructions] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // =============================================
+  // DIALPAD STATE
+  // =============================================
+  const [showDialpad, setShowDialpad] = useState(false);
+  const [dialNumber, setDialNumber] = useState(patientPhone || "");
+  const [isDialing, setIsDialing] = useState(false);
+
+  // Keep dialNumber in sync with patientPhone prop
   useEffect(() => {
-    if (prefsLoaded) return
-    let cancelled = false
-    const load = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user || cancelled) return
-        const { data } = await supabase.from('doctor_preferences').select('preference_value').eq('doctor_id', user.id).eq('preference_key', PREFS_KEY).single()
-        if (data?.preference_value && !cancelled) {
-          const p = data.preference_value as unknown as VideoPanelPrefs
-          setPosition({ x: p.posX ?? DEFAULT_POS.x, y: p.posY ?? DEFAULT_POS.y })
-          setSize({ width: p.width ?? DEFAULT_SIZE.width, height: p.height ?? DEFAULT_SIZE.height })
-          setLocked(false)  // Always start unlocked — doctor can lock if desired
-          // Never restore minimized state — always open fully when panel loads
-          setMinimized(false)
-          prefsRef.current = p
-        }
-      } catch { /* silent */ }
-      finally { if (!cancelled) setPrefsLoaded(true) }
+    if (patientPhone) {
+      setDialNumber(patientPhone);
     }
-    load()
-    return () => { cancelled = true }
-  }, [prefsLoaded])
+  }, [patientPhone]);
 
-  const savePrefs = useCallback((updates: Partial<VideoPanelPrefs>) => {
-    prefsRef.current = { ...prefsRef.current, ...updates }
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        await supabase.from('doctor_preferences').upsert({ doctor_id: user.id, preference_key: PREFS_KEY, preference_value: prefsRef.current, updated_at: new Date().toISOString() }, { onConflict: 'doctor_id,preference_key' })
-      } catch { /* silent */ }
-    }, 500)
-  }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // DRAG
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (locked) return
-    if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
-    e.preventDefault()
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: position.x, origY: position.y }
-    const move = (ev: MouseEvent) => {
-      if (!dragRef.current) return
-      setPosition({ x: Math.max(0, dragRef.current.origX + (ev.clientX - dragRef.current.startX)), y: Math.max(0, dragRef.current.origY + (ev.clientY - dragRef.current.startY)) })
-    }
-    const up = () => {
-      dragRef.current = null
-      document.removeEventListener('mousemove', move)
-      document.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      const el = panelRef.current
-      if (el) savePrefs({ posX: parseInt(el.style.left) || position.x, posY: parseInt(el.style.top) || position.y })
-    }
-    document.body.style.cursor = 'grabbing'
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', move)
-    document.addEventListener('mouseup', up)
-  }, [locked, position, savePrefs])
-
-  // ═══════════════════════════════════════════════════════════════
-  // RESIZE
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (locked) return
-    e.preventDefault()
-    e.stopPropagation()
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: size.width, origH: size.height, edge }
-    const move = (ev: MouseEvent) => {
-      if (!resizeRef.current) return
-      const dx = ev.clientX - resizeRef.current.startX
-      const dy = ev.clientY - resizeRef.current.startY
-      let w = resizeRef.current.origW, h = resizeRef.current.origH
-      if (edge.includes('r')) w = Math.max(MIN_WIDTH, w + dx)
-      if (edge.includes('b')) h = Math.max(MIN_HEIGHT, h + dy)
-      setSize({ width: Math.min(w, window.innerWidth * 0.95), height: Math.min(h, window.innerHeight * 0.95) })
-    }
-    const up = () => {
-      resizeRef.current = null
-      document.removeEventListener('mousemove', move)
-      document.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.body.style.cursor = edge === 'rb' ? 'nwse-resize' : edge === 'r' ? 'ew-resize' : 'ns-resize'
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', move)
-    document.addEventListener('mouseup', up)
-  }, [locked, size])
-
-  // Save size
-  useEffect(() => {
-    if (!prefsLoaded) return
-    const t = setTimeout(() => savePrefs({ width: size.width, height: size.height }), 300)
-    return () => clearTimeout(t)
-  }, [size.width, size.height, prefsLoaded, savePrefs])
-
-  // ═══════════════════════════════════════════════════════════════
-  // LOCK / MINIMIZE / RESET
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleToggleLock = useCallback(() => setLocked(v => { const n = !v; savePrefs({ locked: n }); return n }), [savePrefs])
-  const handleToggleMinimize = useCallback(() => setMinimized(v => { const n = !v; savePrefs({ minimized: n }); return n }), [savePrefs])
-  const handleReset = useCallback(() => { setPosition(DEFAULT_POS); setSize(DEFAULT_SIZE); setLocked(false); setMinimized(false); savePrefs({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false }) }, [savePrefs])
-
-  // ═══════════════════════════════════════════════════════════════
+  // =============================================
   // COUNTDOWN
-  // ═══════════════════════════════════════════════════════════════
+  // =============================================
+  const [timeRemaining, setTimeRemaining] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+    isPast: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    if (!appointment?.requested_date_time) return
-    const update = () => {
-      const diff = new Date(appointment.requested_date_time!).getTime() - Date.now()
-      const isPast = diff < 0
-      const abs = Math.abs(diff)
-      setTimeRemaining({ hours: Math.floor(abs / 3600000), minutes: Math.floor((abs % 3600000) / 60000), seconds: Math.floor((abs % 60000) / 1000), isPast })
+    if (!appointment?.requested_date_time) return;
+    const updateTimer = () => {
+      const diff = new Date(appointment.requested_date_time!).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: true });
+        return;
+      }
+      setTimeRemaining({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+        isPast: false,
+      });
+    };
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [appointment?.requested_date_time]);
+
+  const joinUrl = useMemo(() => appointment?.dailyco_meeting_url || "", [appointment?.dailyco_meeting_url]);
+
+  // =============================================
+  // DRAG & RESIZE HANDLERS
+  // =============================================
+  const startDrag = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0 || isMobile) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startPos = posRef.current;
+
+    const onMove = (ev: MouseEvent) => {
+      setPosition({
+        x: Math.max(0, Math.min(startPos.x + ev.clientX - startX, window.innerWidth - 100)),
+        y: Math.max(0, Math.min(startPos.y + ev.clientY - startY, window.innerHeight - 50)),
+      });
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [isMobile]);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0 || isMobile) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startSize = sizeRef.current;
+
+    const onMove = (ev: MouseEvent) => {
+      setSize({
+        width: Math.max(700, Math.min(startSize.width + ev.clientX - startX, window.innerWidth - posRef.current.x)),
+        height: Math.max(450, Math.min(startSize.height + ev.clientY - startY, window.innerHeight - posRef.current.y)),
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [isMobile]);
+
+  // =============================================
+  // DAILY PREBUILT INITIALIZATION
+  // =============================================
+  const initializeDailyPrebuilt = useCallback(async () => {
+    if (!joinUrl) {
+      setCallError("No meeting URL available");
+      setCallState("error");
+      return;
     }
-    update()
-    const iv = setInterval(update, 1000)
-    return () => clearInterval(iv)
-  }, [appointment?.requested_date_time])
 
-  const countdownText = useMemo(() => {
-    if (!timeRemaining) return ''
-    const { hours, minutes, seconds, isPast } = timeRemaining
-    const t = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`
-    return isPast ? `Started ${t} ago` : `Starts in ${t}`
-  }, [timeRemaining])
+    if (!prebuiltContainerRef.current) {
+      setCallError("Video container not ready");
+      setCallState("error");
+      return;
+    }
 
-  // ═══════════════════════════════════════════════════════════════
-  // JOIN URL
-  // ═══════════════════════════════════════════════════════════════
-
-  const joinUrl = useMemo(() => {
-    if (!appointment?.dailyco_meeting_url) return null
     try {
-      const url = new URL(appointment.dailyco_meeting_url)
-      if (appointment.dailyco_owner_token) url.searchParams.set('t', appointment.dailyco_owner_token)
-      return url.toString()
-    } catch { return appointment.dailyco_meeting_url }
-  }, [appointment?.dailyco_meeting_url, appointment?.dailyco_owner_token])
+      setCallState("joining");
+      setCallError(null);
 
-  // ═══════════════════════════════════════════════════════════════
-  // MEETING
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleStartMeeting = useCallback(() => setMeetingActive(true), [])
-  const handleEndMeeting = useCallback(() => { setMeetingActive(false); setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null }; setRecordingTime(0) }, [])
-  const handleToggleRecording = useCallback(() => {
-    if (isRecording) { setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null } }
-    else { setIsRecording(true); setRecordingTime(0); recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000) }
-  }, [isRecording])
-
-  // ═══════════════════════════════════════════════════════════════
-  // DIALPAD / CALL
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleDialPress = useCallback((d: string) => setDialNumber(prev => prev + d), [])
-
-  const handleStartCall = useCallback(async () => {
-    if (!dialNumber) return
-    setCallStatus('connecting')
-    try {
-      const res = await fetch('/api/communication/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: normalizePhone(dialNumber) }) })
-      if (!res.ok) throw new Error('Failed')
-      setCallStatus('connected'); setCallDuration(0)
-      callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
-    } catch { setCallStatus('failed'); setTimeout(() => setCallStatus('idle'), 3000) }
-  }, [dialNumber])
-
-  const handleEndCall = useCallback(() => {
-    setCallStatus('ended')
-    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null }
-    setTimeout(() => setCallStatus('idle'), 3000)
-  }, [])
-
-  // ═══════════════════════════════════════════════════════════════
-  // SMS — SEND + RECEIVE + REALTIME
-  // ═══════════════════════════════════════════════════════════════
-
-  const fetchSmsHistory = useCallback(async () => {
-    if (!patientPhone) return
-    setSmsLoading(true)
-    try {
-      const normalized = normalizePhone(patientPhone)
-      const digits = normalized.replace(/\D/g, '')
-      const { data } = await supabase
-        .from('communication_logs')
-        .select('id, direction, body, created_at, status')
-        .eq('type', 'sms')
-        .or(`to_number.ilike.%${digits.slice(-10)},from_number.ilike.%${digits.slice(-10)}`)
-        .order('created_at', { ascending: true })
-        .limit(50)
-      if (data) setSmsMessages(data as SmsMessage[])
-    } catch { /* silent */ }
-    finally { setSmsLoading(false) }
-  }, [patientPhone])
-
-  // Fetch on SMS panel open
-  useEffect(() => {
-    if (openPanels.includes('sms') && patientPhone) fetchSmsHistory()
-  }, [openPanels, patientPhone, fetchSmsHistory])
-
-  // Realtime subscription for inbound SMS
-  useEffect(() => {
-    if (!openPanels.includes('sms') || !patientPhone) return
-    const digits = normalizePhone(patientPhone).replace(/\D/g, '').slice(-10)
-    const channel = supabase
-      .channel(`sms-${digits}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'communication_logs',
-        filter: `type=eq.sms`,
-      }, (payload) => {
-        const row = payload.new as any
-        const fromDigits = (row.from_number || '').replace(/\D/g, '').slice(-10)
-        const toDigits = (row.to_number || '').replace(/\D/g, '').slice(-10)
-        if (fromDigits === digits || toDigits === digits) {
-          setSmsMessages(prev => {
-            if (prev.some(m => m.id === row.id)) return prev
-            return [...prev, { id: row.id, direction: row.direction, body: row.body, created_at: row.created_at, status: row.status }]
-          })
+      // Cleanup existing frame if any
+      if (dailyFrameRef.current) {
+        try {
+          await dailyFrameRef.current.destroy();
+        } catch (e) {
+          console.warn("Error destroying existing frame:", e);
         }
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [openPanels, patientPhone])
-
-  // Auto-scroll SMS
-  useEffect(() => { smsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [smsMessages])
-
-  const handleSendSms = useCallback(async () => {
-    if (!smsText.trim() || !patientPhone) return
-    setSmsSending(true)
-    try {
-      const to = normalizePhone(patientPhone)
-      if (onSendQuickSms) { onSendQuickSms(smsText) }
-      else {
-        const { data: { session } } = await supabase.auth.getSession()
-        await fetch('/api/communication/sms', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: session?.access_token ? `Bearer ${session.access_token}` : '' },
-          body: JSON.stringify({ to, message: smsText, patientId: undefined, appointmentId: appointment?.id }),
-        })
+        dailyFrameRef.current = null;
       }
-      setSmsText('')
-      fetchSmsHistory()
-    } catch (err) { console.error('SMS send error:', err) }
-    finally { setSmsSending(false) }
-  }, [smsText, patientPhone, onSendQuickSms, appointment?.id, fetchSmsHistory])
 
-  // ═══════════════════════════════════════════════════════════════
-  // EMAIL
-  // ═══════════════════════════════════════════════════════════════
+      // Clear container
+      prebuiltContainerRef.current.innerHTML = "";
 
-  const handleSendEmail = useCallback(async () => {
-    if (!emailTo.trim() || !emailSubject.trim() || !emailBody.trim()) return
-    setEmailSending(true)
+      // Create Daily Prebuilt Frame with dark theme
+      const frame = DailyIframe.createFrame(prebuiltContainerRef.current, {
+        iframeStyle: {
+          width: "100%",
+          height: "100%",
+          border: "0",
+          borderRadius: "12px",
+          background: "#0a0e14",
+        },
+        showLeaveButton: true,
+        showFullscreenButton: true,
+        showLocalVideo: true,
+        showParticipantsBar: true,
+        // Dark theme customization
+        theme: {
+          colors: {
+            accent: "#06b6d4", // Cyan accent (Medazon brand)
+            accentText: "#ffffff",
+            background: "#0a0e14", // Dark background
+            backgroundAccent: "#1a2332", // Slightly lighter for cards
+            baseText: "#ffffff",
+            border: "#2d3748",
+            mainAreaBg: "#0a0e14",
+            mainAreaBgAccent: "#0f1419",
+            mainAreaText: "#ffffff",
+            supportiveText: "#94a3b8",
+          },
+        },
+        // Layout configuration
+        layoutConfig: {
+          grid: {
+            maxTilesPerPage: 9,
+            minTilesPerPage: 1,
+          },
+        },
+      });
+
+      dailyFrameRef.current = frame;
+
+      // ========== EVENT HANDLERS ==========
+      
+      // Meeting joined
+      frame.on("joined-meeting", () => {
+        console.log("Daily: joined-meeting");
+        setCallState("joined");
+        setCallError(null);
+        // Start call timer
+        callTimerRef.current = setInterval(() => {
+          setCallSeconds((prev) => prev + 1);
+        }, 1000);
+        // Get initial participant count
+        const participants = frame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
+      // Meeting left
+      frame.on("left-meeting", () => {
+        console.log("Daily: left-meeting");
+        setCallState("left");
+        setCallSeconds(0);
+        if (callTimerRef.current) {
+          clearInterval(callTimerRef.current);
+          callTimerRef.current = null;
+        }
+      });
+
+      // Participant events
+      frame.on("participant-joined", (event) => {
+        console.log("Daily: participant-joined", event?.participant?.user_name);
+        const participants = frame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
+      frame.on("participant-left", (event) => {
+        console.log("Daily: participant-left", event?.participant?.user_name);
+        const participants = frame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
+      // Recording events
+      frame.on("recording-started", () => {
+        console.log("Daily: recording-started");
+        setIsRecording(true);
+      });
+
+      frame.on("recording-stopped", () => {
+        console.log("Daily: recording-stopped");
+        setIsRecording(false);
+      });
+
+      // Transcription events
+      frame.on("transcription-started", () => {
+        console.log("Daily: transcription-started");
+        setIsAIScribeActive(true);
+      });
+
+      frame.on("transcription-stopped", () => {
+        console.log("Daily: transcription-stopped");
+        setIsAIScribeActive(false);
+      });
+
+      // Transcription message
+      frame.on("transcription-message", (event) => {
+        console.log("Daily: transcription-message", event);
+        if (event?.text) {
+          const newEntry: TranscriptEntry = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            speaker: event.participantId === frame.participants()?.local?.session_id ? "doctor" : "patient",
+            text: event.text,
+            timestamp: new Date(),
+            isFinal: (event as unknown as { is_final?: boolean }).is_final ?? true,
+          };
+          setTranscript((prev) => [...prev, newEntry]);
+          onTranscriptUpdate?.(event.text);
+        }
+      });
+
+      // Network quality
+      frame.on("network-quality-change", (event) => {
+        console.log("Daily: network-quality-change", event?.threshold);
+        if (event?.threshold) {
+          setNetworkQuality(event.threshold as "good" | "low" | "very-low");
+        }
+      });
+
+      // Error handling
+      frame.on("error", (event) => {
+        console.error("Daily: error", event);
+        setCallError(event?.errorMsg || "An error occurred");
+        setCallState("error");
+      });
+
+      frame.on("camera-error", (event) => {
+        console.error("Daily: camera-error", event);
+      });
+
+      // ========== JOIN THE MEETING ==========
+      console.log("Daily: Joining meeting...", joinUrl);
+      
+      await frame.join({
+        url: joinUrl,
+        token: appointment?.dailyco_owner_token || undefined,
+        userName: currentUser?.name || "Dr. Provider",
+      });
+
+      console.log("Daily: Join call completed");
+
+    } catch (error) {
+      console.error("Failed to initialize Daily:", error);
+      setCallError(error instanceof Error ? error.message : "Failed to join meeting");
+      setCallState("error");
+    }
+  }, [joinUrl, appointment?.dailyco_owner_token, currentUser?.name, onTranscriptUpdate]);
+
+  // =============================================
+  // CALL CONTROLS - All use dailyFrameRef
+  // =============================================
+  const toggleMute = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame) return;
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const auth = session?.access_token ? `Bearer ${session.access_token}` : ''
-      // Try Gmail first, fallback to SMTP
-      let res = await fetch('/api/gmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
-      if (!res.ok) {
-        res = await fetch('/api/communication/email', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
+      const newMutedState = !isMuted;
+      frame.setLocalAudio(!newMutedState);
+      setIsMuted(newMutedState);
+    } catch (error) {
+      console.error("Toggle mute error:", error);
+    }
+  }, [isMuted]);
+
+  const toggleVideo = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame) return;
+    
+    try {
+      const newVideoOffState = !isVideoOff;
+      frame.setLocalVideo(!newVideoOffState);
+      setIsVideoOff(newVideoOffState);
+    } catch (error) {
+      console.error("Toggle video error:", error);
+    }
+  }, [isVideoOff]);
+
+  const toggleRecording = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame || callState !== "joined") return;
+    
+    try {
+      if (isRecording) {
+        await frame.stopRecording();
+      } else {
+        await frame.startRecording({ layout: { preset: "default" } });
       }
-      if (!res.ok) throw new Error('Failed to send email')
-      setEmailSuccess(true); setEmailSubject(''); setEmailBody('')
-      setTimeout(() => setEmailSuccess(false), 3000)
-    } catch (err) { console.error('Email error:', err) }
-    finally { setEmailSending(false) }
-  }, [emailTo, emailSubject, emailBody, appointment?.id])
+    } catch (error) {
+      console.error("Recording error:", error);
+      alert("Recording requires a paid Daily.co plan with cloud recording enabled.");
+    }
+  }, [isRecording, callState]);
 
-  // ═══════════════════════════════════════════════════════════════
-  // CLEANUP
-  // ═══════════════════════════════════════════════════════════════
+  const toggleTranscription = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame || callState !== "joined") return;
+    
+    try {
+      if (isAIScribeActive) {
+        await frame.stopTranscription();
+      } else {
+        await frame.startTranscription();
+      }
+    } catch (error) {
+      console.error("Transcription error:", error);
+      alert("Transcription requires a paid Daily.co plan.");
+    }
+  }, [isAIScribeActive, callState]);
 
-  useEffect(() => () => {
-    if (callTimerRef.current) clearInterval(callTimerRef.current)
-    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-  }, [])
+  const dialOut = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    if (!frame || !dialNumber || callState !== "joined") return;
+    
+    setIsDialing(true);
+    try {
+      await frame.startDialOut({ phoneNumber: dialNumber });
+      setShowDialpad(false);
+    } catch (error) {
+      console.error("Dial-out error:", error);
+      alert("Dial-out requires account approval from Daily.co. Contact help@daily.co");
+    } finally {
+      setIsDialing(false);
+    }
+  }, [dialNumber, callState]);
 
-  // ═══════════════════════════════════════════════════════════════
+  const leaveCall = useCallback(async () => {
+    const frame = dailyFrameRef.current;
+    
+    if (frame) {
+      try {
+        await frame.leave();
+        await frame.destroy();
+      } catch (e) {
+        console.warn("Error leaving call:", e);
+      }
+      dailyFrameRef.current = null;
+    }
+    
+    // Clear timer
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    
+    // Reset state
+    setCallState("idle");
+    setCallSeconds(0);
+    setIsRecording(false);
+    setIsAIScribeActive(false);
+    setIsMuted(false);
+    setIsVideoOff(false);
+    setPanelState("closed");
+  }, []);
+
+  // =============================================
+  // AI GENERATION
+  // =============================================
+  const generateSOAP = useCallback(async () => {
+    if (transcript.length === 0) return;
+    setIsGenerating(true);
+    
+    // Simulate AI - replace with actual API
+    setTimeout(() => {
+      const mockSOAP: SOAPNote = {
+        subjective: `Patient ${patientName} presents with symptoms discussed during the consultation. ${transcript.slice(0, 2).map(t => t.text).join(" ")}`,
+        objective: "Vital signs within normal limits. Patient appears in no acute distress. Physical examination findings documented.",
+        assessment: "Based on reported symptoms and clinical findings, assessment documented above.",
+        plan: "1. Continue current treatment plan as discussed.\n2. Follow-up appointment in 2 weeks.\n3. Patient education provided regarding condition management.",
+      };
+      setSoapNote(mockSOAP);
+      onSOAPGenerated?.(mockSOAP);
+      setIsGenerating(false);
+      setActiveTab("soap");
+    }, 1500);
+  }, [transcript, patientName, onSOAPGenerated]);
+
+  const generateCodes = useCallback(async () => {
+    if (transcript.length === 0 && !soapNote.assessment) return;
+    setIsGenerating(true);
+    
+    // Simulate AI - replace with actual API
+    setTimeout(() => {
+      const mockCodes: BillingCode[] = [
+        { code: "99213", description: "Office visit, established patient, low complexity", confidence: 0.95, type: "cpt" },
+        { code: "R51.9", description: "Headache, unspecified", confidence: 0.88, type: "icd10" },
+        { code: "Z00.00", description: "General adult medical examination", confidence: 0.82, type: "icd10" },
+      ];
+      setBillingCodes(mockCodes);
+      setIsGenerating(false);
+      setActiveTab("codes");
+    }, 1500);
+  }, [transcript, soapNote]);
+
+  const generateInstructions = useCallback(async () => {
+    setIsGenerating(true);
+    
+    // Simulate AI - replace with actual API
+    setTimeout(() => {
+      const instructions = `**Post-Visit Instructions for ${patientName}**
+
+**Diagnosis/Reason for Visit:**
+Based on today's consultation.
+
+**Medications:**
+- Continue current medications as prescribed
+- Take as directed
+
+**Follow-Up Care:**
+- Schedule follow-up appointment in 2 weeks
+- Call the office if symptoms worsen
+
+**Warning Signs - Seek Immediate Care If:**
+- High fever (>101°F / 38.3°C)
+- Difficulty breathing
+- Severe or worsening pain
+- Any concerning changes
+
+**Lifestyle Recommendations:**
+- Rest as needed
+- Stay well hydrated
+- Avoid strenuous activity
+
+Questions? Call us at (XXX) XXX-XXXX`;
+      setPatientInstructions(instructions);
+      setIsGenerating(false);
+      setActiveTab("instructions");
+    }, 1500);
+  }, [patientName]);
+
+  // Auto-scroll transcript
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [transcript]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (dailyFrameRef.current) {
+        dailyFrameRef.current.destroy().catch(console.error);
+        dailyFrameRef.current = null;
+      }
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+        callTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // =============================================
   // HELPERS
-  // ═══════════════════════════════════════════════════════════════
+  // =============================================
+  const formatTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
-  const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
-  const copyText = (t: string) => { navigator.clipboard?.writeText(t) }
-  const panelLabel = (p: SidePanel) => p === 'dialpad' ? 'Dialpad' : p === 'sms' ? 'SMS' : p === 'email' ? 'Email' : 'Scribe'
+  const isInCall = callState === "joined";
 
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════
-
-  return (
+  // =============================================
+  // RENDER: TRIGGER BUTTON
+  // =============================================
+  const renderTriggerButton = () => (
     <div key={sectionId} {...(sectionProps as React.HTMLAttributes<HTMLDivElement>)} className="relative">
-      {isCustomizeMode && (
-        <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+      <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Video Consultation
+          </h3>
+          {appointment?.dailyco_room_name && (
+            <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded-full uppercase font-mono">
+              {appointment.dailyco_room_name}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* ═══════ FLOATING PANEL ═══════ */}
-      <div ref={panelRef} className="fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-cyan-500/30 shadow-2xl shadow-black/40"
-        style={{ left: position.x, top: position.y, width: hasOpenPanel ? Math.max(size.width, 720) : size.width, height: minimized ? 48 : size.height, background: 'linear-gradient(135deg, rgba(6,38,54,0.97), rgba(10,15,30,0.98))', backdropFilter: 'blur(16px)', transition: 'width 0.3s ease, height 0.2s ease' }}>
+        {timeRemaining && (
+          <div className="mb-4 p-3 bg-slate-700/50 rounded-lg border border-cyan-500/30">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-400">{timeRemaining.isPast ? "Status" : "Starts in"}</span>
+              <span className={`text-lg font-bold font-mono ${timeRemaining.isPast ? "text-green-400" : "text-cyan-400"}`}>
+                {timeRemaining.isPast ? "Ready to start" : `${timeRemaining.hours}h ${timeRemaining.minutes}m ${timeRemaining.seconds}s`}
+              </span>
+            </div>
+          </div>
+        )}
 
-        {/* Resize handles */}
-        {!locked && !minimized && (<>
-          <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'r')} />
-          <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'b')} />
-          <div className="absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize z-20" onMouseDown={e => handleResizeStart(e, 'rb')} />
-        </>)}
+        <button
+          onClick={() => setPanelState("expanded")}
+          disabled={!joinUrl}
+          className="flex items-center justify-center gap-2 w-full px-5 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl hover:from-cyan-500 hover:to-blue-500 transition-all font-medium shadow-lg shadow-cyan-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          Open Video Consultation
+        </button>
+      </div>
+    </div>
+  );
 
-        {/* ═══════ HEADER ═══════ */}
-        <div className={`flex items-center justify-between px-3 py-2 border-b border-white/10 flex-shrink-0 select-none ${locked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
-          onMouseDown={handleDragStart}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Video className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            <span className="text-sm font-bold text-white truncate">Video Consultation</span>
-            {meetingActive && isRecording && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full flex-shrink-0">
-                <Circle className="w-2 h-2 text-red-500 fill-red-500 animate-pulse" /><span className="text-[10px] font-bold text-red-400 font-mono">{fmt(recordingTime)}</span>
-              </div>
-            )}
-            {timeRemaining && !meetingActive && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded-full flex-shrink-0">
-                <Clock className="w-3 h-3 text-white/40" /><span className={`text-[10px] font-bold ${timeRemaining.isPast ? 'text-yellow-400' : 'text-white/50'}`}>{countdownText}</span>
-              </div>
-            )}
-            {(meetingActive || callStatus === 'connected') && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/25 rounded-full flex-shrink-0 cursor-pointer" onClick={() => togglePanel('scribe')} title="Medazon Scribe active — click to view">
-                <Stethoscope className="w-3 h-3 text-emerald-400" /><span className="text-[9px] font-bold text-emerald-400">Scribe</span>
+  // =============================================
+  // RENDER: MINIMIZED BAR
+  // =============================================
+  const renderMinimizedBar = () => (
+    <div
+      className="pointer-events-auto flex items-center gap-3 px-4 py-2 bg-slate-900/95 backdrop-blur-md border border-cyan-500/50 rounded-full shadow-2xl cursor-move"
+      style={{
+        position: "absolute",
+        left: isMobile ? "50%" : position.x,
+        bottom: isMobile ? 20 : "auto",
+        top: isMobile ? "auto" : position.y,
+        transform: isMobile ? "translateX(-50%)" : "none",
+      }}
+      onMouseDown={startDrag}
+    >
+      {isRecording && <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />}
+      <span className="text-white font-mono text-sm">{formatTime(callSeconds)}</span>
+      <span className="text-gray-400 text-sm hidden sm:block">{patientName}</span>
+      
+      <button onClick={toggleMute} className={`p-2 rounded-full ${isMuted ? "bg-red-500" : "bg-slate-700"}`}>
+        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      </button>
+      
+      <button onClick={() => setPanelState("expanded")} className="p-2 bg-cyan-600 rounded-full hover:bg-cyan-500">
+        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+        </svg>
+      </button>
+    </div>
+  );
+
+  // =============================================
+  // RENDER: EXPANDED PANEL (OPTION C LAYOUT)
+  // =============================================
+  const renderExpandedPanel = () => (
+    <div
+      className={`pointer-events-auto flex ${isMobile ? "flex-col" : "flex-row"} bg-[#0a0e14] rounded-2xl shadow-2xl overflow-hidden border-2 border-cyan-500/30`}
+      style={{
+        position: "absolute",
+        left: isMobile ? 0 : position.x,
+        top: isMobile ? 0 : position.y,
+        width: isMobile ? "100%" : size.width,
+        height: isMobile ? "100%" : size.height,
+        cursor: isDragging ? "grabbing" : "default",
+        boxShadow: "0 25px 80px rgba(6, 182, 212, 0.15), 0 10px 40px rgba(0, 0, 0, 0.5)",
+      }}
+    >
+      {/* ============================================= */}
+      {/* LEFT SIDE: VIDEO AREA + CONTROLS */}
+      {/* ============================================= */}
+      <div className={`${isMobile ? "h-[50%]" : "flex-1"} flex flex-col bg-[#0f1419] min-w-0`}>
+        {/* Header with branding */}
+        <div
+          className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#0a0e14] to-[#0f1419] border-b border-slate-700/50 cursor-grab active:cursor-grabbing flex-shrink-0"
+          onMouseDown={startDrag}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center flex-shrink-0">
+              <span className="text-orange-500 font-bold tracking-wider">MEDAZON</span>
+              <span className="text-white font-bold mx-1">+</span>
+              <span className="text-teal-400 font-bold tracking-wider">HEALTH</span>
+            </div>
+            
+            {isInCall && (
+              <div className="flex items-center gap-2 ml-4 bg-slate-800/50 px-3 py-1 rounded-full flex-shrink-0">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isRecording ? "bg-red-500 animate-pulse" : "bg-green-500"}`} />
+                <span className="text-white text-sm font-mono">{formatTime(callSeconds)}</span>
+                <span className="text-gray-500 text-sm">• {participantCount}</span>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {meetingActive && <button onClick={handleToggleRecording} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/30 text-red-400' : 'hover:bg-white/10 text-white/40'}`}>{isRecording ? <Square className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}</button>}
-            {joinUrl && <a href={joinUrl} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><ExternalLink className="w-3.5 h-3.5" /></a>}
-            <button onClick={handleToggleLock} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all">{locked ? <Lock className="w-3.5 h-3.5 text-cyan-400" /> : <Unlock className="w-3.5 h-3.5 text-white/40" />}</button>
-            <button onClick={handleReset} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><RefreshCw className="w-3.5 h-3.5" /></button>
-            <button onClick={handleToggleMinimize} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all">{minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}</button>
-            {onClose && <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-all" title="Close video panel"><X className="w-3.5 h-3.5" /></button>}
+
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {!isMobile && <span className="text-slate-500 text-xs mr-2">Drag to move</span>}
+            <button onClick={() => setPanelState("minimized")} className="p-2 hover:bg-white/10 rounded-lg text-white" title="Minimize">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+            <button onClick={leaveCall} className="p-2 hover:bg-red-500/30 rounded-lg text-white" title="Close">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        {/* ═══════ BODY ═══════ */}
-        {!minimized && (
-          <div className="flex-1 flex overflow-hidden">
-
-            {/* ─── LEFT: VIDEO ─── */}
-            <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2 border-r border-white/10' : 'w-full'}`} style={{ transition: 'width 0.3s ease' }}>
-              {meetingActive && joinUrl ? (
-                <div className="flex-1 relative min-h-0 bg-black">
-                  <DailyIframe roomUrl={joinUrl} />
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                    <button onClick={handleEndMeeting} className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-red-600/30 flex items-center gap-2 transition-all"><PhoneOff className="w-4 h-4" /> End</button>
-                  </div>
+        {/* Video Container */}
+        <div className="flex-1 relative min-h-0">
+          {/* Pre-call state */}
+          {callState === "idle" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <div className="text-center p-6">
+                <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
                 </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center px-6" style={{ background: 'linear-gradient(180deg, rgba(6,38,54,0.5), rgba(10,15,30,0.5))' }}>
-                  <div className="w-full max-w-md">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Video className="w-6 h-6 text-white" />
-                      <h3 className="text-base font-bold text-white">Video Consultation</h3>
-                      {appointment?.dailyco_room_name && (
-                        <span className="ml-auto text-[10px] font-mono text-cyan-400">{appointment.dailyco_room_name}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-xl mb-4">
-                      <span className="text-sm text-gray-400">Status</span>
-                      <span className="text-sm font-bold text-green-400">{appointment?.dailyco_meeting_url ? 'Ready to start' : 'No meeting URL'}</span>
-                    </div>
-                    {appointment?.dailyco_meeting_url && (
-                      <button onClick={handleStartMeeting} className="w-full px-6 py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all hover:brightness-110 flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #0e7490, #1e40af)' }}>
-                        <Video className="w-5 h-5" /> Open Video Consultation
-                      </button>
+                <h3 className="text-white text-xl font-semibold mb-2">Ready to Start</h3>
+                <p className="text-gray-400 mb-6">Join the video consultation with {patientName}</p>
+                <button
+                  onClick={initializeDailyPrebuilt}
+                  className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-500 hover:to-emerald-500 transition-all font-semibold shadow-lg shadow-green-500/30"
+                >
+                  Join Video Call
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Joining state */}
+          {callState === "joining" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <div className="text-center p-6">
+                <div className="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
+                <h3 className="text-white text-xl font-semibold mb-2">Connecting...</h3>
+                <p className="text-gray-400">Setting up your video consultation</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {callState === "error" && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <div className="text-center p-6">
+                <div className="w-20 h-20 bg-red-500/20 rounded-full mx-auto mb-4 flex items-center justify-center">
+                  <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-white text-xl font-semibold mb-2">Connection Error</h3>
+                <p className="text-red-400 mb-4">{callError || "Failed to join the meeting"}</p>
+                <button
+                  onClick={initializeDailyPrebuilt}
+                  className="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-500 transition-all"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Daily Prebuilt iframe container */}
+          <div 
+            ref={prebuiltContainerRef} 
+            className="absolute inset-0"
+            style={{ 
+              display: (callState === "joining" || callState === "joined") ? "block" : "none",
+              background: "#0f1419"
+            }}
+          />
+        </div>
+
+        {/* Bottom Controls */}
+        {isInCall && (
+          <div className="flex items-center justify-center gap-2 p-3 bg-[#0a0e14] border-t border-slate-700/50 flex-shrink-0">
+            <button onClick={toggleMute} className={`p-3 rounded-full transition-all ${isMuted ? "bg-red-500 hover:bg-red-600" : "bg-slate-700 hover:bg-slate-600"}`} title={isMuted ? "Unmute" : "Mute"}>
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isMuted ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                )}
+              </svg>
+            </button>
+
+            <button onClick={toggleVideo} className={`p-3 rounded-full transition-all ${isVideoOff ? "bg-red-500 hover:bg-red-600" : "bg-slate-700 hover:bg-slate-600"}`} title={isVideoOff ? "Turn on camera" : "Turn off camera"}>
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+
+            <button onClick={() => setShowDialpad(!showDialpad)} className={`p-3 rounded-full transition-all ${showDialpad ? "bg-cyan-600" : patientPhone ? "bg-green-600 hover:bg-green-500" : "bg-slate-700 hover:bg-slate-600"}`} title={patientPhone ? `Call ${patientName}` : "Dialpad"}>
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+            </button>
+
+            <button onClick={toggleRecording} className={`p-3 rounded-full transition-all ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-slate-700 hover:bg-slate-600"}`} title={isRecording ? "Stop Recording" : "Start Recording"}>
+              <svg className="w-5 h-5 text-white" fill={isRecording ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" strokeWidth={2} />
+              </svg>
+            </button>
+
+            <button onClick={leaveCall} className="p-3 rounded-full bg-red-600 hover:bg-red-700 transition-all" title="End Call">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ============================================= */}
+      {/* RIGHT SIDE: AI PANEL */}
+      {/* ============================================= */}
+      <div className={`${isMobile ? "h-[50%]" : "w-[320px]"} flex flex-col bg-[#0f1419] border-l border-slate-700/50 flex-shrink-0`}>
+        {/* AI Scribe Header */}
+        <div className="px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${isAIScribeActive ? "bg-purple-500 animate-pulse" : "bg-slate-500"}`} />
+              <span className="text-white font-semibold">AI Scribe</span>
+              <span className="text-xs text-gray-500">Powered by Deepgram</span>
+            </div>
+            <button
+              onClick={toggleTranscription}
+              disabled={!isInCall}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all disabled:opacity-50 ${
+                isAIScribeActive ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30" : "bg-slate-700 text-gray-300 hover:bg-slate-600"
+              }`}
+            >
+              {isAIScribeActive ? "Stop" : "Start"}
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-700/50 flex-shrink-0">
+          {(["transcript", "soap", "codes", "instructions"] as ActiveTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2.5 text-xs font-medium transition-all ${
+                activeTab === tab ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white hover:bg-slate-800/50"
+              }`}
+            >
+              {tab === "transcript" && "📝 Transcript"}
+              {tab === "soap" && "📋 SOAP"}
+              {tab === "codes" && "🏷️ Codes"}
+              {tab === "instructions" && "📄 Instructions"}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar min-h-0">
+          {/* TRANSCRIPT */}
+          {activeTab === "transcript" && (
+            <div className="space-y-3">
+              {transcript.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="w-14 h-14 bg-slate-800 rounded-full mx-auto mb-3 flex items-center justify-center">
+                    {isAIScribeActive ? (
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    ) : (
+                      <svg className="w-7 h-7 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
                     )}
                   </div>
+                  <p className="text-gray-500 text-sm">{isAIScribeActive ? "Listening for speech..." : "Start AI Scribe to capture conversation"}</p>
                 </div>
+              ) : (
+                transcript.map((entry) => (
+                  <div key={entry.id} className={`p-3 rounded-lg ${entry.speaker === "doctor" ? "bg-blue-500/10 border-l-2 border-blue-500" : "bg-pink-500/10 border-l-2 border-pink-500"}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-medium ${entry.speaker === "doctor" ? "text-blue-400" : "text-pink-400"}`}>
+                        {entry.speaker === "doctor" ? "Dr." : patientName}
+                      </span>
+                      <span className="text-xs text-gray-500">{entry.timestamp.toLocaleTimeString()}</span>
+                    </div>
+                    <p className="text-white text-sm leading-relaxed">{entry.text}</p>
+                  </div>
+                ))
               )}
+              <div ref={transcriptEndRef} />
+            </div>
+          )}
 
-              {/* Phone bar */}
-              {patientPhone && (
-                <div className="flex items-center gap-1.5 px-3 py-2 border-t border-white/5 flex-shrink-0" style={{ background: 'rgba(14,165,233,0.04)' }}>
-                  <Phone className="h-3 w-3 text-sky-400 flex-shrink-0" />
-                  <span className="text-[10px] font-mono text-white font-bold flex-1 truncate">{formatPhoneDisplay(patientPhone)}</span>
-                  <button onClick={() => copyText(normalizePhone(patientPhone))} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-sky-400 border border-sky-500/30 hover:border-sky-400 transition-all">Copy</button>
-                  <button onClick={() => togglePanel('dialpad')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('dialpad') ? 'text-green-300 border-green-400 bg-green-500/20' : 'text-green-400 border-green-500/30 hover:border-green-400'}`}><Phone className="h-2.5 w-2.5 inline mr-0.5" />Dial</button>
-                  <button onClick={() => togglePanel('sms')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('sms') ? 'text-blue-300 border-blue-400 bg-blue-500/20' : 'text-blue-400 border-blue-500/30 hover:border-blue-400'}`}><MessageSquare className="h-2.5 w-2.5 inline mr-0.5" />SMS</button>
-                  <button onClick={() => togglePanel('email')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('email') ? 'text-purple-300 border-purple-400 bg-purple-500/20' : 'text-purple-400 border-purple-500/30 hover:border-purple-400'}`}><Mail className="h-2.5 w-2.5 inline mr-0.5" />Email</button>
-                  <button onClick={() => togglePanel('scribe')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('scribe') ? 'text-emerald-300 border-emerald-400 bg-emerald-500/20' : 'text-emerald-400 border-emerald-500/30 hover:border-emerald-400'}`}><Stethoscope className="h-2.5 w-2.5 inline mr-0.5" />Scribe</button>
-                  {onOpenCommHub && <button onClick={() => onOpenCommHub('call')} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-orange-400 border border-orange-500/30 hover:border-orange-400 transition-all"><PhoneCall className="h-2.5 w-2.5 inline mr-0.5" />Hub</button>}
+          {/* SOAP */}
+          {activeTab === "soap" && (
+            <div className="space-y-4">
+              {soapNote.subjective ? (
+                (["subjective", "objective", "assessment", "plan"] as const).map((section) => (
+                  <div key={section} className={`p-3 rounded-lg border-l-4 ${
+                    section === "subjective" ? "border-green-500 bg-green-500/10" :
+                    section === "objective" ? "border-blue-500 bg-blue-500/10" :
+                    section === "assessment" ? "border-yellow-500 bg-yellow-500/10" :
+                    "border-red-500 bg-red-500/10"
+                  }`}>
+                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">{section.charAt(0).toUpperCase()} - {section}</h4>
+                    <textarea
+                      value={soapNote[section]}
+                      onChange={(e) => setSoapNote(prev => ({ ...prev, [section]: e.target.value }))}
+                      className="w-full bg-transparent text-white text-sm leading-relaxed resize-none border-0 focus:ring-0 p-0"
+                      rows={3}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <button
+                    onClick={generateSOAP}
+                    disabled={transcript.length === 0 || isGenerating}
+                    className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    {isGenerating ? "Generating..." : "🤖 Generate SOAP Note"}
+                  </button>
+                  <p className="text-gray-500 text-xs mt-3">Requires transcript data</p>
                 </div>
               )}
             </div>
+          )}
 
-            {/* ─── RIGHT: SIDE PANEL CAROUSEL ─── */}
-            {hasOpenPanel && (
-              <div className="w-1/2 flex flex-col overflow-hidden" style={{ transition: 'width 0.3s ease' }}>
-
-                {/* Panel nav header */}
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/5 flex-shrink-0">
-                  {openPanels.length > 1 && <button onClick={navPrev} disabled={activePanelIdx === 0} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronLeft className="w-3.5 h-3.5" /></button>}
-                  <div className="flex gap-1 flex-1 justify-center">
-                    {openPanels.map((p, i) => (
-                      <button key={p} onClick={() => setActivePanelIdx(i)}
-                        className={`px-2 py-1 rounded text-[9px] font-bold transition-all ${i === activePanelIdx ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}>
-                        {panelLabel(p)}
-                      </button>
-                    ))}
+          {/* CODES */}
+          {activeTab === "codes" && (
+            <div className="space-y-3">
+              {billingCodes.length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Suggested Billing Codes</h4>
                   </div>
-                  {openPanels.length > 1 && <button onClick={navNext} disabled={activePanelIdx >= openPanels.length - 1} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronRight className="w-3.5 h-3.5" /></button>}
-                  <button onClick={() => closePanel(activePanel!)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-500/20 text-white/20 hover:text-red-400"><X className="w-3 h-3" /></button>
+                  {billingCodes.map((code) => (
+                    <div key={code.code} className={`p-3 rounded-lg border ${code.type === "cpt" ? "bg-green-500/10 border-green-500/30" : "bg-blue-500/10 border-blue-500/30"}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`font-mono font-bold ${code.type === "cpt" ? "text-green-400" : "text-cyan-400"}`}>{code.code}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-gray-300">{code.type.toUpperCase()}</span>
+                      </div>
+                      <p className="text-white text-sm">{code.description}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${code.confidence * 100}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500">{Math.round(code.confidence * 100)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <button
+                    onClick={generateCodes}
+                    disabled={(transcript.length === 0 && !soapNote.assessment) || isGenerating}
+                    className="px-5 py-2.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    {isGenerating ? "Generating..." : "🏷️ Generate ICD-10/CPT Codes"}
+                  </button>
+                  <p className="text-gray-500 text-xs mt-3">AI-suggested billing codes</p>
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* ─── CALL/SMS PANEL (uses CommunicationDialer — same as /doctor/communication page) ─── */}
-                {(activePanel === 'dialpad' || activePanel === 'sms') && (
-                  <CommunicationDialer
-                    initialPhone={patientPhone}
-                    patientName={patientName}
-                    patientId={appointment?.id}
-                    defaultTab={activePanel === 'sms' ? 'sms' : 'call'}
-                    compact
+          {/* INSTRUCTIONS */}
+          {activeTab === "instructions" && (
+            <div>
+              {patientInstructions ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={patientInstructions}
+                    onChange={(e) => setPatientInstructions(e.target.value)}
+                    className="w-full h-64 p-3 bg-slate-800/50 border border-slate-700 rounded-lg text-white text-sm leading-relaxed resize-none focus:outline-none focus:border-cyan-500"
                   />
-                )}
-
-                {/* ─── EMAIL PANEL ─── */}
-                {activePanel === 'email' && (
-                  <div className="flex-1 flex flex-col p-3 gap-2 overflow-y-auto">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">To</span>
-                      <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="patient@email.com"
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">From</span>
-                      <div className="flex-1 bg-white/5 border border-white/5 rounded-lg px-2 py-1.5 text-white/40 text-[11px]">{providerEmail || 'Provider'}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">Subj</span>
-                      <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="Subject..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} placeholder="Compose..."
-                      className="flex-1 min-h-[120px] bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs resize-none focus:border-purple-500/50 focus:outline-none leading-relaxed"
-                      onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendEmail() }} />
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-white/25">⌘+Enter to send</span>
-                      <button onClick={handleSendEmail} disabled={emailSending || !emailTo.trim() || !emailSubject.trim() || !emailBody.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-500 disabled:opacity-40 transition-all">
-                        {emailSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}Send
-                      </button>
-                    </div>
-                    {emailSuccess && <div className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-green-300 text-[10px]">Email sent!</div>}
-                  </div>
-                )}
-
-                {/* ─── SCRIBE PANEL (always mounted, visible when active) ─── */}
-                <div className={activePanel === 'scribe' ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'}>
-                  <MedazonScribe
-                    appointmentId={appointment?.id}
-                    patientName={patientName}
-                    doctorName={_currentUser?.name || 'Doctor'}
-                    doctorId={_currentUser?.id || providerId}
-                    callActive={meetingActive || callStatus === 'connected'}
-                    onSoapGenerated={onSoapGenerated}
-                    visible={activePanel === 'scribe'}
-                  />
+                  <button className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-500 font-medium">
+                    📧 Send to Patient
+                  </button>
                 </div>
+              ) : (
+                <div className="text-center py-8">
+                  <button
+                    onClick={generateInstructions}
+                    disabled={isGenerating}
+                    className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    {isGenerating ? "Generating..." : "📄 Generate Instructions"}
+                  </button>
+                  <p className="text-gray-500 text-xs mt-3">Patient take-home instructions</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Action Footer */}
+        <div className="p-3 border-t border-slate-700/50 flex gap-2 flex-shrink-0">
+          <button onClick={generateSOAP} disabled={transcript.length === 0 || isGenerating} className="flex-1 py-2 text-xs bg-slate-700 text-white rounded-lg hover:bg-slate-600 disabled:opacity-50 font-medium">
+            SOAP
+          </button>
+          <button onClick={generateCodes} disabled={(transcript.length === 0 && !soapNote.assessment) || isGenerating} className="flex-1 py-2 text-xs bg-slate-700 text-white rounded-lg hover:bg-slate-600 disabled:opacity-50 font-medium">
+            Codes
+          </button>
+          <button onClick={generateInstructions} disabled={isGenerating} className="flex-1 py-2 text-xs bg-slate-700 text-white rounded-lg hover:bg-slate-600 disabled:opacity-50 font-medium">
+            Instructions
+          </button>
+        </div>
+      </div>
+
+      {/* Dialpad Modal - One Click Call */}
+      {showDialpad && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowDialpad(false)}>
+          <div className="bg-slate-800 rounded-2xl p-6 w-80 border border-slate-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Patient Info Header */}
+            <div className="text-center mb-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mx-auto mb-3 flex items-center justify-center">
+                <span className="text-2xl font-bold text-white">{patientName.charAt(0).toUpperCase()}</span>
               </div>
-            )}
+              <h3 className="text-white font-bold text-lg">{patientName}</h3>
+              <p className="text-gray-400 text-sm">Call patient&apos;s phone</p>
+            </div>
+
+            {/* Phone Number Display */}
+            <div className="mb-4 p-3 bg-slate-900 rounded-lg border border-slate-600">
+              <input
+                type="tel"
+                value={dialNumber}
+                onChange={(e) => setDialNumber(e.target.value)}
+                placeholder="+1 (555) 123-4567"
+                className="w-full bg-transparent text-white text-center text-xl font-mono focus:outline-none"
+              />
+            </div>
+
+            {/* One-Click Call Button */}
+            <button
+              onClick={dialOut}
+              disabled={isDialing || !dialNumber}
+              className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-lg shadow-lg shadow-green-500/30 mb-4 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+            >
+              {isDialing ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  Call {patientName.split(" ")[0]}
+                </>
+              )}
+            </button>
+
+            {/* Dialpad Grid (collapsed by default, expandable) */}
+            <details className="group">
+              <summary className="text-gray-400 text-sm text-center cursor-pointer hover:text-white transition-colors list-none flex items-center justify-center gap-1">
+                <svg className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                Edit number
+              </summary>
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => (
+                  <button
+                    key={digit}
+                    onClick={() => setDialNumber((prev) => prev + digit)}
+                    className="py-3 bg-slate-700 text-white rounded-lg hover:bg-slate-600 text-lg font-semibold active:scale-95 transition-transform"
+                  >
+                    {digit}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setDialNumber((prev) => prev.slice(0, -1))}
+                className="w-full mt-2 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 text-sm"
+              >
+                ⌫ Backspace
+              </button>
+            </details>
+
+            {/* Cancel */}
+            <button 
+              onClick={() => setShowDialpad(false)} 
+              className="w-full mt-4 py-2 text-gray-400 hover:text-white transition-colors text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Resize Handle */}
+      {!isMobile && (
+        <div
+          className="absolute right-0 bottom-0 w-6 h-6 cursor-se-resize bg-cyan-600/50 rounded-tl-lg hover:bg-cyan-500 transition-colors flex items-center justify-center"
+          onMouseDown={startResize}
+        >
+          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z" />
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+
+  // =============================================
+  // MAIN RENDER
+  // =============================================
+  const renderFloatingContent = () => {
+    // When minimized but in a call, we need to keep the expanded panel mounted (but hidden)
+    // so the Daily iframe doesn't get destroyed
+    const showMinimizedBar = panelState === "minimized";
+    const keepExpandedMounted = panelState === "expanded" || (panelState === "minimized" && isInCall);
+    const isExpandedVisible = panelState === "expanded";
+    
+    return (
+      <>
+        {showMinimizedBar && renderMinimizedBar()}
+        {keepExpandedMounted && (
+          <div 
+            style={{ 
+              visibility: isExpandedVisible ? "visible" : "hidden",
+              pointerEvents: isExpandedVisible ? "auto" : "none",
+            }}
+          >
+            {renderExpandedPanel()}
           </div>
         )}
+      </>
+    );
+  };
 
-        {/* Background scribe — runs when call active even if panel closed */}
-        {!openPanels.includes('scribe') && (meetingActive || callStatus === 'connected') && (
-          <MedazonScribe
-            appointmentId={appointment?.id}
-            patientName={patientName}
-            doctorName={_currentUser?.name || 'Doctor'}
-            doctorId={_currentUser?.id || providerId}
-            callActive={meetingActive || callStatus === 'connected'}
-            onSoapGenerated={onSoapGenerated}
-            visible={false}
-          />
-        )}
-      </div>
-    </div>
-  )
+  return (
+    <>
+      {renderTriggerButton()}
+
+      {isMounted && portalContainer && panelState !== "closed" && createPortal(renderFloatingContent(), portalContainer)}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+      `}</style>
+    </>
+  );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
