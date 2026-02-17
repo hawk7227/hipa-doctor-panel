@@ -9,55 +9,92 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: false, // DISABLED: Was causing 20-80s delays
+    autoRefreshToken: true, // RE-ENABLED: keeps session alive, refreshes token before expiry
     persistSession: true,
     detectSessionInUrl: true,
-    // Handle refresh token errors gracefully
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: 'supabase.auth.token',
-    // Clear session on refresh token error
     flowType: 'pkce'
   },
   global: {
-    // Handle auth errors globally
     headers: {
       'X-Client-Info': 'doctor-panel'
     },
-    // Add timeout to prevent hanging requests
+    // Resilient fetch with retry + longer timeout
     fetch: (url, options = {}) => {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-      
-      return fetch(url, {
-        ...options,
-        signal: options.signal || controller.signal
-      }).catch((error) => {
-        // Handle network errors gracefully
-        if (error.name === 'AbortError') {
-          throw new Error('Request timeout - please try again')
+      const timeout = 45000 // 45 seconds (was 30 — too aggressive for cold starts)
+      const maxRetries = 2
+
+      const attemptFetch = async (attempt: number): Promise<Response> => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+        try {
+          const response = await fetch(url, {
+            ...options,
+            signal: options.signal || controller.signal
+          })
+          return response
+        } catch (error: any) {
+          if (error.name === 'AbortError') {
+            if (attempt < maxRetries) {
+              console.log(`[Supabase] Timeout on attempt ${attempt + 1}, retrying...`)
+              return attemptFetch(attempt + 1)
+            }
+            throw new Error('Request timeout after retries - please try again')
+          }
+          if (error.message === 'Failed to fetch' && attempt < maxRetries) {
+            // Network blip — wait and retry
+            console.log(`[Supabase] Network error on attempt ${attempt + 1}, retrying in 2s...`)
+            await new Promise(r => setTimeout(r, 2000))
+            return attemptFetch(attempt + 1)
+          }
+          throw error
+        } finally {
+          clearTimeout(timeoutId)
         }
-        if (error.message === 'Failed to fetch') {
-          // Network error - don't throw, let Supabase handle it
-          throw new Error('Network error - please check your connection')
-        }
-        throw error
-      }).finally(() => {
-        clearTimeout(timeoutId)
-      })
+      }
+
+      return attemptFetch(0)
     }
   }
 })
 
-// Handle auth state changes and errors
+// Handle auth state changes with auto-recovery
 if (typeof window !== 'undefined') {
   supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-      // Session refreshed or signed out - clear any errors
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Auth state changed:', event)
+    console.log('[Supabase Auth]', event, session ? 'session active' : 'no session')
+
+    if (event === 'TOKEN_REFRESHED') {
+      console.log('[Supabase Auth] Token refreshed successfully')
+    }
+
+    if (event === 'SIGNED_OUT') {
+      console.log('[Supabase Auth] Session ended — redirecting to login')
+      // Only redirect if not already on login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
       }
     }
   })
+
+  // Session health check — runs every 5 minutes
+  // If session is dead, redirect to login instead of showing "Unauthorized" on every panel
+  setInterval(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session && !window.location.pathname.includes('/login')) {
+        console.log('[Supabase Health] No active session — attempting refresh')
+        const { error } = await supabase.auth.refreshSession()
+        if (error) {
+          console.log('[Supabase Health] Refresh failed — session expired')
+          // Don't auto-redirect, just log. The auth fallback chain in _shared.ts handles API calls.
+        }
+      }
+    } catch {
+      // Silent fail — don't break the app over a health check
+    }
+  }, 5 * 60 * 1000) // Every 5 minutes
 }
 
 // Database types
