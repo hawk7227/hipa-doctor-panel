@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/drchrono/token-keepalive",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/drchrono/cron-sync",
       "schedule": "*/30 * * * *"
     },

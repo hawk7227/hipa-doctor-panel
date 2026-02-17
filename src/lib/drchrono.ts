@@ -94,8 +94,11 @@ async function refreshToken(refreshToken: string, tokenId: string): Promise<stri
 
 export async function drchronoFetch(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _retryCount = 0
 ): Promise<{ ok: boolean; status: number; data: any }> {
+  const MAX_RETRIES = 2
+
   const token = await getAccessToken()
 
   if (!token) {
@@ -106,16 +109,50 @@ export async function drchronoFetch(
     ? endpoint
     : `${DRCHRONO_API_BASE}/${endpoint}`
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  })
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 45000) // 45s timeout
 
-  const data = await response.json().catch(() => null)
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    })
 
-  return { ok: response.ok, status: response.status, data }
+    clearTimeout(timeoutId)
+
+    // If 401, token might have just expired — force refresh and retry once
+    if (response.status === 401 && _retryCount < 1) {
+      console.log('[DrChrono] Got 401 — forcing token refresh and retrying...')
+      // Force refresh by getting token row and refreshing
+      const { data: tokenRow } = await supabase
+        .from('drchrono_tokens')
+        .select('refresh_token, id')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (tokenRow) {
+        await refreshToken(tokenRow.refresh_token, tokenRow.id)
+      }
+      return drchronoFetch(endpoint, options, _retryCount + 1)
+    }
+
+    const data = await response.json().catch(() => null)
+    return { ok: response.ok, status: response.status, data }
+  } catch (err: any) {
+    // Network timeout or error — retry
+    if (_retryCount < MAX_RETRIES) {
+      console.log(`[DrChrono] Fetch error (attempt ${_retryCount + 1}): ${err.message}, retrying in 2s...`)
+      await new Promise(r => setTimeout(r, 2000))
+      return drchronoFetch(endpoint, options, _retryCount + 1)
+    }
+
+    console.error('[DrChrono] Fetch failed after retries:', err.message)
+    return { ok: false, status: 0, data: { error: `Network error: ${err.message}` } }
+  }
 }
