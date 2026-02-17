@@ -23,6 +23,8 @@
     "@zoom/meetingsdk": "^5.0.4",
     "@zoomus/websdk": "^2.18.3",
     "axios": "^1.12.2",
+    "dexie": "^4.3.0",
+    "dexie-react-hooks": "^4.2.0",
     "exceljs": "^4.4.0",
     "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
