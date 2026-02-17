@@ -50,11 +50,11 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for alerts
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId
+// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
 //
 // FIX-001: RLS disabled on drchrono_* tables
 // FIX-008: Uses email fallback when drchrono_patient_id is NULL
 //
 // WIRING: Called by usePanelData hook from alerts panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId()
+// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

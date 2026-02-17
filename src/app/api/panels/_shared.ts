@@ -64,9 +64,32 @@ export async function authenticateDoctor(req?: NextRequest): Promise<
 
 /**
  * Resolve drchrono_patient_id from a local patient UUID.
+ * Also handles the case where someone passes a drchrono_patient_id directly (integer).
  */
 export async function getDrchronoPatientId(patientId: string): Promise<number | null> {
   try {
+    // Check if patientId is actually a drchrono_patient_id (integer, not UUID)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId)
+
+    if (!isUuid) {
+      // It's likely a drchrono_patient_id directly — try parsing as integer
+      const asInt = parseInt(patientId, 10)
+      if (!isNaN(asInt) && asInt > 0) {
+        // Verify it exists in drchrono_medications or drchrono_patients
+        const { data: dcPatient } = await db
+          .from('drchrono_patients')
+          .select('drchrono_patient_id')
+          .eq('drchrono_patient_id', asInt)
+          .limit(1)
+          .maybeSingle()
+        if (dcPatient?.drchrono_patient_id) return dcPatient.drchrono_patient_id
+        // Even if not in drchrono_patients, it may still be valid
+        return asInt
+      }
+      return null
+    }
+
+    // Standard path: look up patient by UUID
     const { data: patient } = await db
       .from('patients')
       .select('drchrono_patient_id, email')
@@ -86,6 +109,56 @@ export async function getDrchronoPatientId(patientId: string): Promise<number | 
     }
     return null
   } catch { return null }
+}
+
+/**
+ * Resolve a patient UUID from any identifier (UUID or drchrono_patient_id).
+ * This is the core function that prevents "invalid input syntax for type uuid" errors.
+ */
+export async function resolvePatientUuid(patientId: string): Promise<string | null> {
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patientId)
+
+    if (isUuid) {
+      // Already a UUID — verify it exists
+      const { data } = await db.from('patients').select('id').eq('id', patientId).maybeSingle()
+      return data?.id || null
+    }
+
+    // It's an integer drchrono_patient_id — find the UUID
+    const asInt = parseInt(patientId, 10)
+    if (!isNaN(asInt) && asInt > 0) {
+      const { data } = await db.from('patients').select('id').eq('drchrono_patient_id', asInt).limit(1).maybeSingle()
+      return data?.id || null
+    }
+    return null
+  } catch { return null }
+}
+
+/**
+ * Master resolver: takes any patient_id input (UUID or drchrono integer)
+ * and returns both the local UUID and the drchrono_patient_id.
+ * This is the single function all panel routes should call.
+ */
+export async function resolvePatientIds(rawPatientId: string): Promise<{
+  uuid: string | null
+  dcId: number | null
+}> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawPatientId)
+
+  if (isUuid) {
+    const dcId = await getDrchronoPatientId(rawPatientId)
+    return { uuid: rawPatientId, dcId }
+  }
+
+  // Not a UUID — try as drchrono_patient_id
+  const asInt = parseInt(rawPatientId, 10)
+  if (!isNaN(asInt) && asInt > 0) {
+    const { data } = await db.from('patients').select('id').eq('drchrono_patient_id', asInt).limit(1).maybeSingle()
+    return { uuid: data?.id || null, dcId: asInt }
+  }
+
+  return { uuid: null, dcId: null }
 }
 
 export { db }

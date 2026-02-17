@@ -32,12 +32,26 @@ export async function GET(
       return NextResponse.json({ error: 'Patient ID required', data: null }, { status: 400 })
     }
 
-    // Fetch from main patients table
-    const { data: patient, error: patientError } = await supabaseAdmin
-      .from('patients')
-      .select('*')
-      .eq('id', id)
-      .single()
+    // Detect if id is UUID or drchrono_patient_id (integer)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+
+    let patient: any = null
+    let patientError: any = null
+
+    if (isUuid) {
+      // Standard UUID lookup
+      const result = await supabaseAdmin.from('patients').select('*').eq('id', id).single()
+      patient = result.data
+      patientError = result.error
+    } else {
+      // Try as drchrono_patient_id (integer)
+      const asInt = parseInt(id, 10)
+      if (!isNaN(asInt) && asInt > 0) {
+        const result = await supabaseAdmin.from('patients').select('*').eq('drchrono_patient_id', asInt).limit(1).maybeSingle()
+        patient = result.data
+        patientError = result.error
+      }
+    }
 
     if (patientError || !patient) {
       return NextResponse.json(

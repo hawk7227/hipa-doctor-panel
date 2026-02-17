@@ -3,15 +3,15 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
+import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   const auth = await authenticateDoctor(req); if (auth instanceof NextResponse) return auth;
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
   try {
-    const dcId = await getDrchronoPatientId(patient_id)
 
     // DrChrono documents
     let drchronoDocs: any[] = []
@@ -23,14 +23,14 @@ export async function GET(req: NextRequest) {
     // Local uploaded documents
     let localDocs: any[] = []
     try {
-      const { data } = await db.from('patient_documents').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(100)
+      const { data } = await db.from('patient_documents').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(100)
       localDocs = (data || []).map((d: any) => ({ ...d, _source: 'local' }))
     } catch { /* table may not exist yet */ }
 
     // Clinical notes (for locked notes tab)
     let clinicalNotes: any[] = []
     try {
-      const { data: local } = await db.from('clinical_notes').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data: local } = await db.from('clinical_notes').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(50)
       clinicalNotes = local || []
       if (dcId) {
         const { data: dc } = await db.from('drchrono_clinical_notes').select('*').eq('drchrono_patient_id', dcId).order('created_at', { ascending: false }).limit(50)
@@ -41,21 +41,21 @@ export async function GET(req: NextRequest) {
     // Referrals
     let referrals: any[] = []
     try {
-      const { data } = await db.from('referrals').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('referrals').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(50)
       referrals = data || []
     } catch { /* table may not exist */ }
 
     // Amendments
     let amendments: any[] = []
     try {
-      const { data } = await db.from('chart_addendums').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('chart_addendums').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(50)
       amendments = data || []
     } catch { /* table may not exist */ }
 
     // Tasks
     let tasks: any[] = []
     try {
-      const { data } = await db.from('staff_tasks').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await db.from('staff_tasks').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(50)
       tasks = data || []
     } catch { /* table may not exist */ }
 
@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
       const body = await req.json()
       const { patient_id, description, document_type, file_url, file_name, tags, doctor_id, uploaded_by } = body
       if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
+    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
 
       const { data, error } = await db.from('patient_documents').insert({
         patient_id,
@@ -198,11 +199,11 @@ export async function PATCH(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for documents
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId
+// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
 //
 // FIX-001: RLS disabled on drchrono_* tables
 // FIX-008: Uses email fallback when drchrono_patient_id is NULL
 //
 // WIRING: Called by usePanelData hook from documents panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId()
+// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

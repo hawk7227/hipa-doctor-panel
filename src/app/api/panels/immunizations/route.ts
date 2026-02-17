@@ -3,7 +3,7 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
+import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -51,11 +51,11 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for immunizations
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId
+// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
 //
 // FIX-001: RLS disabled on drchrono_* tables
 // FIX-008: Uses email fallback when drchrono_patient_id is NULL
 //
 // WIRING: Called by usePanelData hook from immunizations panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId()
+// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════
