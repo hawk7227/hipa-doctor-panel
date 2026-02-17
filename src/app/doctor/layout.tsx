@@ -12,6 +12,7 @@ import SyncIndicator from '@/components/SyncIndicator'
 import PatientSearchBar from '@/components/PatientSearchBar'
 import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/KeyboardShortcutsModal'
 import FloatingMessenger from '@/components/FloatingMessenger'
+import PageGuideSelector from '@/components/PageGuideSelector'
 import {
   Menu, X, LayoutDashboard, Calendar, Users, UserPlus,
   FileText, MessageSquare, DollarSign, UserCircle, Clock,
@@ -324,6 +325,7 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
         <PatientSearchBar />
       </div>
       <FloatingMessenger />
+      <PageGuideSelector />
       </NotificationProvider>
     </AuthWrapper>
   )
