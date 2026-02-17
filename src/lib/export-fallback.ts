@@ -1,8 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // EXPORT FALLBACK — Shared helper for all doctor panel APIs
-//
 // Tries: 1) Supabase patient_data_exports  2) Static JSON file
-// Returns medications array for a patient
 // ═══════════════════════════════════════════════════════════════
 
 import { existsSync, readFileSync } from "fs";
@@ -17,74 +15,89 @@ function loadStaticFile(): any[] | null {
     if (existsSync(filePath)) {
       const data = JSON.parse(readFileSync(filePath, "utf-8"));
       cachedPatients = data.patients || [];
-      console.log(`[ExportFallback] Loaded static file: ${cachedPatients!.length} patients`);
+      console.log(`[ExportFallback] Loaded static: ${cachedPatients!.length} patients`);
       return cachedPatients;
     }
-  } catch (e) {
-    console.log("[ExportFallback] Static file error:", (e as Error).message);
-  }
+  } catch (e) { console.log("[ExportFallback] Static error:", (e as Error).message); }
   return null;
 }
 
-export async function getExportMedications(
-  db: any,
-  dcId: number | null,
-  patientId: string
-): Promise<any[]> {
-  // Try 1: Supabase export
+async function findPatient(db: any, patients: any[], dcId: number | null, patientId: string): Promise<any | null> {
+  let match = dcId ? patients.find((p: any) => p.drchrono_patient_id === dcId) : null;
+  if (!match) {
+    try {
+      const { data: pt } = await db.from("patients").select("email").eq("id", patientId).single();
+      if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase());
+    } catch {}
+  }
+  return match;
+}
+
+async function loadPatients(db: any): Promise<any[] | null> {
+  // Try Supabase first
   try {
     const { data: exportRow } = await db
       .from("patient_data_exports")
       .select("data")
       .eq("id", "00000000-0000-0000-0000-000000000001")
       .single();
+    if (exportRow?.data) return exportRow.data as any[];
+  } catch {}
 
-    if (exportRow?.data) {
-      const patients = exportRow.data as any[];
-      let match = dcId ? patients.find((p: any) => p.drchrono_patient_id === dcId) : null;
-      if (!match) {
-        const { data: pt } = await db.from("patients").select("email").eq("id", patientId).single();
-        if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase());
-      }
-      if (match?.medications?.length > 0) {
-        console.log(`[ExportFallback] Supabase: ${match.medications.length} meds`);
-        return formatMeds(match);
-      }
-    }
-  } catch (e) {
-    console.log("[ExportFallback] Supabase failed:", (e as Error).message);
-  }
-
-  // Try 2: Static file
-  const patients = loadStaticFile();
-  if (patients) {
-    let match = dcId ? patients.find((p: any) => p.drchrono_patient_id === dcId) : null;
-    if (!match) {
-      try {
-        const { data: pt } = await db.from("patients").select("email").eq("id", patientId).single();
-        if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase());
-      } catch {}
-    }
-    if (match?.medications?.length > 0) {
-      console.log(`[ExportFallback] Static file: ${match.medications.length} meds`);
-      return formatMeds(match);
-    }
-  }
-
-  return [];
+  // Try static file
+  return loadStaticFile();
 }
 
-function formatMeds(match: any): any[] {
+// ── Medications fallback ─────────────────────────────────────
+export async function getExportMedications(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+  const patients = await loadPatients(db);
+  if (!patients) return [];
+  const match = await findPatient(db, patients, dcId, patientId);
+  if (!match?.medications?.length) return [];
+  console.log(`[ExportFallback] meds: ${match.medications.length} for ${patientId}`);
   return match.medications.map((m: any, i: number) => ({
-    id: `export-${i}`,
-    drchrono_patient_id: match.drchrono_patient_id,
-    name: m.name,
-    dosage_quantity: m.dosage?.split(" ")[0] || "",
-    dosage_unit: m.dosage?.split(" ").slice(1).join(" ") || "",
-    sig: m.sig || "",
-    status: m.status || "active",
-    date_prescribed: m.date_prescribed || "",
-    date_stopped_taking: m.date_stopped || null,
-    _source: "export",
+    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    name: m.name, dosage_quantity: m.dosage?.split(" ")[0] || "", dosage_unit: m.dosage?.split(" ").slice(1).join(" ") || "",
+    sig: m.sig || "", status: m.status || "active", date_prescribed: m.date_prescribed || "", date_stopped_taking: m.date_stopped || null, _source: "export",
+  }));
+}
+
+// ── Allergies fallback ───────────────────────────────────────
+export async function getExportAllergies(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+  const patients = await loadPatients(db);
+  if (!patients) return [];
+  const match = await findPatient(db, patients, dcId, patientId);
+  if (!match?.allergies?.length) return [];
+  console.log(`[ExportFallback] allergies: ${match.allergies.length} for ${patientId}`);
+  return match.allergies.map((a: any, i: number) => ({
+    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    description: a.name, reaction: a.reaction || "", status: a.status || "active", onset_date: a.onset_date || "", _source: "export",
+  }));
+}
+
+// ── Problems fallback ────────────────────────────────────────
+export async function getExportProblems(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+  const patients = await loadPatients(db);
+  if (!patients) return [];
+  const match = await findPatient(db, patients, dcId, patientId);
+  if (!match?.problems?.length) return [];
+  console.log(`[ExportFallback] problems: ${match.problems.length} for ${patientId}`);
+  return match.problems.map((p: any, i: number) => ({
+    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    name: p.name, status: p.status || "active", date_onset: p.date_onset || "", date_diagnosis: p.date_onset || "", date_changed: p.date_changed || "", _source: "export",
+  }));
+}
+
+// ── Appointments fallback ────────────────────────────────────
+export async function getExportAppointments(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+  const patients = await loadPatients(db);
+  if (!patients) return [];
+  const match = await findPatient(db, patients, dcId, patientId);
+  if (!match?.appointments?.length) return [];
+  console.log(`[ExportFallback] appointments: ${match.appointments.length} for ${patientId}`);
+  return match.appointments.map((ap: any, i: number) => ({
+    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    scheduled_time: ap.scheduled_time, duration: ap.duration, status: ap.status,
+    reason: ap.reason || "", office: ap.office || "", doctor: ap.doctor || "", notes: ap.notes || "", _source: "export",
   }));
 }

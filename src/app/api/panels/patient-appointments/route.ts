@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, authenticateDoctor } from '../_shared'
+import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
+import { getExportAppointments } from '@/lib/export-fallback'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -9,6 +10,14 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await db.from('appointments').select('id, status, visit_type, chief_complaint, requested_date_time, chart_status, reason, created_at').eq('patient_id', patient_id).order('requested_date_time', { ascending: false }).limit(50)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data: data || [], drchrono_data: [] })
+
+    // If no local appointments, try export fallback
+    let drchrono: any[] = []
+    if (!data || data.length === 0) {
+      const dcId = await getDrchronoPatientId(patient_id)
+      drchrono = await getExportAppointments(db, dcId, patient_id)
+    }
+
+    return NextResponse.json({ data: data || [], drchrono_data: drchrono })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }

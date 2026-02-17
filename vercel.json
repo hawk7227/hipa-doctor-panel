@@ -3,6 +3,10 @@
     {
       "path": "/api/drchrono/cron-sync",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron-export",
+      "schedule": "0 6 * * *"
     }
   ]
 }

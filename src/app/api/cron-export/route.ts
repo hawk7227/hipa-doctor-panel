@@ -1,3 +1,12 @@
+// ═══════════════════════════════════════════════════════════════
+// DAILY AUTO-EXPORT CRON — Runs once per day via Vercel Cron
+//
+// GET /api/cron-export
+// Fetches all patients + meds + allergies + problems + appointments
+// Saves to patient_data_exports table
+// Configure in vercel.json: { "crons": [{ "path": "/api/cron-export", "schedule": "0 6 * * *" }] }
+// ═══════════════════════════════════════════════════════════════
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -16,7 +25,7 @@ async function fetchAll(table: string, select: string, orderBy: string = "id") {
   let hasMore = true;
   while (hasMore) {
     const { data, error } = await supabase.from(table).select(select).order(orderBy, { ascending: true }).range(offset, offset + PAGE_SIZE - 1);
-    if (error) { console.error(`[Export] ${table} error:`, error.message); break; }
+    if (error) { console.error(`[Cron] ${table} error:`, error.message); break; }
     if (data && data.length > 0) { allRows = allRows.concat(data); offset += data.length; hasMore = data.length === PAGE_SIZE; }
     else hasMore = false;
   }
@@ -30,6 +39,14 @@ function buildMap(rows: any[], key: string): Map<number, any[]> {
 }
 
 export async function GET(req: NextRequest) {
+  // Optional: verify cron secret
+  const authHeader = req.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    // Allow without secret for manual triggers
+    console.log("[Cron] No secret check — manual trigger");
+  }
+
   const startTime = Date.now();
   try {
     const dcPatients = await fetchAll("drchrono_patients", "drchrono_patient_id, first_name, last_name, email, cell_phone, date_of_birth, address, city, state, zip_code, default_pharmacy", "drchrono_patient_id");
@@ -55,7 +72,7 @@ export async function GET(req: NextRequest) {
         medications: (medsMap.get(dcId) || []).map((m: any) => ({ name: m.name || "", dosage: [m.dosage_quantity, m.dosage_unit].filter(Boolean).join(" ") || "", sig: m.sig || m.frequency || "", status: m.status || "unknown", date_prescribed: m.date_prescribed || "", date_stopped: m.date_stopped_taking || null })),
         allergies: (allergiesMap.get(dcId) || []).map((a: any) => ({ name: a.reaction || a.notes || "", severity: a.severity || "", status: a.status || "active", onset_date: a.onset_date || "" })),
         problems: (problemsMap.get(dcId) || []).map((pr: any) => ({ name: pr.name || "", icd_code: pr.icd_code || "", status: pr.status || "active", date_diagnosis: pr.date_diagnosis || "" })),
-        appointments: (apptsMap.get(dcId) || []).map((ap: any) => ({ scheduled_time: ap.scheduled_time || "", duration: ap.duration || 0, status: ap.status || "", reason: ap.reason || "", doctor: ap.doctor || "", notes: ap.notes || "" })),
+        appointments: (apptsMap.get(dcId) || []).map((ap: any) => ({ scheduled_time: ap.scheduled_time || "", duration: ap.duration || 0, status: ap.status || "", reason: ap.reason || "", doctor: ap.doctor || "" })),
       };
     });
 
@@ -64,16 +81,21 @@ export async function GET(req: NextRequest) {
     const totalProblems = patients.reduce((s: number, p: any) => s + p.problems.length, 0);
     const totalAppts = patients.reduce((s: number, p: any) => s + p.appointments.length, 0);
 
-    const exportData = {
-      export_info: { generated_at: new Date().toISOString(), generated_by: "Medazon Health", version: "2.0", duration_ms: Date.now() - startTime },
-      summary: { total_patients: patients.length, total_medications: totalMeds, total_allergies: totalAllergies, total_problems: totalProblems, total_appointments: totalAppts, patients_with_medications: patients.filter((p: any) => p.medications.length > 0).length },
-      patients,
-    };
+    const summary = { total_patients: patients.length, total_medications: totalMeds, total_allergies: totalAllergies, total_problems: totalProblems, total_appointments: totalAppts };
 
-    console.log(`[Export] Done: ${patients.length} patients, ${totalMeds} meds, ${totalAllergies} allergies, ${totalProblems} problems, ${totalAppts} appts`);
-    return NextResponse.json(exportData);
+    await supabase.from("patient_data_exports").upsert({
+      id: "00000000-0000-0000-0000-000000000001",
+      export_type: "full_patient_data",
+      generated_at: new Date().toISOString(),
+      summary, patient_count: patients.length, medication_count: totalMeds,
+      data: patients,
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`[Cron] Export done: ${patients.length} patients, ${totalMeds} meds, ${totalAllergies} allergies, ${totalProblems} problems, ${totalAppts} appts in ${duration}ms`);
+    return NextResponse.json({ success: true, summary, duration_ms: duration });
   } catch (err: any) {
-    console.error("[Export] FATAL:", err.message);
+    console.error("[Cron] FATAL:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

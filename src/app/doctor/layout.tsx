@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { href: '/doctor/reports', label: 'Reports', icon: TrendingUp },
   { href: '/doctor/referrals', label: 'Referrals', icon: ClipboardList },
   { href: '/doctor/quality', label: 'Quality Measures', icon: BarChart3 },
+  { href: '/doctor/data-export', label: 'Data Export', icon: FileText },
   { href: '/doctor/ai-assistant', label: 'AI Assistant', icon: Brain },
   { href: '/doctor/admin-messages', label: 'Admin Messages', icon: Shield },
   { href: '/doctor/profile', label: 'Profile & Credentials', icon: UserCircle },

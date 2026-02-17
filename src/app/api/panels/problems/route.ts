@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
+import { getExportProblems } from '@/lib/export-fallback'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest) {
     if (dcId) {
       const { data } = await db.from('drchrono_problems').select('*').eq('drchrono_patient_id', dcId).order('date_diagnosis', { ascending: false })
       drchrono = data || []
+    }
+    if (drchrono.length === 0) {
+      drchrono = await getExportProblems(db, dcId, patient_id)
     }
     console.log(`[problems] patient=${patient_id} local=${local?.length||0} dc=${drchrono.length}`)
     return NextResponse.json({ data: local || [], drchrono_data: drchrono })

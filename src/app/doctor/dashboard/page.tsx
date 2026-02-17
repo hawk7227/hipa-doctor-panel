@@ -11,7 +11,7 @@ import {
   Calendar, Users, Clock, DollarSign, FileText,
   CheckCircle, Bell, ChevronRight, RefreshCw,
   Pill, FlaskConical, Building2, ClipboardList, TrendingUp, Activity,
-  UserPlus, MessageSquare, Shield, Video, BarChart3
+  UserPlus, MessageSquare, Shield, Video, BarChart3, Download, Database, Wifi, WifiOff
 } from 'lucide-react'
 
 interface Notification { id: string; type: string; title: string; message: string; is_read: boolean; created_at: string }
@@ -230,6 +230,9 @@ export default function DoctorDashboard() {
           <MiniCard label="Pending Auths" value={`${revenue.pendingAuths}`} color="text-purple-400" />
         </div>
 
+        {/* ═══ DATA HEALTH TRACKER ═══ */}
+        <DataHealthTracker />
+
         {/* ═══ QUICK ACTION CARDS — big colorful like old dashboard ═══ */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <QuickCard icon={Calendar} label="View All Appointments" sub="Manage slots, reschedule, and join visits." href="/doctor/appointments" iconBg="bg-blue-600/20" iconColor="text-blue-400" btnColor="bg-blue-600 hover:bg-blue-700" />
@@ -294,3 +297,112 @@ function InboxIcon({ type }: { type: string }) {
 }
 
 function fmtAgo(d: string) { const ms = Date.now() - new Date(d).getTime(); const m = Math.floor(ms / 60000); if (m < 60) return `${m}m ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`; return `${Math.floor(h / 24)}d ago` }
+
+// ═══ DATA HEALTH TRACKER ═══
+function DataHealthTracker() {
+  const [exportInfo, setExportInfo] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [lastCheck, setLastCheck] = useState<string | null>(null)
+
+  useEffect(() => { checkExportStatus() }, [])
+
+  const checkExportStatus = async () => {
+    try {
+      const { data } = await supabase
+        .from('patient_data_exports')
+        .select('summary, generated_at, patient_count, medication_count')
+        .eq('id', '00000000-0000-0000-0000-000000000001')
+        .single()
+      if (data) { setExportInfo(data); setLastCheck(new Date().toISOString()) }
+    } catch {}
+  }
+
+  const runExport = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/export-patient-data')
+      const data = await res.json()
+      if (data.patients) {
+        // Save to Supabase
+        await supabase.from('patient_data_exports').upsert({
+          id: '00000000-0000-0000-0000-000000000001',
+          export_type: 'full_patient_data',
+          generated_at: new Date().toISOString(),
+          summary: data.export_info ? { total_patients: data.patients.length, total_medications: data.patients.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0), total_allergies: data.patients.reduce((s: number, p: any) => s + (p.allergies?.length || 0), 0), total_problems: data.patients.reduce((s: number, p: any) => s + (p.problems?.length || 0), 0), total_appointments: data.patients.reduce((s: number, p: any) => s + (p.appointments?.length || 0), 0) } : data.summary,
+          patient_count: data.patients?.length || data.summary?.total_patients || 0,
+          medication_count: data.patients?.reduce((s: number, p: any) => s + (p.medications?.length || 0), 0) || data.summary?.total_medications || 0,
+          data: data.patients,
+        })
+        await checkExportStatus()
+      }
+    } catch (e) { console.error('Export failed:', e) }
+    setSyncing(false)
+  }
+
+  const downloadJson = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/export-patient-data')
+      const data = await res.json()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = `medazon-backup-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
+    } catch (e) { console.error('Download failed:', e) }
+    setLoading(false)
+  }
+
+  const s = exportInfo?.summary || {}
+  const genAt = exportInfo?.generated_at
+  const isStale = genAt ? (Date.now() - new Date(genAt).getTime()) > 24 * 60 * 60 * 1000 : true
+  const isHealthy = !isStale && (s.total_patients || 0) > 0
+
+  return (
+    <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a3d3d]/30">
+        <div className="flex items-center gap-2">
+          <Database className="w-5 h-5 text-emerald-400" />
+          <h2 className="text-base font-bold">Data Health Tracker</h2>
+          {isHealthy ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full font-bold"><Wifi className="w-3 h-3" /> Healthy</span>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600/20 text-red-400 text-xs rounded-full font-bold"><WifiOff className="w-3 h-3" /> {isStale ? 'Stale' : 'No Data'}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={runExport} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg disabled:opacity-50">
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync Now'}
+          </button>
+          <button onClick={downloadJson} disabled={loading} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-50">
+            <Download className="w-3.5 h-3.5" />
+            {loading ? 'Downloading...' : 'Download'}
+          </button>
+        </div>
+      </div>
+      <div className="p-4">
+        <div className="grid grid-cols-5 gap-3 mb-3">
+          <HealthStat label="Patients" value={s.total_patients || exportInfo?.patient_count || 0} color="text-white" />
+          <HealthStat label="Medications" value={s.total_medications || exportInfo?.medication_count || 0} color="text-teal-400" />
+          <HealthStat label="Allergies" value={s.total_allergies || 0} color="text-amber-400" />
+          <HealthStat label="Problems" value={s.total_problems || 0} color="text-purple-400" />
+          <HealthStat label="Appointments" value={s.total_appointments || 0} color="text-blue-400" />
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-gray-500">
+          <span>Last backup: {genAt ? new Date(genAt).toLocaleString() : 'Never'}</span>
+          <span>{isStale ? '⚠️ Backup is over 24h old — click Sync Now' : '✅ Backup is current'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HealthStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="bg-[#061818] rounded-lg p-3 text-center">
+      <div className={`text-xl font-bold ${color}`}>{value.toLocaleString()}</div>
+      <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+    </div>
+  )
+}
