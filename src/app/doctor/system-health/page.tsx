@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import {
   Shield, Activity, Wrench, RefreshCw, AlertTriangle, CheckCircle, XCircle,
-  Database, Zap, Clock, ChevronDown, ChevronRight, Server, FileText, Cpu, Download,
+  Database, Zap, Clock, ChevronDown, ChevronRight, Server, FileText, Cpu, Download, History,
 } from 'lucide-react'
 
 interface CheckResult { id: string; name: string; status: 'pass' | 'fail' | 'warn'; message: string; ms: number; fixIds?: string[] }
@@ -223,6 +223,9 @@ export default function SystemHealthPage() {
         </div>
       </div>
 
+      {/* CHANGE LOG (from Supabase) */}
+      <ChangeLog />
+
       {/* KEY NUMBERS */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <NumCard label="Patients" value="6,968" color="text-white" />
@@ -262,6 +265,57 @@ function ArchCard({ icon: Icon, label, count, color, items }: { icon: typeof Ser
             <div key={i} className="text-[10px] text-gray-400 flex items-center gap-1">
               <span className={`w-1 h-1 rounded-full ${color.replace('text-', 'bg-')}`} />
               {item}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChangeLog() {
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [show, setShow] = useState(false)
+
+  const loadLogs = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/system-health/log')
+      const data = await res.json()
+      setLogs(data.logs || [])
+    } catch {}
+    setLoading(false)
+  }
+
+  useEffect(() => { loadLogs() }, [])
+
+  return (
+    <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl overflow-hidden">
+      <button onClick={() => setShow(!show)} className="w-full flex items-center justify-between px-5 py-4 border-b border-[#1a3d3d]/30 hover:bg-[#0d2828] transition-colors">
+        <div className="flex items-center gap-2">
+          <History className="w-5 h-5 text-blue-400" />
+          <h2 className="text-base font-bold text-white">Change Log ({logs.length} entries)</h2>
+        </div>
+        {show ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+      </button>
+      {show && (
+        <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
+          {logs.length === 0 && <div className="text-sm text-gray-500 py-4 text-center">No changes logged yet. Changes will appear here automatically.</div>}
+          {logs.map((log: any, i: number) => (
+            <div key={log.id || i} className="bg-[#061818] rounded-lg px-4 py-3 border border-[#1a3d3d]/30">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-white">{log.triggered_by}</span>
+                <span className="text-[10px] text-gray-500">{new Date(log.created_at).toLocaleString()}</span>
+              </div>
+              {log.results?.map((r: any, j: number) => (
+                <div key={j} className="text-[11px] text-gray-400 mt-1">
+                  {r.description && <span>{r.description}</span>}
+                  {r.files_changed?.length > 0 && (
+                    <span className="text-gray-600 ml-1">({r.files_changed.length} files)</span>
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>
