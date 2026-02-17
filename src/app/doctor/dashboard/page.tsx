@@ -120,6 +120,8 @@ export default function DoctorDashboard() {
         <ActionBtn label="Open Calendar" color="bg-[#1a3d3d] hover:bg-[#245050]" href="/doctor/schedule" />
         <ActionBtn label="Manage Staff" color="bg-amber-500 hover:bg-amber-600" href="/doctor/staff-hub" />
         <ActionBtn label="Chart Management" color="bg-emerald-600 hover:bg-emerald-700" href="/doctor/chart-management" />
+        <SyncButton />
+        <DownloadButton />
       </div>
 
       {/* ═══ SEARCH ═══ */}
@@ -135,6 +137,9 @@ export default function DoctorDashboard() {
           <KPICard icon={Clock} label="New This Month" value={`${stats.newThisMonth}`} iconBg="bg-amber-600/20" iconColor="text-amber-400" />
           <KPICard icon={BarChart3} label="Avg. Appointments" value={`${stats.avgAppointments}`} iconBg="bg-purple-600/20" iconColor="text-purple-400" />
         </div>
+
+        {/* ═══ DATA STATS ROW ═══ */}
+        <DataStatsRow />
 
         {/* ═══ APPOINTMENTS + NOTIFICATIONS ═══ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -230,9 +235,6 @@ export default function DoctorDashboard() {
           <MiniCard label="Pending Auths" value={`${revenue.pendingAuths}`} color="text-purple-400" />
         </div>
 
-        {/* ═══ DATA HEALTH TRACKER ═══ */}
-        <DataHealthTracker />
-
         {/* ═══ QUICK ACTION CARDS — big colorful like old dashboard ═══ */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <QuickCard icon={Calendar} label="View All Appointments" sub="Manage slots, reschedule, and join visits." href="/doctor/appointments" iconBg="bg-blue-600/20" iconColor="text-blue-400" btnColor="bg-blue-600 hover:bg-blue-700" />
@@ -298,43 +300,27 @@ function InboxIcon({ type }: { type: string }) {
 
 function fmtAgo(d: string) { const ms = Date.now() - new Date(d).getTime(); const m = Math.floor(ms / 60000); if (m < 60) return `${m}m ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`; return `${Math.floor(h / 24)}d ago` }
 
-// ═══ DATA HEALTH TRACKER ═══
-function DataHealthTracker() {
-  const [exportInfo, setExportInfo] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
+// ═══ SYNC BUTTON (top action bar) ═══
+function SyncButton() {
   const [syncing, setSyncing] = useState(false)
-  const [lastCheck, setLastCheck] = useState<string | null>(null)
-
-  useEffect(() => { checkExportStatus() }, [])
-
-  const checkExportStatus = async () => {
-    try {
-      const { data } = await supabase
-        .from('patient_data_exports')
-        .select('summary, generated_at, patient_count, medication_count')
-        .eq('id', '00000000-0000-0000-0000-000000000001')
-        .single()
-      if (data) { setExportInfo(data); setLastCheck(new Date().toISOString()) }
-    } catch {}
-  }
-
-  const runExport = async () => {
+  const handleSync = async () => {
     setSyncing(true)
-    try {
-      // Use cron-export API — fetches and saves to Supabase server-side (no 7MB browser transfer)
-      const res = await fetch('/api/cron-export')
-      const data = await res.json()
-      if (data.success) {
-        await checkExportStatus()
-      } else {
-        console.error('Export error:', data.error)
-      }
-    } catch (e) { console.error('Export failed:', e) }
+    try { await fetch('/api/cron-export'); } catch {}
     setSyncing(false)
   }
+  return (
+    <button onClick={handleSync} disabled={syncing} className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50">
+      <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+      {syncing ? 'Syncing...' : 'Sync Now'}
+    </button>
+  )
+}
 
-  const downloadJson = async () => {
-    setLoading(true)
+// ═══ DOWNLOAD BUTTON (top action bar) ═══
+function DownloadButton() {
+  const [downloading, setDownloading] = useState(false)
+  const handleDownload = async () => {
+    setDownloading(true)
     try {
       const res = await fetch('/api/export-patient-data')
       const data = await res.json()
@@ -342,60 +328,45 @@ function DataHealthTracker() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a'); a.href = url; a.download = `medazon-backup-${new Date().toISOString().split('T')[0]}.json`
       document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url)
-    } catch (e) { console.error('Download failed:', e) }
-    setLoading(false)
+    } catch {}
+    setDownloading(false)
   }
-
-  const s = exportInfo?.summary || {}
-  const genAt = exportInfo?.generated_at
-  const isStale = genAt ? (Date.now() - new Date(genAt).getTime()) > 24 * 60 * 60 * 1000 : true
-  const isHealthy = !isStale && (s.total_patients || 0) > 0
-
   return (
-    <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[#1a3d3d]/30">
-        <div className="flex items-center gap-2">
-          <Database className="w-5 h-5 text-emerald-400" />
-          <h2 className="text-base font-bold">Data Health Tracker</h2>
-          {isHealthy ? (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full font-bold"><Wifi className="w-3 h-3" /> Healthy</span>
-          ) : (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600/20 text-red-400 text-xs rounded-full font-bold"><WifiOff className="w-3 h-3" /> {isStale ? 'Stale' : 'No Data'}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={runExport} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg disabled:opacity-50">
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing...' : 'Sync Now'}
-          </button>
-          <button onClick={downloadJson} disabled={loading} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-50">
-            <Download className="w-3.5 h-3.5" />
-            {loading ? 'Downloading...' : 'Download'}
-          </button>
-        </div>
-      </div>
-      <div className="p-4">
-        <div className="grid grid-cols-5 gap-3 mb-3">
-          <HealthStat label="Patients" value={s.total_patients || exportInfo?.patient_count || 0} color="text-white" />
-          <HealthStat label="Medications" value={s.total_medications || exportInfo?.medication_count || 0} color="text-teal-400" />
-          <HealthStat label="Allergies" value={s.total_allergies || 0} color="text-amber-400" />
-          <HealthStat label="Problems" value={s.total_problems || 0} color="text-purple-400" />
-          <HealthStat label="Appointments" value={s.total_appointments || 0} color="text-blue-400" />
-        </div>
-        <div className="flex items-center justify-between text-[11px] text-gray-500">
-          <span>Last backup: {genAt ? new Date(genAt).toLocaleString() : 'Never'}</span>
-          <span>{isStale ? '⚠️ Backup is over 24h old — click Sync Now' : '✅ Backup is current'}</span>
-        </div>
-      </div>
-    </div>
+    <button onClick={handleDownload} disabled={downloading} className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50">
+      <Download className={`w-4 h-4`} />
+      {downloading ? 'Downloading...' : 'Download Backup'}
+    </button>
   )
 }
 
-function HealthStat({ label, value, color }: { label: string; value: number; color: string }) {
+// ═══ DATA STATS ROW (under KPI cards) ═══
+function DataStatsRow() {
+  const [stats, setStats] = useState<any>(null)
+  useEffect(() => {
+    supabase.from('patient_data_exports').select('summary, generated_at').eq('id', '00000000-0000-0000-0000-000000000001').single()
+      .then(({ data }) => { if (data) setStats(data) })
+  }, [])
+  const s = stats?.summary || {}
+  const genAt = stats?.generated_at
+  const isStale = genAt ? (Date.now() - new Date(genAt).getTime()) > 24 * 60 * 60 * 1000 : true
   return (
-    <div className="bg-[#061818] rounded-lg p-3 text-center">
-      <div className={`text-xl font-bold ${color}`}>{value.toLocaleString()}</div>
-      <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl p-4 text-center">
+        <div className="text-xl font-bold text-teal-400">{(s.total_medications || 0).toLocaleString()}</div>
+        <div className="text-[11px] text-gray-500 mt-1">Medications</div>
+      </div>
+      <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl p-4 text-center">
+        <div className="text-xl font-bold text-amber-400">{(s.total_allergies || 0).toLocaleString()}</div>
+        <div className="text-[11px] text-gray-500 mt-1">Allergies</div>
+      </div>
+      <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl p-4 text-center">
+        <div className="text-xl font-bold text-purple-400">{(s.total_problems || 0).toLocaleString()}</div>
+        <div className="text-[11px] text-gray-500 mt-1">Problems</div>
+      </div>
+      <div className="bg-[#0a1f1f] border border-[#1a3d3d]/50 rounded-xl p-4 text-center">
+        <div className="text-xl font-bold text-blue-400">{(s.total_appointments || 0).toLocaleString()}</div>
+        <div className="text-[11px] text-gray-500 mt-1">Appointments</div>
+      </div>
     </div>
   )
 }
