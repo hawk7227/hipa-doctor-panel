@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Calendar, Clock, Search, Filter, RefreshCw, User, Video, Phone, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { Calendar, Clock, Search, Filter, RefreshCw, User, Video, Phone, CheckCircle, XCircle, AlertCircle, Zap, Pill, MessageSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const STATUS_COLORS: Record<string, string> = { pending: 'bg-amber-500/20 text-amber-400', confirmed: 'bg-green-500/20 text-green-400', completed: 'bg-blue-500/20 text-blue-400', cancelled: 'bg-red-500/20 text-red-400', no_show: 'bg-gray-500/20 text-gray-400' }
@@ -57,7 +57,13 @@ export default function AdminAppointmentsPage() {
                 <td className="px-4 py-3"><div className="font-medium">{a.patients?.first_name} {a.patients?.last_name}</div><div className="text-[10px] text-gray-500">{a.patients?.phone}</div></td>
                 <td className="px-4 py-3 text-gray-400">Dr. {a.doctors?.first_name} {a.doctors?.last_name}</td>
                 <td className="px-4 py-3 text-gray-400">{a.requested_date_time ? new Date(a.requested_date_time).toLocaleString() : '—'}</td>
-                <td className="px-4 py-3">{a.visit_type === 'video' ? <Video className="w-4 h-4 text-blue-400" /> : <Phone className="w-4 h-4 text-green-400" />}</td>
+                <td className="px-4 py-3">{
+                  a.visit_type === 'video' ? <Video className="w-4 h-4 text-blue-400" title="Video Visit" /> 
+                  : a.visit_type === 'phone' ? <Phone className="w-4 h-4 text-green-400" title="Phone Visit" />
+                  : a.visit_type === 'instant' ? <Zap className="w-4 h-4 text-yellow-400" title="Instant Visit (Async)" />
+                  : a.visit_type === 'refill' ? <Pill className="w-4 h-4 text-purple-400" title="Rx Refill (Async)" />
+                  : <MessageSquare className="w-4 h-4 text-orange-400" title="Async Consultation" />
+                }</td>
                 <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${STATUS_COLORS[a.status] || 'bg-gray-600/20 text-gray-400'}`}>{a.status}</span></td>
               </tr>
             ))}</tbody>
