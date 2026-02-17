@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { FIX_HISTORY } from '@/lib/system-manifest'
@@ -29,7 +31,13 @@ export async function POST(req: NextRequest) {
         let applied = 0
         let errors: string[] = []
         for (const sql of statements) {
-          const { error } = await db.rpc('exec_sql', { sql_text: sql }).catch(() => ({ error: { message: 'rpc not available' } }))
+          let rpcResult: any = { error: null }
+          try {
+            rpcResult = await db.rpc('exec_sql', { sql_text: sql })
+          } catch {
+            rpcResult = { error: { message: 'rpc not available' } }
+          }
+          const { error } = rpcResult
           // If rpc doesn't exist, try direct
           if (error?.message === 'rpc not available') {
             // Can't run raw SQL without rpc — log it

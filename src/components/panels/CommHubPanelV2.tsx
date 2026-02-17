@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import React, { useState, useMemo } from 'react'
 import { MessageSquare, Phone, Video, Mail, Clock, Send, PhoneIncoming, PhoneOutgoing, PhoneMissed, FileText, Plus } from 'lucide-react'

@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // BUGSY API — Live Session (Daily.co)
 // Route: /api/bugsy/admin/reports/[id]/live-session

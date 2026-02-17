@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import React, { memo } from 'react'
 import { GripVertical } from 'lucide-react'
 

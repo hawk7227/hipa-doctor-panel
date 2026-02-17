@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // PUSH SUBSCRIPTION API — Register/unregister push subscriptions
 // Route: /api/notifications/subscribe/route.ts

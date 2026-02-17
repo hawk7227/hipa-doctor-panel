@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import React, { memo, startTransition, useState, useEffect } from 'react'
 import { GripVertical, MessageSquare, Phone, Send, Clock, PhoneCall, Video, Play, Pause, User, UserX } from 'lucide-react'
 import VideoCallPanel from './VideoCallPanel'

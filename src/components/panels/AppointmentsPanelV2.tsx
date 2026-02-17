@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import React, { useState, useMemo } from 'react'
 import { Calendar, Clock, Video, MapPin, User, Phone, FileText, AlertCircle, CheckCircle, XCircle, Filter } from 'lucide-react'

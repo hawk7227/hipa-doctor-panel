@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import React, { memo, useState, useCallback, useRef } from 'react'
 import { GripVertical, Activity, X } from 'lucide-react'
 

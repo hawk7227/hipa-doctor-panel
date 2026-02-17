@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 
 // ═══════════════════════════════════════════════════════════════
@@ -993,3 +995,19 @@ export default function WorkspaceCanvas({
     </div>
   )
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: WorkspaceCanvas — 28 EHR panel grid workspace
+// Built: 2026-02-17 | Replaces old 7109-line AppointmentDetailModal
+//
+// FIX-005 (2026-02-17): Panels not opening
+//   - dragConfig={{handle}} → draggableHandle=".grid-drag-handle"
+//   - Added lab-results-inline + referrals-followup to PANEL_CONTENT
+//   - Switched patients page from AppointmentDetailModal to this
+//
+// WIRING: Used by /doctor/appointments and /doctor/patients
+// DEPENDS ON: /api/panels/*, ToolbarButtons.tsx, PanelRegistry.ts
+// PANELS: 28 total (see EHR_PANELS in ToolbarButtons.tsx)
+// GRID: react-grid-layout with draggableHandle=".grid-drag-handle"
+// ═══════════════════════════════════════════════════════════════

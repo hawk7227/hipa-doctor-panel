@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // Daily.co API service for video meetings and bug report live sessions
 
 interface DailyRoomConfig {

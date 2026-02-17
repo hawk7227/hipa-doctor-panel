@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // MEDAZON HEALTH — SYSTEM MANIFEST
 // Single source of truth for every system, wiring, and fix pattern.
@@ -335,3 +337,16 @@ export const HEALTH_CHECKS: HealthCheck[] = [
     endpoint: `/api/panels/${ep}?patient_id=test`, expectStatus: 400, // 400 = API exists, needs real patient_id
   })),
 ]
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: THE SYSTEM MANIFEST — source of truth
+// Built: 2026-02-17 | Must be updated with every fix/build
+//
+// Contains: FIX_HISTORY, SYSTEM_MAP, HEALTH_CHECKS
+// Used by: /api/system-health, /doctor/system-health, PageGuide
+//
+// RULE: Every new fix MUST be added to FIX_HISTORY here
+// RULE: Every new system MUST be added to SYSTEM_MAP here
+// RULE: AI/dev MUST read this file before changing any code
+// ═══════════════════════════════════════════════════════════════

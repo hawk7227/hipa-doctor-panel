@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { loadStripe } from '@stripe/stripe-js'
 import Stripe from 'stripe'
 

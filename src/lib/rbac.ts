@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // MEDAZON HEALTH — ENTERPRISE RBAC (Role-Based Access Control)
 // 50+ granular permissions modeled after DrChrono + HIPAA best practices

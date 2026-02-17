@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 export default function DoctorLoading() {
   return (
     <div className="h-full bg-[#0a1f1f] flex items-center justify-center">

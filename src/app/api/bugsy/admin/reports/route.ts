@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // ADMIN API — GET /api/bugsy/admin/reports
 // Fetch all bug reports with doctor info for admin dashboard

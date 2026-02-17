@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // MEDAZON HEALTH — WORKSPACE STATE MANAGER
 // Centralized state for all panel open/close, positions, sizes

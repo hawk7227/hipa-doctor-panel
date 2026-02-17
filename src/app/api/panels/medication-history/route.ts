@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { NextRequest, NextResponse } from 'next/server'
 import { db, getDrchronoPatientId, authenticateDoctor } from '../_shared'
 import { getExportMedications } from '@/lib/export-fallback'
@@ -49,3 +51,15 @@ export async function DELETE(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Panel API for medication-history
+// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId
+//
+// FIX-001: RLS disabled on drchrono_* tables
+// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+//
+// WIRING: Called by usePanelData hook from medication-history panel component
+// SHARED: Uses _shared.ts for getDrchronoPatientId()
+// ═══════════════════════════════════════════════════════════════

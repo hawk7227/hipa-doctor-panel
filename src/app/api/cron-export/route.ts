@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // DAILY AUTO-EXPORT CRON — Runs once per day via Vercel Cron
 //
@@ -99,3 +101,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Daily auto-sync cron job
+// Built: 2026-02-17 | Runs at 6AM UTC via Vercel Cron
+//
+// Fetches all 5 data types with 1000-row pagination:
+//   patients, medications, allergies, problems, appointments
+// Saves to patient_data_exports (UUID: 00000000-0000-0000-0000-000000000001)
+//
+// FIX-004 (2026-02-17): Dashboard now calls this instead of
+//   downloading 7MB to browser and re-uploading
+//
+// WIRING: Called by dashboard Sync Now button + Vercel Cron
+// TABLES: drchrono_patients, drchrono_medications, drchrono_allergies,
+//         drchrono_problems, drchrono_appointments, patient_data_exports
+// ═══════════════════════════════════════════════════════════════

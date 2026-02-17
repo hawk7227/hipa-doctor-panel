@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // Utility functions for timezone conversions
 // Extracted from AppointmentDetailModal for better performance and reusability
 

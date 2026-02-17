@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import { useState, useEffect } from 'react'
 import { Bell, Search, RefreshCw, CheckCircle, AlertCircle, Info, Trash2, CheckCheck } from 'lucide-react'

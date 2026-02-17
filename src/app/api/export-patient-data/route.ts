@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -77,3 +79,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Export patient data API (returns JSON for download)
+// Built: 2026-02-17 | Rewritten from 135 to 87 lines
+//
+// FIX-003 (2026-02-17): Correct column names
+//   - allergies: "reaction" not "description"
+//   - problems: "icd_code" + "date_diagnosis"
+//
+// WARNING: This returns ~7MB JSON. Do NOT use for saving to DB.
+//   Use /api/cron-export for server-side save instead.
+//
+// WIRING: Called by Download Backup button only
+// ═══════════════════════════════════════════════════════════════

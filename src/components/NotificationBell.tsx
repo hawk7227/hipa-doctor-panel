@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // NOTIFICATION BELL — UI component for enabling/disabling push notifications
 // Place in: /src/components/NotificationBell.tsx

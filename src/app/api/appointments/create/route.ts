@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { NextRequest, NextResponse } from "next/server";
 import { requireDoctor } from '@/lib/api-auth'

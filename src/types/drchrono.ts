@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // DrChrono EHR Integration — TypeScript Types
 // Medazon Health · Phase 1A

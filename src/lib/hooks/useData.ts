@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // MEDAZON HEALTH — DATA HOOKS
 // Phase D: AbortController fetch, loading/error states, retry

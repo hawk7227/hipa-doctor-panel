@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import React, { useState, useMemo } from 'react'
 import { Brain, Sparkles, CheckCircle, XCircle, Clock, Lightbulb, Stethoscope, FileText, Pill, FlaskConical } from 'lucide-react'

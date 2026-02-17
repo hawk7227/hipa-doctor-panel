@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 
 import React from 'react'
@@ -88,3 +90,16 @@ export default React.memo(function ToolbarButtons({ onPanelToggle, isPanelOpen }
     </div>
   )
 })
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: EHR Panel toolbar button configs
+// Built: 2026-02-17 | 28 panel buttons + eRx
+//
+// Each button maps to a panel ID used in WorkspaceCanvas PANEL_CONTENT
+// If you add a button here, you MUST add matching entry in
+// WorkspaceCanvas.tsx PANEL_CONTENT and create the panel component
+//
+// FIX-005 (2026-02-17): lab-results-inline and referrals-followup
+//   were in this file but missing from PANEL_CONTENT
+// ═══════════════════════════════════════════════════════════════

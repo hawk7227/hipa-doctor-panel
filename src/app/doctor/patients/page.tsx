@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
@@ -2365,3 +2367,15 @@ const handleSuggestionClick = (patient: Patient) => {
 
 
 
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Patient Management Page
+// Built: 2026-02-17 | Switched from AppointmentDetailModal to WorkspaceCanvas
+//
+// FIX-005 (2026-02-17): Replaced old 7109-line modal with WorkspaceCanvas
+// FIX-008 (2026-02-17): DrChrono patient ID null → email fallback
+//
+// WIRING: WorkspaceCanvas, /api/patients/[id], /api/patients/search
+// TABLES: patients, drchrono_patients, appointments
+// ═══════════════════════════════════════════════════════════════

@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 
 import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react'
@@ -1028,3 +1030,15 @@ export default function AppointmentsPage() {
     </Suspense>
   )
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Appointments Calendar Page
+// Built: 2026-02-17 | Uses WorkspaceCanvas for EHR panels
+//
+// FIX-005 (2026-02-17): Grid panels now open correctly
+// FIX-006 (2026-02-17): Availability extended to 9AM-10PM
+//
+// WIRING: WorkspaceCanvas, /api/appointments, /api/panels/*
+// TABLES: appointments, patients, doctors, doctor_availability
+// ═══════════════════════════════════════════════════════════════

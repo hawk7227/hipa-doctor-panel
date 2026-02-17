@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // EXPORT FALLBACK — Shared helper for all doctor panel APIs
 // Tries: 1) Supabase patient_data_exports  2) Static JSON file
@@ -101,3 +103,20 @@ export async function getExportAppointments(db: any, dcId: number | null, patien
     reason: ap.reason || "", office: ap.office || "", doctor: ap.doctor || "", notes: ap.notes || "", _source: "export",
   }));
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: 3-tier data fallback system
+// Built: 2026-02-17 | Used by all 6 panel APIs
+//
+// Tier 1: Live DrChrono query (handled by panel API itself)
+// Tier 2: Supabase patient_data_exports table (this file)
+// Tier 3: Static /public/data/patient-medications.json (this file)
+//
+// Functions: getExportMedications(), getExportAllergies(),
+//   getExportProblems(), getExportAppointments()
+//
+// WIRING: Used by /api/panels/medications, /api/panels/allergies,
+//   /api/panels/problems, /api/panels/patient-appointments,
+//   /api/panels/medication-history, /api/panels/prescriptions
+// ═══════════════════════════════════════════════════════════════

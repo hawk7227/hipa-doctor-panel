@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ═══════════════════════════════════════════════════════════════
 // Patient Data Cache — IndexedDB Browser-side Storage
 // Provides offline fallback when Supabase/DrChrono are unavailable

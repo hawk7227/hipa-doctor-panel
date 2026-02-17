@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 import { PROVIDER_TIMEZONE } from '@/lib/constants'
 import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'

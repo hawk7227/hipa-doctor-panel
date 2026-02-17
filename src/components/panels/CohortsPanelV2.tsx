@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import React, { useState } from 'react'
 import { Users, Plus, Pencil, Trash2, Filter, UserPlus, BarChart3 } from 'lucide-react'

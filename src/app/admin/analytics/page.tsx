@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 import { useState, useEffect } from 'react'
 import { BarChart3, Users, Calendar, DollarSign, TrendingUp, Activity, Clock, RefreshCw } from 'lucide-react'

@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 // ============================================================================
 // NOTIFICATION TOAST SYSTEM — In-app real-time notification toasts
 // Deploy to: src/components/NotificationToast.tsx

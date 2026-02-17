@@ -1,3 +1,5 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -370,3 +372,16 @@ function DataStatsRow() {
     </div>
   )
 }
+
+
+// ═══ BUILD_HISTORY ═══════════════════════════════════════════
+// This file: Doctor Dashboard
+// Built: 2026-02-17 | Main dashboard with KPIs, actions, data stats
+//
+// FIX-004 (2026-02-17): Sync Now changed from browser upload to
+//   /api/cron-export (server-side)
+//
+// COMPONENTS: SyncButton, DownloadButton, DataStatsRow
+// WIRING: /api/dashboard/stats, /api/cron-export, /api/export-patient-data
+// TABLES: appointments, patients, patient_data_exports
+// ═══════════════════════════════════════════════════════════════
