@@ -36,9 +36,9 @@ const gridStyles = `
 .react-grid-item.dropping{visibility:hidden}
 .react-grid-item.react-grid-placeholder{background:rgba(20,184,166,0.3);opacity:0.4;transition-duration:100ms;z-index:2;user-select:none;border-radius:12px}
 .react-grid-item.react-grid-placeholder.placeholder-resizing{transition:none}
-.react-grid-item>.react-resizable-handle{position:absolute;width:20px;height:20px;opacity:0}
-.react-grid-item:hover>.react-resizable-handle{opacity:1}
-.react-grid-item>.react-resizable-handle::after{content:"";position:absolute;right:3px;bottom:3px;width:5px;height:5px;border-right:2px solid rgba(255,255,255,0.3);border-bottom:2px solid rgba(255,255,255,0.3)}
+.react-grid-item>.react-resizable-handle{position:absolute;width:20px;height:20px;opacity:0.3}
+.react-grid-item:hover>.react-resizable-handle{opacity:0.8}
+.react-grid-item>.react-resizable-handle::after{content:"";position:absolute;right:3px;bottom:3px;width:5px;height:5px;border-right:2px solid rgba(255,255,255,0.4);border-bottom:2px solid rgba(255,255,255,0.4)}
 .react-resizable-hide>.react-resizable-handle{display:none}
 .react-grid-item>.react-resizable-handle.react-resizable-handle-se{bottom:0;right:0;cursor:se-resize}
 .react-grid-item>.react-resizable-handle.react-resizable-handle-sw{bottom:0;left:0;cursor:sw-resize;transform:rotate(90deg)}
@@ -624,6 +624,7 @@ export default function WorkspaceCanvas({
             margin={MARGIN}
             containerPadding={[4, 4]}
             draggableHandle=".grid-drag-handle"
+            resizeHandles={['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']}
             onLayoutChange={handleLayoutChange as any}
           >
             {/* ── PATIENT INFO PANEL ── */}
@@ -891,7 +892,7 @@ export default function WorkspaceCanvas({
                 'care-plans': <CarePlansPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-                'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} doctorId={appointment?.doctor_id || doctorId} doctorName={currentUser?.full_name || currentUser?.email || 'Provider'} onClose={close} />,
+                'chart-management': <ChartManagementPanelV2 isOpen inline patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} doctorId={appointment?.doctor_id || doctorId} doctorName={currentUser?.full_name || currentUser?.email || 'Provider'} onClose={close} />,
                 'prior-auth': <PriorAuthPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'insurance': <InsurancePanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'alerts': <AlertsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,

@@ -37,13 +37,15 @@ interface Props {
   chartStatus?: string
   doctorId?: string | null
   doctorName?: string
+  /** When true, renders content directly without DraggableOverlayWrapper (for grid embedding) */
+  inline?: boolean
 }
 
 type TabKey = 'chart' | 'letters' | 'settings' | 'staff' | 'reviews'
 
 export default function ChartManagementPanelV2({
   isOpen, onClose, patientId, patientName, appointmentId, chartStatus,
-  doctorId, doctorName,
+  doctorId, doctorName, inline = false,
 }: Props) {
   const [tab, setTab] = useState<TabKey>('chart')
   const [chartSub, setChartSub] = useState<'audit' | 'addendums'>('audit')
@@ -151,18 +153,8 @@ export default function ChartManagementPanelV2({
 
   if (!isOpen) return null
 
-  return (
-    <DraggableOverlayWrapper
-      panelId="chart-management-enterprise"
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Chart Management"
-      icon={<Shield className="w-4 h-4" />}
-      subtitle={patientName}
-      defaultTheme="purple"
-      defaultWidth={580}
-      defaultHeight={650}
-    >
+  // ── Content shared between inline and overlay modes ──
+  const panelContent = (
       <div className="flex flex-col h-full">
 
         {/* ═══ NOTIFICATION TOAST ═══ */}
@@ -438,6 +430,27 @@ export default function ChartManagementPanelV2({
 
         </div>
       </div>
+  )
+
+  // Inline mode: render content directly (for grid embedding)
+  if (inline) {
+    return panelContent
+  }
+
+  // Overlay mode: wrap in DraggableOverlayWrapper
+  return (
+    <DraggableOverlayWrapper
+      panelId="chart-management-enterprise"
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Chart Management"
+      icon={<Shield className="w-4 h-4" />}
+      subtitle={patientName}
+      defaultTheme="purple"
+      defaultWidth={580}
+      defaultHeight={650}
+    >
+      {panelContent}
     </DraggableOverlayWrapper>
   )
 }

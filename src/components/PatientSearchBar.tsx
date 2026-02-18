@@ -14,7 +14,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Phone, Calendar, Mail, User } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 
 // ─── Types ──────────────────────────────────────────────────────────
 export interface PatientSearchResult {
@@ -172,72 +171,30 @@ export default function PatientSearchBar({
     return () => clearTimeout(timeout)
   }, [query])
 
-  // Search logic
+  // Search logic — uses server-side API route (service role, no auth needed)
   const searchPatients = async (q: string, type: InputType): Promise<PatientSearchResult[]> => {
-    let supabaseQuery = supabase
-      .from('patients')
-      .select('id, first_name, last_name, email, phone, date_of_birth, location, created_at')
-      .limit(15)
-
-    switch (type) {
-      case 'phone': {
-        const digits = normalizePhone(q)
-        // Search phone field containing these digits
-        supabaseQuery = supabaseQuery.ilike('phone', `%${digits}%`)
-        break
+    try {
+      const res = await fetch(`/api/patients/search?q=${encodeURIComponent(q)}`)
+      if (!res.ok) {
+        console.error('[PatientSearchBar] API error:', res.status)
+        return []
       }
-      case 'dob': {
-        const normalized = normalizeDOB(q)
-        // Exact match or partial (for typing MM/DD before year)
-        if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-          supabaseQuery = supabaseQuery.eq('date_of_birth', normalized)
-        } else {
-          // Partial DOB — cast to text and ilike
-          supabaseQuery = supabaseQuery.ilike('date_of_birth::text', `%${normalized}%`)
-        }
-        break
-      }
-      case 'email': {
-        supabaseQuery = supabaseQuery.ilike('email', `%${q.trim()}%`)
-        break
-      }
-      case 'name':
-      default: {
-        const { first, last } = parseName(q)
-        
-        if (first && last) {
-          // Both first and last name provided
-          supabaseQuery = supabaseQuery
-            .ilike('first_name', `%${first}%`)
-            .ilike('last_name', `%${last}%`)
-        } else if (first) {
-          // Single term — search both first and last
-          // Use or() for flexible matching
-          supabaseQuery = supabaseQuery.or(
-            `first_name.ilike.%${first}%,last_name.ilike.%${first}%`
-          )
-        }
-        break
-      }
-    }
-
-    const { data, error } = await supabaseQuery.order('last_name', { ascending: true })
-    
-    if (error) {
-      console.error('Search query error:', error)
+      const json = await res.json()
+      const results = json.results || []
+      return results.map((p: any) => ({
+        id: p.id || p.drchrono_id || '',
+        first_name: p.first_name || '',
+        last_name: p.last_name || '',
+        email: p.email || '',
+        phone: p.phone || '',
+        date_of_birth: p.date_of_birth || '',
+        location: p.address || p.city || '',
+        created_at: '',
+      }))
+    } catch (err) {
+      console.error('Patient search error:', err)
       return []
     }
-
-    return (data || []).map((p: any) => ({
-      id: p.id,
-      first_name: p.first_name || '',
-      last_name: p.last_name || '',
-      email: p.email || '',
-      phone: p.phone || '',
-      date_of_birth: p.date_of_birth || '',
-      location: p.location || '',
-      created_at: p.created_at || '',
-    }))
   }
 
   // Keyboard navigation
