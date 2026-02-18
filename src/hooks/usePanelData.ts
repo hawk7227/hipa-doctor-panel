@@ -42,18 +42,90 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // Map endpoint name to table paths in unified response
+  const ENDPOINT_TO_LOCAL: Record<string, string[]> = {
+    'medications': ['medications', 'local'],
+    'medication-history': ['medications', 'local'],
+    'allergies': ['allergies', 'local'],
+    'problems': ['problems', 'local'],
+    'vitals': ['vitals'],
+    'clinical-notes': ['clinical_notes', 'local'],
+    'documents': ['documents', 'local'],
+    'lab-results': ['lab_results', 'local'],
+    'immunizations': ['immunizations'],
+    'insurance': ['insurance'],
+    'prescriptions': ['prescriptions'],
+    'prescription-history': ['prescriptions'],
+    'orders': ['orders'],
+    'billing': ['billing', 'claims'],
+    'care-plans': ['care_plans'],
+    'alerts': ['alerts'],
+    'appointments': ['appointments'],
+    'patient-appointments': ['appointments'],
+    'demographics': ['demographics'],
+    'history': ['history'],
+    'pharmacy': ['pharmacy'],
+    'cohorts': ['alerts'],
+    'ai-interactions': ['alerts'],
+    'amendments': ['clinical_notes', 'local'],
+    'prior-auth': ['insurance'],
+    'referrals': ['orders'],
+    'tasks': ['alerts'],
+    'quality-measures': ['alerts'],
+  }
+  const ENDPOINT_TO_DC: Record<string, string[]> = {
+    'medications': ['medications', 'drchrono'],
+    'medication-history': ['medications', 'drchrono'],
+    'allergies': ['allergies', 'drchrono'],
+    'problems': ['problems', 'drchrono'],
+    'clinical-notes': ['clinical_notes', 'drchrono'],
+    'documents': ['documents', 'drchrono'],
+    'lab-results': ['lab_results', 'drchrono'],
+  }
+  const ENDPOINT_TO_TABLE: Record<string, string> = {
+    'medications': 'patient_medications',
+    'medication-history': 'patient_medications',
+    'allergies': 'patient_allergies',
+    'problems': 'patient_problems',
+    'vitals': 'patient_vitals',
+    'clinical-notes': 'clinical_notes',
+    'documents': 'patient_documents',
+    'immunizations': 'patient_immunizations',
+    'insurance': 'patient_insurance',
+    'prescriptions': 'prescriptions',
+    'prescription-history': 'prescriptions',
+    'orders': 'lab_orders',
+    'lab-results': 'lab_results',
+    'billing': 'billing_claims',
+    'care-plans': 'care_plans',
+    'alerts': 'cdss_alerts',
+    'appointments': 'appointments',
+    'patient-appointments': 'appointments',
+  }
+
+  function getArr(obj: any, path: string[]): any[] {
+    let c = obj; for (const k of path) { if (!c) return []; c = c[k] }
+    return Array.isArray(c) ? c : (c ? [c] : [])
+  }
+
   const fetchData = useCallback(async () => {
     if (!patientId) { setData([]); setDrchronoData([]); return }
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/panels/${endpoint}?patient_id=${patientId}`)
+      // Use unified endpoint — NO AUTH, loads all data in one call
+      const res = await fetch(`/api/patient-data?patient_id=${patientId}`)
       const json = await res.json()
       if (!res.ok) {
         setError(json.error || `Failed to load ${endpoint}`)
       } else {
-        setData(json.data || [])
-        setDrchronoData(json.drchrono_data || [])
+        // Extract this panel's slice from the unified response
+        const localPath = ENDPOINT_TO_LOCAL[endpoint] || []
+        const dcPath = ENDPOINT_TO_DC[endpoint] || []
+        const localData = localPath.length > 0 ? getArr(json, localPath) : (json.data || [])
+        const dcData = dcPath.length > 0 ? getArr(json, dcPath) : (json.drchrono_data || [])
+        setData(localData as T[])
+        setDrchronoData(dcData as T[])
       }
     } catch (err: any) {
       setError(err.message || `Network error loading ${endpoint}`)
@@ -66,17 +138,18 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
     if (autoFetch) fetchData()
   }, [fetchData, autoFetch])
 
+  const tableName = ENDPOINT_TO_TABLE[endpoint] || endpoint
+
   const create = useCallback(async (record: Partial<T>) => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/panels/${endpoint}`, {
+      const res = await fetch('/api/patient-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...record, patient_id: patientId }),
+        body: JSON.stringify({ table: tableName, record: { ...record, patient_id: patientId } }),
       })
       const json = await res.json()
       if (!res.ok) return { error: json.error || 'Failed to create' }
-      // Optimistic: prepend to local data
       setData(prev => [json.data, ...prev])
       return { data: json.data }
     } catch (err: any) {
@@ -84,19 +157,18 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
     } finally {
       setSaving(false)
     }
-  }, [endpoint, patientId])
+  }, [tableName, patientId])
 
   const update = useCallback(async (id: string | number, updates: Partial<T>) => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/panels/${endpoint}`, {
+      const res = await fetch('/api/patient-data', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...updates }),
+        body: JSON.stringify({ table: tableName, id: String(id), updates }),
       })
       const json = await res.json()
       if (!res.ok) return { error: json.error || 'Failed to update' }
-      // Optimistic: update in local data
       setData(prev => prev.map((item: any) => (item.id === id ? json.data : item)))
       return { data: json.data }
     } catch (err: any) {
@@ -104,15 +176,14 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
     } finally {
       setSaving(false)
     }
-  }, [endpoint, patientId])
+  }, [tableName, patientId])
 
   const remove = useCallback(async (id: string | number) => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/panels/${endpoint}?id=${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/patient-data?table=${tableName}&id=${id}`, { method: 'DELETE' })
       const json = await res.json()
       if (!res.ok) return { error: json.error || 'Failed to delete' }
-      // Optimistic: remove from local data
       setData(prev => prev.filter((item: any) => item.id !== id))
       return { success: true }
     } catch (err: any) {
@@ -120,7 +191,7 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
     } finally {
       setSaving(false)
     }
-  }, [endpoint, patientId])
+  }, [tableName, patientId])
 
   return { data, drchronoData, loading, error, refetch: fetchData, create, update, remove, saving }
 }
