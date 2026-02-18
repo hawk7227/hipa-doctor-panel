@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Shield, MessageSquare, Bell, Bug, Settings,
-  ChevronLeft, ChevronRight, LogOut, ClipboardList, Calendar, BarChart3, Database
+  ChevronLeft, ChevronRight, LogOut, ClipboardList, Calendar, BarChart3, Database, Megaphone
 } from 'lucide-react'
 import AdminFloatingMessenger from '@/components/AdminFloatingMessenger'
 
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/admin/doctors/dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: '' },
   { href: '/admin/doctors', label: 'Doctor Approvals', icon: Users, badgeKey: 'approvals' },
   { href: '/admin/messaging', label: 'Messaging', icon: MessageSquare, badgeKey: 'messaging' },
+  { href: '/admin/campaigns', label: 'Campaigns', icon: Megaphone, badgeKey: '' },
   { href: '/admin/appointments', label: 'Appointments', icon: Calendar, badgeKey: '' },
   { href: '/admin/notifications', label: 'Notifications', icon: Bell, badgeKey: 'notifications' },
   { href: '/admin/bug-reports', label: 'Bug Reports', icon: Bug, badgeKey: 'bugs' },
