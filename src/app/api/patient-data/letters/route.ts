@@ -83,10 +83,12 @@ export async function POST(req: NextRequest) {
 
     // Increment template usage count
     if (template_id) {
-      await db.rpc('increment_template_usage', { template_id_param: template_id }).catch(() => {
-        // Non-critical: just log
-        db.from('letter_templates').update({ usage_count: db.raw ? undefined : 0 }).eq('id', template_id).catch(() => {})
-      })
+      try {
+        await db.rpc('increment_template_usage', { template_id_param: template_id })
+      } catch {
+        // Non-critical: RPC may not exist yet, silently skip
+        console.log('[letters] increment_template_usage RPC not available, skipping')
+      }
     }
 
     console.log(`[letters] Created ${letter_type} for patient=${patient_id}`)

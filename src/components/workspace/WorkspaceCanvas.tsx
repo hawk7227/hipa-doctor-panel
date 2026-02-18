@@ -214,7 +214,7 @@ interface WorkspaceCanvasProps {
 // ═══════════════════════════════════════════════════════════════
 export default function WorkspaceCanvas({
   appointmentId, patientId: propPatientId, isOpen, onClose, onStatusChange, onSmsSent,
-  appointments = [], currentDate, onAppointmentSwitch, onFollowUp, onScheduleAppointment,
+  appointments = [], currentDate, onAppointmentSwitch, onFollowUp, onScheduleAppointment, doctorId,
 }: WorkspaceCanvasProps) {
   // ── Stable appointments ──
   const idsString = useMemo(() => appointments.map(a => a.id).sort().join(','), [appointments])
