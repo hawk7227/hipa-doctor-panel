@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Shield, Lock, Unlock, FileSignature, Clock, AlertTriangle, CheckCircle,
   History, FilePlus, User, Settings, FileEdit, Bell, UserCog, Palette,
-  Download, RefreshCw, Eye, Pen, X, Users, ChevronRight
+  Download, RefreshCw, Eye, Pen, X, Users, ChevronRight, Mail, MessageSquare, Share2, Copy, ExternalLink
 } from 'lucide-react'
 import DraggableOverlayWrapper from '@/components/DraggableOverlayWrapper'
 import ChartSettingsTab from '@/components/chart-management/ChartSettingsTab'
@@ -58,10 +58,57 @@ export default function ChartManagementPanelV2({
   const [addendumForm, setAddendumForm] = useState({ content: '', reason: '', addendum_type: 'addendum' })
   const [pendingCount, setPendingCount] = useState(0)
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const [pdfLoading, setPdfLoading] = useState<string | null>(null) // 'view' | 'download' | 'email' | 'sms' | 'share'
 
   const notify = (type: 'success' | 'error', msg: string) => {
     setNotification({ type, msg })
     setTimeout(() => setNotification(null), 3000)
+  }
+
+  // ── PDF Actions ──
+  const handlePdfAction = async (action: 'view' | 'download' | 'email' | 'sms' | 'share') => {
+    if (!appointmentId) return
+    setPdfLoading(action)
+    try {
+      if (action === 'view') {
+        window.open(`/api/chart/pdf?appointment_id=${appointmentId}`, '_blank')
+      } else if (action === 'download') {
+        window.open(`/api/chart/pdf?appointment_id=${appointmentId}&download`, '_blank')
+      } else if (action === 'share') {
+        // Generate a shareable signed URL
+        const res = await fetch('/api/chart/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appointmentId, action: 'generate', providerName: doctorName }),
+        })
+        const json = await res.json()
+        if (json.pdf_url) {
+          await navigator.clipboard.writeText(json.pdf_url)
+          notify('success', 'PDF link copied to clipboard (24h expiry)')
+        } else {
+          notify('error', json.error || 'Failed to generate share link')
+        }
+      } else {
+        // email or sms
+        const res = await fetch('/api/chart/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appointmentId, action, providerName: doctorName }),
+        })
+        const json = await res.json()
+        if (json.success) {
+          const target = action === 'email' ? json.patient_email : json.patient_phone
+          notify('success', `Clinical note ${action === 'email' ? 'emailed' : 'texted'} to ${target || 'patient'}`)
+        } else {
+          notify('error', json.error || `Failed to ${action} PDF`)
+        }
+      }
+    } catch (err: any) {
+      console.error(`[ChartMgmt] PDF ${action} error:`, err)
+      notify('error', err.message || `Failed to ${action} PDF`)
+    } finally {
+      setPdfLoading(null)
+    }
   }
 
   // Fetch chart data
@@ -259,6 +306,34 @@ export default function ChartManagementPanelV2({
                     )}
                     <span>{(cs === 'closed' || cs === 'locked') ? '🔒 View Clinical Note' : cs === 'signed' ? '✅ View Clinical Note' : '✎ View Clinical Note'}</span>
                   </button>
+
+                  {/* ── PDF Action Bar: Download / Email / SMS / Share ── */}
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <button onClick={() => handlePdfAction('download')} disabled={!!pdfLoading}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold text-gray-300 transition-all disabled:opacity-40"
+                      title="Download PDF">
+                      {pdfLoading === 'download' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      <span>Download</span>
+                    </button>
+                    <button onClick={() => handlePdfAction('email')} disabled={!!pdfLoading}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 hover:bg-blue-500/20 border border-white/10 rounded-lg text-xs font-bold text-gray-300 hover:text-blue-300 transition-all disabled:opacity-40"
+                      title="Email PDF to patient">
+                      {pdfLoading === 'email' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                      <span>Email</span>
+                    </button>
+                    <button onClick={() => handlePdfAction('sms')} disabled={!!pdfLoading}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 hover:bg-green-500/20 border border-white/10 rounded-lg text-xs font-bold text-gray-300 hover:text-green-300 transition-all disabled:opacity-40"
+                      title="Text PDF link to patient">
+                      {pdfLoading === 'sms' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
+                      <span>SMS</span>
+                    </button>
+                    <button onClick={() => handlePdfAction('share')} disabled={!!pdfLoading}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 hover:bg-purple-500/20 border border-white/10 rounded-lg text-xs font-bold text-gray-300 hover:text-purple-300 transition-all disabled:opacity-40"
+                      title="Copy shareable link">
+                      {pdfLoading === 'share' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>Share</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
