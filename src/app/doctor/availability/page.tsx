@@ -709,7 +709,202 @@ export default function DoctorAvailability() {
     )
   }
 
-  // Generate month cells
+  // Generate 30-minute time slots for month view (12:00 AM to 11:30 PM)
+  const generateMonthTimeSlots = () => {
+    const slots = []
+    for (let hour = 0; hour < 24; hour++) {
+      slots.push(`${String(hour).padStart(2, '0')}:00`)
+      slots.push(`${String(hour).padStart(2, '0')}:30`)
+    }
+    return slots
+  }
+
+  // Format time for display (12-hour format)
+  const formatTimeLabel = (timeSlot: string) => {
+    const [hour, minute] = timeSlot.split(':').map(Number)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+    return `${displayHour}:${String(minute).padStart(2, '0')} ${period}`
+  }
+
+  // Generate month view with time grid
+  const generateMonthTimeGrid = () => {
+    const year = currentDate.getFullYear()
+    const month = currentDate.getMonth()
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const lastDay = new Date(year, month + 1, 0)
+    const totalDays = lastDay.getDate()
+    const firstDayOfWeek = new Date(year, month, 1).getDay() // 0=Sun
+    const timeSlots = generateMonthTimeSlots()
+
+    // Build weeks array: each week is an array of { dayNumber, date } or null for empty cells
+    const weeks: ({ dayNumber: number; date: Date; dateStr: string } | null)[][] = []
+    let currentWeek: ({ dayNumber: number; date: Date; dateStr: string } | null)[] = []
+
+    // Fill initial empty cells
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      currentWeek.push(null)
+    }
+
+    for (let day = 1; day <= totalDays; day++) {
+      const date = new Date(year, month, day)
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      currentWeek.push({ dayNumber: day, date, dateStr })
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek)
+        currentWeek = []
+      }
+    }
+    // Fill remaining cells in last week
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push(null)
+      }
+      weeks.push(currentWeek)
+    }
+
+    return (
+      <div>
+        {/* Month and Year title */}
+        <div style={{ textAlign: 'center', marginBottom: '12px', fontSize: '18px', fontWeight: 700, color: 'var(--ink)' }}>
+          {monthNames[month]} {year}
+        </div>
+
+        {/* Scrollable time grid */}
+        <div style={{ maxHeight: '70vh', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '8px' }}>
+          <div className="availability-cal">
+            {/* Header row: TIME + days of week with dates */}
+            <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div className="availability-dayhead" style={{ background: '#081226', minWidth: '90px' }}>TIME</div>
+              {dayNames.map((dayName, idx) => (
+                <div key={`dayheader-${idx}`} className="availability-dayhead" style={{ background: '#081226' }}>
+                  {dayName}
+                </div>
+              ))}
+            </div>
+
+            {/* For each week, render the date numbers row then all time slot rows */}
+            {weeks.map((week, weekIdx) => (
+              <div key={`week-${weekIdx}`}>
+                {/* Date numbers row for this week */}
+                <div className="availability-cal-row" style={{ borderBottom: '2px solid var(--line)', position: 'sticky', top: '40px', zIndex: 9, background: '#0a1628' }}>
+                  <div style={{ minWidth: '90px', padding: '6px 8px', fontSize: '11px', color: '#6b7fa3', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid var(--line)' }}>
+                    Week {weekIdx + 1}
+                  </div>
+                  {week.map((dayInfo, colIdx) => {
+                    if (!dayInfo) {
+                      return (
+                        <div key={`datenum-${weekIdx}-${colIdx}`} style={{ flex: 1, padding: '6px 8px', borderRight: '1px solid var(--line)', background: '#0a1628' }} />
+                      )
+                    }
+                    const dayEvents = availabilityEvents.filter(e => e.date === dayInfo.dateStr)
+                    const dayOfWeek = dayInfo.date.getDay()
+                    const hasRecurringHours = weeklyHours[dayOfWeek] && weeklyHours[dayOfWeek].length > 0
+                    const hasAvailableEvent = dayEvents.some(e => e.type === 'available')
+                    const hasBlockedAll = dayEvents.some(e => e.type === 'blocked' || e.type === 'holiday')
+                    const isAvailableDay = (hasAvailableEvent || hasRecurringHours || dayEvents.length === 0) && !hasBlockedAll
+                    const isPastDay = dayInfo.date < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+                    const isToday = dayInfo.date.toDateString() === new Date().toDateString()
+
+                    return (
+                      <div
+                        key={`datenum-${weekIdx}-${colIdx}`}
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          borderRight: '1px solid var(--line)',
+                          background: isToday ? 'rgba(0, 203, 169, 0.15)' : '#0a1628',
+                          textAlign: 'center',
+                          fontWeight: 700,
+                          fontSize: '14px',
+                          color: isToday ? '#00CBA9' : isAvailableDay && !isPastDay ? '#00CBA9' : '#9fb4cc',
+                        }}
+                      >
+                        {dayInfo.dayNumber}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Time slot rows for this week */}
+                {timeSlots.map((timeSlot, rowIdx) => (
+                  <div key={`row-${weekIdx}-${timeSlot}-${rowIdx}`} className="availability-cal-row">
+                    {/* Time label - only show for first week to avoid repetition, but we need it for each week's scroll context */}
+                    <div className="availability-time" style={{ minWidth: '90px', fontSize: '10px' }}>
+                      {formatTimeLabel(timeSlot)}
+                    </div>
+                    {week.map((dayInfo, colIdx) => {
+                      if (!dayInfo) {
+                        return (
+                          <div
+                            key={`cell-${weekIdx}-${colIdx}-${rowIdx}`}
+                            className="availability-cell"
+                            style={{ cursor: 'default', opacity: 0.3 }}
+                          />
+                        )
+                      }
+
+                      const dayEvents = getEventsForTimeSlot(dayInfo.date, timeSlot)
+                      const hasWeeklyHoursSlot = isWithinWeeklyHours(dayInfo.date, timeSlot)
+
+                      return (
+                        <div
+                          key={`cell-${weekIdx}-${colIdx}-${rowIdx}`}
+                          className="availability-cell"
+                          onClick={() => {
+                            // Set the specific time when clicking a cell
+                            const [hour, minute] = timeSlot.split(':').map(Number)
+                            const endMinute = minute + 30
+                            const endHour = hour + Math.floor(endMinute / 60)
+                            const endMin = endMinute % 60
+                            
+                            const startStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayInfo.dayNumber).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+                            const endStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayInfo.dayNumber).padStart(2, '0')}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
+                            
+                            setEditingEvent(null)
+                            setDrawerType(createMode)
+                            setDrawerRepeat('none')
+                            setDrawerNote('')
+                            setDrawerStartDate(startStr)
+                            setDrawerEndDate(endStr)
+                            setShowDrawer(true)
+                          }}
+                          style={{ cursor: 'pointer', position: 'relative' }}
+                        >
+                          {/* Weekly hours shading */}
+                          {hasWeeklyHoursSlot && (
+                            <div className="availability-workshade" style={{ top: 0, bottom: 0 }} />
+                          )}
+
+                          {/* Events */}
+                          {dayEvents.map((event, eventIdx) => (
+                            <div
+                              key={event.id || `event-${eventIdx}`}
+                              className={`availability-event ${event.type}`}
+                              style={{ minHeight: '20px', fontSize: '9px', padding: '1px 3px' }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openDrawerForEdit(event)
+                              }}
+                            >
+                              {event.title}
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Generate month cells (original grid - kept for reference)
   const generateMonthCells = () => {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
@@ -922,11 +1117,9 @@ export default function DoctorAvailability() {
         {/* Month View */}
         {currentView === 'month' && (
           <div className="availability-card">
-            <div className="availability-month">
-              {generateMonthCells()}
-            </div>
+            {generateMonthTimeGrid()}
             <div className="availability-hint" style={{ marginTop: '8px' }}>
-              Tip: Click a day to add availability, block time, or a reminder.
+              Tip: Click a time slot on any day to block time or add availability. Scroll to see all hours.
             </div>
           </div>
         )}
