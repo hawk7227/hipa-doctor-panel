@@ -1,754 +1,1928 @@
+// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
+// @see CONTRIBUTING.md for mandatory development rules.
+// ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
+// ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { PROVIDER_TIMEZONE } from '@/lib/constants'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import MedazonScribe, { SoapNotes } from './MedazonScribe'
-import CommunicationDialer from './CommunicationDialer'
-import {
-  Video, Phone, PhoneOff, PhoneCall, Mail, Stethoscope,
-  Maximize2, Minimize2, X, ExternalLink, Clock, Copy,
-  MessageSquare, Send, Circle, Square, Lock, Unlock, RefreshCw,
-  ChevronLeft, ChevronRight, Loader2, Hash, ArrowLeft
-} from 'lucide-react'
+import { logViewAppointment, logViewChart } from '@/lib/audit'
+import { X, Edit, Save, Calendar, Clock, CheckCircle, XCircle, ArrowRight, RotateCcw, Pill, FileText, ClipboardList, CalendarDays, AlertTriangle, AlertCircle, Activity, Mic, Phone, ExternalLink, Lock, Unlock, Stethoscope, User, FlaskConical, Syringe, FolderOpen, Users, Wine, Scissors, Building2, ClipboardCheck, DollarSign, MessageSquare, Video, Loader2, Download, Eye, Shield } from 'lucide-react'
+import ZoomMeetingEmbed from './ZoomMeetingEmbed'
+import MedicalRecordsView from './MedicalRecordsView'
+import OrdersPanel from './OrdersPanel'
+import PrescriptionHistoryPanel from './PrescriptionHistoryPanel'
+import ChartManagementPanel from './ChartManagementPanel'
+import ChartManagementPanelV2 from './panels/ChartManagementPanelV2'
 
-// ═══════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════
+// Hooks
+import { useAppointmentData } from './appointment/hooks/useAppointmentData'
+import { usePrescriptions } from './appointment/hooks/usePrescriptions'
+import { useDoctorNotes } from './appointment/hooks/useDoctorNotes'
+import { useProblemsMedications } from './appointment/hooks/useProblemsMedications'
+import { useCommunication } from './appointment/hooks/useCommunication'
+import { useLayoutCustomization } from './appointment/hooks/useLayoutCustomization'
+import { useDocumentUpload } from './appointment/hooks/useDocumentUpload'
+import { useLabResults } from './appointment/hooks/useLabResults'
+import { useReferralsFollowUp } from './appointment/hooks/useReferralsFollowUp'
+import { usePriorAuth } from './appointment/hooks/usePriorAuth'
 
-interface AppointmentData {
+// Sections
+import PatientHeader from './appointment/sections/PatientHeader'
+import ErxComposer from './appointment/sections/ErxComposer'
+import DoctorNotesSection from './appointment/sections/DoctorNotesSection'
+import ProblemsMedicationsSection from './appointment/sections/ProblemsMedicationsSection'
+import DocumentViewer from './appointment/sections/DocumentViewer'
+import LabResultsSection from './appointment/sections/LabResultsSection'
+import ReferralsFollowUpSection from './appointment/sections/ReferralsFollowUpSection'
+import PriorAuthSection from './appointment/sections/PriorAuthSection'
+import CommunicationHistorySection from './appointment/sections/CommunicationHistorySection'
+import GmailStyleEmailPanel from './GmailStyleEmailPanel'
+import EnhancedSMSPanel from './EnhancedSMSPanel'
+import MakeCallFaxPanel from './MakeCallFaxPanel'
+import MedicationHistoryPanel from './MedicationHistoryPanel'
+import AppointmentsOverlayPanel from './AppointmentsOverlayPanel'
+
+// EHR Panels
+import AllergiesPanel from './AllergiesPanel'
+import VitalsPanel from './VitalsPanel'
+import MedicationsPanel from './MedicationsPanel'
+
+// Phase 1B EHR Overlay Panels
+import DemographicsPanel from './DemographicsPanel'
+import ProblemsPanel from './ProblemsPanel'
+import ClinicalNotesPanel from './ClinicalNotesPanel'
+import LabResultsPanel from './LabResultsPanel'
+import ImmunizationsPanel from './ImmunizationsPanel'
+import DocumentsPanel from './DocumentsPanel'
+import { FamilyHistoryPanel, SocialHistoryPanel, SurgicalHistoryPanel } from './HistoryPanels'
+import PharmacyPanel from './PharmacyPanel'
+import CarePlansPanel from './CarePlansPanel'
+import BillingPanel from './BillingPanel'
+import UnifiedCommHub from './UnifiedCommHub'
+
+// Utils
+import { convertToTimezone, convertDateTimeLocalToUTC } from './appointment/utils/timezone-utils'
+
+// Styles
+import '../app/doctor/availability/availability.css'
+import DailyMeetingEmbed from './DailycoMeetingPanel'
+
+interface CalendarAppointment {
   id: string
   requested_date_time: string | null
-  dailyco_meeting_url: string | null
-  dailyco_room_name: string | null
-  dailyco_owner_token: string | null
-  recording_url: string | null
-}
-
-interface CurrentUser {
-  name?: string
-  email?: string
-  id?: string
-}
-
-interface DailyMeetingEmbedProps {
-  appointment: AppointmentData | null
-  currentUser: CurrentUser | null
-  isCustomizeMode?: boolean
-  sectionProps?: Record<string, unknown>
-  sectionId?: string
-  patientPhone?: string
-  patientName?: string
-  patientEmail?: string
-  providerId?: string
-  providerEmail?: string
-  onOpenCommHub?: (tab?: 'sms' | 'call' | 'email') => void
-  onSendQuickSms?: (message: string) => void
-  onSoapGenerated?: (soap: SoapNotes) => void
-  onClose?: () => void
-}
-
-interface VideoPanelPrefs {
-  posX: number
-  posY: number
-  width: number
-  height: number
-  locked: boolean
-  minimized: boolean
-}
-
-type CallStatus = 'idle' | 'connecting' | 'connected' | 'ended' | 'failed'
-type SidePanel = 'dialpad' | 'sms' | 'email' | 'scribe'
-
-interface SmsMessage {
-  id: string
-  direction: 'inbound' | 'outbound'
-  body: string
-  created_at: string
-  status?: string
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PHONE NORMALIZATION (+1 for US)
-// ═══════════════════════════════════════════════════════════════
-
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/[^\d+]/g, '')
-  const justDigits = digits.replace(/\+/g, '')
-  if (justDigits.length === 10) return `+1${justDigits}`
-  if (justDigits.length === 11 && justDigits.startsWith('1')) return `+${justDigits}`
-  if (digits.startsWith('+1') && justDigits.length === 11) return digits
-  if (digits.startsWith('+')) return digits
-  return `+1${justDigits}`
-}
-
-function formatPhoneDisplay(phone: string): string {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('1')) {
-    const area = digits.slice(1, 4)
-    const pre = digits.slice(4, 7)
-    const line = digits.slice(7, 11)
-    return `+1 (${area}) ${pre}-${line}`
+  visit_type: string | null
+  patients?: {
+    first_name?: string | null
+    last_name?: string | null
+    email?: string | null
+    phone?: string | null
+  } | null
+  doctors?: {
+    timezone: string
   }
-  return normalized
+}
+
+interface AppointmentDetailModalProps {
+  appointmentId: string | null
+  isOpen: boolean
+  onClose: () => void
+  onStatusChange: () => void
+  doctorId?: string
+  doctorName?: string
+  onSmsSent?: (message: string) => void
+  appointments?: CalendarAppointment[]
+  currentDate?: Date
+  onAppointmentSwitch?: (appointmentId: string) => void
+  onFollowUp?: (patientData: {
+    id: string
+    first_name: string
+    last_name: string
+    email: string
+    mobile_phone: string
+  }, date: Date, time: Date) => void
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-
-const DEFAULT_POS = { x: 60, y: 40 }
-const DEFAULT_SIZE = { width: 580, height: 640 }
-const MIN_WIDTH = 420
-const MIN_HEIGHT = 400
-const PREFS_KEY = 'video_panel_layout'
-
+// TOOLBAR PANEL DEFINITIONS (for the grouped header bar)
 // ═══════════════════════════════════════════════════════════════
-// SMALL COMPONENTS
-// ═══════════════════════════════════════════════════════════════
+const EHR_PANELS = [
+  { id: 'medication-history', label: 'Med Hx', icon: Pill, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
+  { id: 'orders', label: 'Orders', icon: ClipboardList, color: '#3b82f6', hoverBg: 'hover:bg-blue-700' },
+  { id: 'prescription-history', label: 'Rx Hx', icon: FileText, color: '#14b8a6', hoverBg: 'hover:bg-teal-700' },
+  { id: 'appointments', label: 'Appts', icon: CalendarDays, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
+  { id: 'allergies', label: 'Allergy', icon: AlertTriangle, color: '#ef4444', hoverBg: 'hover:bg-red-700' },
+  { id: 'vitals', label: 'Vitals', icon: Activity, color: '#06b6d4', hoverBg: 'hover:bg-cyan-700' },
+  { id: 'medications', label: 'Meds', icon: Pill, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
+  { id: 'demographics', label: 'Demo', icon: User, color: '#64748b', hoverBg: 'hover:bg-slate-700' },
+  { id: 'problems', label: 'Problems', icon: AlertCircle, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
+  { id: 'clinical-notes', label: 'Notes', icon: FileText, color: '#3b82f6', hoverBg: 'hover:bg-blue-700' },
+  { id: 'lab-results-panel', label: 'Labs', icon: FlaskConical, color: '#06b6d4', hoverBg: 'hover:bg-cyan-700' },
+  { id: 'immunizations', label: 'Immun', icon: Syringe, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
+  { id: 'documents', label: 'Docs', icon: FolderOpen, color: '#f59e0b', hoverBg: 'hover:bg-amber-700' },
+  { id: 'family-history', label: 'Fam Hx', icon: Users, color: '#f43f5e', hoverBg: 'hover:bg-rose-700' },
+  { id: 'social-history', label: 'Social', icon: Wine, color: '#f59e0b', hoverBg: 'hover:bg-amber-700' },
+  { id: 'surgical-history', label: 'Surg Hx', icon: Scissors, color: '#ef4444', hoverBg: 'hover:bg-red-700' },
+  { id: 'pharmacy', label: 'Pharmacy', icon: Building2, color: '#14b8a6', hoverBg: 'hover:bg-teal-700' },
+  { id: 'care-plans', label: 'Care Plan', icon: ClipboardCheck, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
+  { id: 'billing', label: 'Billing', icon: DollarSign, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
+  { id: 'comm-hub', label: 'Comms', icon: MessageSquare, color: '#3b82f6', hoverBg: 'hover:bg-blue-700' },
+  { id: 'lab-results-inline', label: 'Lab Orders', icon: FlaskConical, color: '#0ea5e9', hoverBg: 'hover:bg-sky-700' },
+  { id: 'referrals-followup', label: 'Referrals', icon: ArrowRight, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
+  { id: 'prior-auth', label: 'Prior Auth', icon: ClipboardCheck, color: '#8b5cf6', hoverBg: 'hover:bg-violet-700' },
+  { id: 'chart-management', label: 'Chart', icon: Shield, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
+  { id: 'drchrono-erx', label: 'eRx', icon: Stethoscope, color: '#22c55e', hoverBg: 'hover:bg-green-700' },
+] as const
 
-function DialpadBtn({ digit, sub, onClick }: { digit: string; sub?: string; onClick: (d: string) => void }) {
-  return (
-    <button onClick={() => onClick(digit)}
-      className="w-12 h-12 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
-      <span className="text-base font-bold text-white leading-none">{digit}</span>
-      {sub && <span className="text-[7px] text-white/25 uppercase tracking-widest leading-none mt-0.5">{sub}</span>}
-    </button>
+export default function AppointmentDetailModal({ 
+  appointmentId, 
+  isOpen, 
+  onClose, 
+  onStatusChange,
+  doctorId,
+  onSmsSent,
+  appointments = [],
+  currentDate,
+  onAppointmentSwitch,
+  onFollowUp
+}: AppointmentDetailModalProps) {
+  // ═══════════════════════════════════════════════════════════════
+  // ALL EXISTING HOOKS — UNCHANGED
+  // ═══════════════════════════════════════════════════════════════
+  
+  const appointmentsIdsString = useMemo(() => 
+    appointments.map(a => a.id).sort().join(','), 
+    [appointments]
   )
-}
+  const stableAppointments = useMemo(() => appointments, [appointmentsIdsString])
+  
+  const {
+    appointment,
+    loading,
+    error,
+    newDateTime,
+    setNewDateTime,
+    currentUser,
+    setAppointment,
+    setError,
+    fetchAppointmentDetails
+  } = useAppointmentData(appointmentId, isOpen, stableAppointments)
 
-function DailyIframe({ roomUrl }: { roomUrl: string }) {
-  if (!roomUrl) return <div className="text-white p-4 text-sm">No meeting URL found.</div>
-  return (
-    <iframe src={roomUrl} title="Daily.co Meeting" className="w-full h-full border-0 bg-black"
-      allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; screen-wake-lock *"
-      allowFullScreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals"
-      referrerPolicy="no-referrer-when-downgrade" />
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════
-
-export default function DailyMeetingEmbed({
-  appointment,
-  currentUser: _currentUser,
-  isCustomizeMode = false,
-  sectionProps = {},
-  sectionId,
-  patientPhone = '',
-  patientName = '',
-  patientEmail = '',
-  providerId,
-  providerEmail = '',
-  onOpenCommHub,
-  onSendQuickSms,
-  onSoapGenerated,
-  onClose,
-}: DailyMeetingEmbedProps) {
-
-  // ─── Layout prefs ───
-  const [position, setPosition] = useState(DEFAULT_POS)
-  const [size, setSize] = useState(DEFAULT_SIZE)
-  const [locked, setLocked] = useState(false)
-  const [minimized, setMinimized] = useState(false)
-  const [prefsLoaded, setPrefsLoaded] = useState(false)
-
-  // ─── Video state ───
-  const [meetingActive, setMeetingActive] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  // ─── Side panel carousel ───
-  const [openPanels, setOpenPanels] = useState<SidePanel[]>([])
-  const [activePanelIdx, setActivePanelIdx] = useState(0)
-
-  // ─── Dialpad ───
-  const [dialNumber, setDialNumber] = useState(patientPhone ? normalizePhone(patientPhone) : '')
-  const [callStatus, setCallStatus] = useState<CallStatus>('idle')
-  const [callDuration, setCallDuration] = useState(0)
-  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // ─── SMS ───
-  const [smsText, setSmsText] = useState('')
-  const [smsSending, setSmsSending] = useState(false)
-  const [smsMessages, setSmsMessages] = useState<SmsMessage[]>([])
-  const [smsLoading, setSmsLoading] = useState(false)
-  const smsEndRef = useRef<HTMLDivElement>(null)
-
-  // ─── Email ───
-  const [emailTo, setEmailTo] = useState(patientEmail)
-  const [emailSubject, setEmailSubject] = useState('')
-  const [emailBody, setEmailBody] = useState('')
-  const [emailSending, setEmailSending] = useState(false)
-  const [emailSuccess, setEmailSuccess] = useState(false)
-
-  // ─── Countdown ───
-  const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number; isPast: boolean } | null>(null)
-
-  // ─── Drag / resize refs ───
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; edge: string } | null>(null)
-  const prefsRef = useRef<VideoPanelPrefs>({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false })
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Sync props
-  useEffect(() => { if (patientPhone) setDialNumber(normalizePhone(patientPhone)) }, [patientPhone])
-  useEffect(() => { setEmailTo(patientEmail) }, [patientEmail])
-
-  const hasOpenPanel = openPanels.length > 0
-  const activePanel = openPanels[activePanelIdx] || null
-
-  // ═══════════════════════════════════════════════════════════════
-  // PANEL ACTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  const togglePanel = useCallback((panel: SidePanel) => {
-    setOpenPanels(prev => {
-      const idx = prev.indexOf(panel)
-      if (idx >= 0) {
-        const next = prev.filter(p => p !== panel)
-        setActivePanelIdx(i => Math.min(i, Math.max(0, next.length - 1)))
-        return next
-      }
-      const next = [...prev, panel]
-      setActivePanelIdx(next.length - 1)
-      return next
-    })
-  }, [])
-
-  const closePanel = useCallback((panel: SidePanel) => {
-    setOpenPanels(prev => {
-      const next = prev.filter(p => p !== panel)
-      setActivePanelIdx(i => Math.min(i, Math.max(0, next.length - 1)))
-      return next
-    })
-  }, [])
-
-  const navPrev = useCallback(() => setActivePanelIdx(i => Math.max(0, i - 1)), [])
-  const navNext = useCallback(() => setActivePanelIdx(i => Math.min(openPanels.length - 1, i + 1)), [openPanels.length])
-
-  // ═══════════════════════════════════════════════════════════════
-  // PREFS PERSISTENCE
-  // ═══════════════════════════════════════════════════════════════
-
+  // Sync chart_locked and chart status from appointment data
+  // Note: chart_locked exists on appointments table but hook type may not include it
+  const appointmentChartLocked = (appointment as any)?.chart_locked
+  const appointmentChartStatus = (appointment as any)?.chart_status
+  const appointmentSignedAt = (appointment as any)?.chart_signed_at
+  const appointmentSignedBy = (appointment as any)?.chart_signed_by
+  const appointmentClosedAt = (appointment as any)?.chart_closed_at
+  const appointmentClosedBy = (appointment as any)?.chart_closed_by
+  const appointmentPdfUrl = (appointment as any)?.clinical_note_pdf_url
   useEffect(() => {
-    if (prefsLoaded) return
-    let cancelled = false
-    const load = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user || cancelled) return
-        const { data } = await supabase.from('doctor_preferences').select('preference_value').eq('doctor_id', user.id).eq('preference_key', PREFS_KEY).single()
-        if (data?.preference_value && !cancelled) {
-          const p = data.preference_value as unknown as VideoPanelPrefs
-          setPosition({ x: p.posX ?? DEFAULT_POS.x, y: p.posY ?? DEFAULT_POS.y })
-          setSize({ width: p.width ?? DEFAULT_SIZE.width, height: p.height ?? DEFAULT_SIZE.height })
-          setLocked(p.locked ?? false)
-          setMinimized(p.minimized ?? false)
-          prefsRef.current = p
-        }
-      } catch { /* silent */ }
-      finally { if (!cancelled) setPrefsLoaded(true) }
+    if (appointmentChartLocked !== undefined) {
+      setChartLocked(!!appointmentChartLocked)
     }
-    load()
-    return () => { cancelled = true }
-  }, [prefsLoaded])
+    if (appointmentChartStatus) {
+      // Handle migration: 'addendum' → 'amended'
+      const status = appointmentChartStatus === 'addendum' ? 'amended' : appointmentChartStatus
+      setChartStatus(status as 'draft' | 'signed' | 'closed' | 'amended')
+    } else if (appointmentChartLocked) {
+      setChartStatus('signed')
+    } else {
+      setChartStatus('draft')
+    }
+    if (appointmentSignedAt) setChartSignedAt(appointmentSignedAt)
+    if (appointmentSignedBy) setChartSignedBy(appointmentSignedBy)
+    if (appointmentClosedAt) setChartClosedAt(appointmentClosedAt)
+    if (appointmentClosedBy) setChartClosedBy(appointmentClosedBy)
+    if (appointmentPdfUrl) setClinicalNotePdfUrl(appointmentPdfUrl)
+  }, [appointmentChartLocked, appointmentChartStatus, appointmentSignedAt, appointmentSignedBy, appointmentClosedAt, appointmentClosedBy, appointmentPdfUrl])
 
-  const savePrefs = useCallback((updates: Partial<VideoPanelPrefs>) => {
-    prefsRef.current = { ...prefsRef.current, ...updates }
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(async () => {
+  // Fetch addendums when appointment loads
+  useEffect(() => {
+    if (!appointmentId) return
+    const fetchAddendums = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        await supabase.from('doctor_preferences').upsert({ doctor_id: user.id, preference_key: PREFS_KEY, preference_value: prefsRef.current, updated_at: new Date().toISOString() }, { onConflict: 'doctor_id,preference_key' })
-      } catch { /* silent */ }
-    }, 500)
+        const { data, error } = await supabase
+          .from('chart_addendums')
+          .select('id, text, addendum_type, reason, created_at, created_by, created_by_name, created_by_role')
+          .eq('appointment_id', appointmentId)
+          .order('created_at', { ascending: true })
+        if (!error && data) setAddendums(data)
+      } catch { /* table may not exist yet */ }
+    }
+    fetchAddendums()
+  }, [appointmentId])
+
+  const problemsMedications = useProblemsMedications(
+    appointmentId,
+    appointment?.patient_id || null
+  )
+
+  const prescriptions = usePrescriptions(appointmentId, problemsMedications.medicationHistory)
+
+  const handleMedicationsAutoAdded = useCallback((medications: any[]) => {
+    if (medications && medications.length > 0) {
+      prescriptions.setRxList((prev: any[]) => {
+        const existingMedications = prev.map(rx => rx.medication.toLowerCase())
+        const newMedications = medications.filter(med => 
+          !existingMedications.includes(med.medication.toLowerCase())
+        )
+        return [...prev, ...newMedications]
+      })
+    }
+  }, [prescriptions.setRxList])
+
+  const doctorNotesHook = useDoctorNotes(
+    appointmentId,
+    appointment,
+    problemsMedications.activeProblems,
+    problemsMedications.resolvedProblems,
+    problemsMedications.medicationHistory,
+    problemsMedications.activeMedOrders,
+    problemsMedications.pastMedOrders,
+    problemsMedications.prescriptionLogs,
+    undefined,
+    handleMedicationsAutoAdded
+  )
+
+  const {
+    doctorNotes,
+    soapNotes,
+    isSigning,
+    soapSaveStatus,
+    surgeriesDetails,
+    cdssResponse,
+    isGeneratingCDSS,
+    showCDSSResults,
+    isApplyingCDSS,
+    cdssError,
+    handleGenerateCDSS,
+    handleApplyCDSS,
+    setShowCDSSResults,
+    setCdssError,
+    checkAndLoadCDSS,
+    generateCDSSResponse,
+    setDoctorNotes,
+    handleSoapNotesChange,
+    initializeSoapNotes,
+    handleSaveDoctorNotes
+  } = doctorNotesHook
+
+  const documentUpload = useDocumentUpload(appointmentId)
+  const communication = useCommunication(appointmentId, appointment)
+  const labResults = useLabResults(appointmentId, appointment?.patient_id || null)
+  const referralsFollowUp = useReferralsFollowUp(appointmentId, appointment, onFollowUp)
+  const priorAuth = usePriorAuth(appointmentId, appointment?.patient_id || null)
+  const layout = useLayoutCustomization(isOpen)
+
+  // ═══════════════════════════════════════════════════════════════
+  // ALL EXISTING MEMOIZED HANDLERS — UNCHANGED
+  // ═══════════════════════════════════════════════════════════════
+
+  const problemsMedicationsHandlers = useMemo(() => ({
+    onAddActiveProblem: problemsMedications.handleAddActiveProblem,
+    onRemoveActiveProblem: problemsMedications.handleRemoveActiveProblem,
+    onAddResolvedProblem: problemsMedications.handleAddResolvedProblem,
+    onRemoveResolvedProblem: problemsMedications.handleRemoveResolvedProblem,
+    onAddMedicationHistory: problemsMedications.handleAddMedicationHistory,
+    onRemoveMedicationHistory: problemsMedications.handleRemoveMedicationHistory,
+    onAddPrescriptionLog: problemsMedications.handleAddPrescriptionLog,
+    onRemovePrescriptionLog: problemsMedications.handleRemovePrescriptionLog,
+  }), [
+    problemsMedications.handleAddActiveProblem,
+    problemsMedications.handleRemoveActiveProblem,
+    problemsMedications.handleAddResolvedProblem,
+    problemsMedications.handleRemoveResolvedProblem,
+    problemsMedications.handleAddMedicationHistory,
+    problemsMedications.handleRemoveMedicationHistory,
+    problemsMedications.handleAddPrescriptionLog,
+    problemsMedications.handleRemovePrescriptionLog,
+  ])
+
+  const prescriptionsHandlers = useMemo(() => ({
+    handleAddToRxList: prescriptions.handleAddToRxList,
+    handleRemoveFromRxList: prescriptions.handleRemoveFromRxList,
+    handleClearRxList: prescriptions.handleClearRxList,
+    handleStartEditRx: prescriptions.handleStartEditRx,
+    handleCancelEditRx: prescriptions.handleCancelEditRx,
+    handleSaveEditRx: prescriptions.handleSaveEditRx,
+    handleSendERx: prescriptions.handleSendERx,
+    checkDrugInteractions: prescriptions.checkDrugInteractions,
+    handleSelectFavoriteMedication: prescriptions.handleSelectFavoriteMedication,
+    handleAddToFavorites: prescriptions.handleAddToFavorites,
+  }), [
+    prescriptions.handleAddToRxList,
+    prescriptions.handleRemoveFromRxList,
+    prescriptions.handleClearRxList,
+    prescriptions.handleStartEditRx,
+    prescriptions.handleCancelEditRx,
+    prescriptions.handleSaveEditRx,
+    prescriptions.handleSendERx,
+    prescriptions.checkDrugInteractions,
+    prescriptions.handleSelectFavoriteMedication,
+    prescriptions.handleAddToFavorites,
+  ])
+
+  const communicationHandlers = useMemo(() => ({
+    handleSendSMS: communication.handleSendSMS,
+    handleMakeCall: communication.handleMakeCall,
+    handleEndCall: communication.handleEndCall,
+    handleToggleMute: communication.handleToggleMute,
+    formatDuration: communication.formatDuration,
+    formatHistoryDate: communication.formatHistoryDate,
+  }), [
+    communication.handleSendSMS,
+    communication.handleMakeCall,
+    communication.handleEndCall,
+    communication.handleToggleMute,
+    communication.formatDuration,
+    communication.formatHistoryDate,
+  ])
+
+  const handleDoctorNotesChangeMemoized = useCallback((value: string) => {
+    setDoctorNotes(value)
+    handleSaveDoctorNotes(value)
+  }, [setDoctorNotes, handleSaveDoctorNotes])
+
+  const handleGenerateCDSSMemoized = useCallback(() => {
+    if (setCdssError) setCdssError(null)
+    handleGenerateCDSS(prescriptions.rxList)
+  }, [setCdssError, handleGenerateCDSS, prescriptions.rxList])
+
+  const memoizedSoapNotes = useMemo(() => soapNotes, [
+    soapNotes.chiefComplaint,
+    soapNotes.rosGeneral,
+    soapNotes.assessmentPlan
+  ])
+
+  const cdssResponseId = cdssResponse?.id || null
+  const hasCdssResponse = !!cdssResponse
+  const memoizedCdssResponse = useMemo(() => cdssResponse, [cdssResponseId, hasCdssResponse])
+
+  const appointmentDocumentsIds = useMemo(() => 
+    documentUpload.appointmentDocuments?.map((doc: any) => doc.id).join(',') || '',
+    [documentUpload.appointmentDocuments]
+  )
+  const memoizedAppointmentDocuments = useMemo(() => 
+    documentUpload.appointmentDocuments || [],
+    [appointmentDocumentsIds]
+  )
+
+  // ═══════════════════════════════════════════════════════════════
+  // ALL EXISTING LOCAL UI STATE — UNCHANGED
+  // ═══════════════════════════════════════════════════════════════
+
+  const [activeTab, setActiveTab] = useState<'SOAP' | 'Orders' | 'Files' | 'Notes' | 'Billing' | 'Audit'>('SOAP')
+  const [showRescheduleForm, setShowRescheduleForm] = useState(false)
+  const [rescheduleLoading, setRescheduleLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [smartAlerts, setSmartAlerts] = useState<string[]>(['ID Verified'])
+  
+  const [showMoveForm, setShowMoveForm] = useState(false)
+  const [selectedMoveTime, setSelectedMoveTime] = useState<string>('')
+  const [moveLoading, setMoveLoading] = useState(false)
+
+  const [showMedicationHistoryPanel, setShowMedicationHistoryPanel] = useState(false)
+  const [showOrdersPanel, setShowOrdersPanel] = useState(false)
+  const [showPrescriptionHistoryPanel, setShowPrescriptionHistoryPanel] = useState(false)
+  const [showAppointmentsOverlay, setShowAppointmentsOverlay] = useState(false)
+  const [showAllergiesPanel, setShowAllergiesPanel] = useState(false)
+  const [showVitalsPanel, setShowVitalsPanel] = useState(false)
+  const [showMedicationsPanel, setShowMedicationsPanel] = useState(false)
+  const [showDemographicsPanel, setShowDemographicsPanel] = useState(false)
+  const [showProblemsPanel, setShowProblemsPanel] = useState(false)
+  const [showClinicalNotesPanel, setShowClinicalNotesPanel] = useState(false)
+  const [showLabResultsPanel, setShowLabResultsPanel] = useState(false)
+  const [showImmunizationsPanel, setShowImmunizationsPanel] = useState(false)
+  const [showDocumentsPanel, setShowDocumentsPanel] = useState(false)
+  const [showFamilyHistoryPanel, setShowFamilyHistoryPanel] = useState(false)
+  const [showSocialHistoryPanel, setShowSocialHistoryPanel] = useState(false)
+  const [showSurgicalHistoryPanel, setShowSurgicalHistoryPanel] = useState(false)
+  const [showPharmacyPanel, setShowPharmacyPanel] = useState(false)
+  const [showCarePlansPanel, setShowCarePlansPanel] = useState(false)
+  const [showBillingPanel, setShowBillingPanel] = useState(false)
+  const [showCommHub, setShowCommHub] = useState(false)
+  const [showLabResultsInline, setShowLabResultsInline] = useState(false)
+  const [showReferralsPanel, setShowReferralsPanel] = useState(false)
+  const [showPriorAuthPanel, setShowPriorAuthPanel] = useState(false)
+  const [showChartManagementPanel, setShowChartManagementPanel] = useState(false)
+  const [showVideoPanel, setShowVideoPanel] = useState(false)
+
+  // Map EHR toolbar panel ids to their state setters
+  const handleToolbarPanelClick = useCallback((panelId: string) => {
+    switch (panelId) {
+      case 'medication-history': setShowMedicationHistoryPanel(v => !v); break
+      case 'orders': setShowOrdersPanel(v => !v); break
+      case 'prescription-history': setShowPrescriptionHistoryPanel(v => !v); break
+      case 'appointments': setShowAppointmentsOverlay(v => !v); break
+      case 'allergies': setShowAllergiesPanel(v => !v); break
+      case 'vitals': setShowVitalsPanel(v => !v); break
+      case 'medications': setShowMedicationsPanel(v => !v); break
+      case 'demographics': setShowDemographicsPanel(v => !v); break
+      case 'problems': setShowProblemsPanel(v => !v); break
+      case 'clinical-notes': setShowClinicalNotesPanel(v => !v); break
+      case 'lab-results-panel': setShowLabResultsPanel(v => !v); break
+      case 'immunizations': setShowImmunizationsPanel(v => !v); break
+      case 'documents': setShowDocumentsPanel(v => !v); break
+      case 'family-history': setShowFamilyHistoryPanel(v => !v); break
+      case 'social-history': setShowSocialHistoryPanel(v => !v); break
+      case 'surgical-history': setShowSurgicalHistoryPanel(v => !v); break
+      case 'pharmacy': setShowPharmacyPanel(v => !v); break
+      case 'care-plans': setShowCarePlansPanel(v => !v); break
+      case 'billing': setShowBillingPanel(v => !v); break
+      case 'comm-hub': setShowCommHub(v => !v); break
+      case 'lab-results-inline': setShowLabResultsInline(v => !v); break
+      case 'referrals-followup': setShowReferralsPanel(v => !v); break
+      case 'prior-auth': setShowPriorAuthPanel(v => !v); break
+      case 'chart-management': setShowChartManagementPanel(v => !v); break
+      case 'drchrono-erx': {
+        // Open DrChrono eRx as a side-by-side popup — positioned to the LEFT of the dashboard
+        // so the doctor can see both at once without switching windows
+        const patientChartId = (appointment as any)?.patients?.chart_id || (appointment as any)?.chart_id || ''
+        const drchronoPatientId = (appointment as any)?.drchrono_patient_id || ''
+        const erxUrl = patientChartId
+          ? `https://app.drchrono.com/clinical/#/patient/${patientChartId}/erx`
+          : drchronoPatientId
+          ? `https://app.drchrono.com/clinical/#/patient/${drchronoPatientId}/erx`
+          : `https://app.drchrono.com/clinical/`
+
+        // Calculate positioning: left half of screen for eRx, right half for dashboard
+        const screenW = window.screen.availWidth || 1920
+        const screenH = window.screen.availHeight || 1080
+        const popupW = Math.floor(screenW / 2)
+        const popupH = screenH
+        const popupLeft = 0  // eRx on the left side
+        const popupTop = 0
+
+        // Also resize the current browser window to the right half
+        try {
+          window.resizeTo(popupW, screenH)
+          window.moveTo(popupW, 0)
+        } catch { /* some browsers block resizing — that's OK */ }
+
+        window.open(
+          erxUrl,
+          'DrChrono_eRx',
+          `width=${popupW},height=${popupH},left=${popupLeft},top=${popupTop},scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=yes,status=no`
+        )
+        break
+      }
+    }
   }, [])
 
-  // ═══════════════════════════════════════════════════════════════
-  // DRAG
-  // ═══════════════════════════════════════════════════════════════
+  // ═══ Whole-panel resize + persist ═══
+  const [panelWidth, setPanelWidth] = useState<number | null>(null)
+  const [panelLocked, setPanelLocked] = useState(true)
+  const [chartLocked, setChartLocked] = useState(false)
+  const [chartStatus, setChartStatus] = useState<'draft' | 'signed' | 'closed' | 'amended'>('draft')
+  const [chartSignedAt, setChartSignedAt] = useState<string | null>(null)
+  const [chartSignedBy, setChartSignedBy] = useState<string | null>(null)
+  const [chartClosedAt, setChartClosedAt] = useState<string | null>(null)
+  const [chartClosedBy, setChartClosedBy] = useState<string | null>(null)
+  const [clinicalNotePdfUrl, setClinicalNotePdfUrl] = useState<string | null>(null)
+  const [addendumText, setAddendumText] = useState('')
+  const [addendumType, setAddendumType] = useState<'addendum' | 'late_entry' | 'correction'>('addendum')
+  const [addendumReason, setAddendumReason] = useState('')
+  const [addendums, setAddendums] = useState<Array<{ id: string; text: string; addendum_type?: string; reason?: string; created_at: string; created_by: string; created_by_name?: string; created_by_role?: string }>>([])
+  const [showAddendumForm, setShowAddendumForm] = useState(false)
+  const [savingAddendum, setSavingAddendum] = useState(false)
+  const [showPdfViewer, setShowPdfViewer] = useState(false)
+  const [showAuditTrail, setShowAuditTrail] = useState(false)
+  const [auditEntries, setAuditEntries] = useState<Array<{ id: string; action: string; performed_by_name: string; performed_by_role: string; reason?: string; details?: any; created_at: string }>>([])
+  const [unlockReason, setUnlockReason] = useState('')
+  const [showUnlockDialog, setShowUnlockDialog] = useState(false)
+  const [chartActionLoading, setChartActionLoading] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    message: string
+    icon?: 'warning' | 'danger' | 'info' | 'success'
+    confirmLabel?: string
+    cancelLabel?: string
+    onConfirm: () => void
+  }>({ open: false, title: '', message: '', onConfirm: () => {} })
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const panelResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (locked) return
-    if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
-    e.preventDefault()
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: position.x, origY: position.y }
-    const move = (ev: MouseEvent) => {
-      if (!dragRef.current) return
-      setPosition({ x: Math.max(0, dragRef.current.origX + (ev.clientX - dragRef.current.startX)), y: Math.max(0, dragRef.current.origY + (ev.clientY - dragRef.current.startY)) })
+  // Load saved width from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('medazon_panel_width')
+      if (saved) {
+        const w = parseInt(saved, 10)
+        if (!isNaN(w) && w >= 280) setPanelWidth(w)
+      }
+      const locked = localStorage.getItem('medazon_panel_locked')
+      if (locked !== null) setPanelLocked(locked === 'true')
+    } catch {}
+  }, [])
+
+  // Save width to localStorage whenever it changes
+  useEffect(() => {
+    if (panelWidth !== null) {
+      try { localStorage.setItem('medazon_panel_width', String(panelWidth)) } catch {}
     }
-    const up = () => {
-      dragRef.current = null
-      document.removeEventListener('mousemove', move)
-      document.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      const el = panelRef.current
-      if (el) savePrefs({ posX: parseInt(el.style.left) || position.x, posY: parseInt(el.style.top) || position.y })
-    }
-    document.body.style.cursor = 'grabbing'
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', move)
-    document.addEventListener('mouseup', up)
-  }, [locked, position, savePrefs])
+  }, [panelWidth])
 
-  // ═══════════════════════════════════════════════════════════════
-  // RESIZE
-  // ═══════════════════════════════════════════════════════════════
+  // Save lock state
+  useEffect(() => {
+    try { localStorage.setItem('medazon_panel_locked', String(panelLocked)) } catch {}
+  }, [panelLocked])
 
-  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (locked) return
+  // Resize handler for the whole panel
+  const handlePanelResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: size.width, origH: size.height, edge }
-    const move = (ev: MouseEvent) => {
-      if (!resizeRef.current) return
-      const dx = ev.clientX - resizeRef.current.startX
-      const dy = ev.clientY - resizeRef.current.startY
-      let w = resizeRef.current.origW, h = resizeRef.current.origH
-      if (edge.includes('r')) w = Math.max(MIN_WIDTH, w + dx)
-      if (edge.includes('b')) h = Math.max(MIN_HEIGHT, h + dy)
-      setSize({ width: Math.min(w, window.innerWidth * 0.95), height: Math.min(h, window.innerHeight * 0.95) })
+    const currentWidth = panelWidth || window.innerWidth - 240
+    panelResizeRef.current = { startX: e.clientX, startWidth: currentWidth }
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!panelResizeRef.current) return
+      const delta = panelResizeRef.current.startX - moveEvent.clientX
+      const newWidth = Math.max(280, panelResizeRef.current.startWidth + delta)
+      setPanelWidth(newWidth)
     }
-    const up = () => {
-      resizeRef.current = null
-      document.removeEventListener('mousemove', move)
-      document.removeEventListener('mouseup', up)
+    const handleMouseUp = () => {
+      panelResizeRef.current = null
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
-    document.body.style.cursor = edge === 'rb' ? 'nwse-resize' : edge === 'r' ? 'ew-resize' : 'ns-resize'
+    document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', move)
-    document.addEventListener('mouseup', up)
-  }, [locked, size])
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [panelWidth])
 
-  // Save size
-  useEffect(() => {
-    if (!prefsLoaded) return
-    const t = setTimeout(() => savePrefs({ width: size.width, height: size.height }), 300)
-    return () => clearTimeout(t)
-  }, [size.width, size.height, prefsLoaded, savePrefs])
-
-  // ═══════════════════════════════════════════════════════════════
-  // LOCK / MINIMIZE / RESET
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleToggleLock = useCallback(() => setLocked(v => { const n = !v; savePrefs({ locked: n }); return n }), [savePrefs])
-  const handleToggleMinimize = useCallback(() => setMinimized(v => { const n = !v; savePrefs({ minimized: n }); return n }), [savePrefs])
-  const handleReset = useCallback(() => { setPosition(DEFAULT_POS); setSize(DEFAULT_SIZE); setLocked(false); setMinimized(false); savePrefs({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false }) }, [savePrefs])
-
-  // ═══════════════════════════════════════════════════════════════
-  // COUNTDOWN
-  // ═══════════════════════════════════════════════════════════════
-
-  useEffect(() => {
-    if (!appointment?.requested_date_time) return
-    const update = () => {
-      const diff = new Date(appointment.requested_date_time!).getTime() - Date.now()
-      const isPast = diff < 0
-      const abs = Math.abs(diff)
-      setTimeRemaining({ hours: Math.floor(abs / 3600000), minutes: Math.floor((abs % 3600000) / 60000), seconds: Math.floor((abs % 60000) / 1000), isPast })
-    }
-    update()
-    const iv = setInterval(update, 1000)
-    return () => clearInterval(iv)
-  }, [appointment?.requested_date_time])
-
-  const countdownText = useMemo(() => {
-    if (!timeRemaining) return ''
-    const { hours, minutes, seconds, isPast } = timeRemaining
-    const t = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`
-    return isPast ? `Started ${t} ago` : `Starts in ${t}`
-  }, [timeRemaining])
-
-  // ═══════════════════════════════════════════════════════════════
-  // JOIN URL
-  // ═══════════════════════════════════════════════════════════════
-
-  const joinUrl = useMemo(() => {
-    if (!appointment?.dailyco_meeting_url) return null
-    try {
-      const url = new URL(appointment.dailyco_meeting_url)
-      if (appointment.dailyco_owner_token) url.searchParams.set('t', appointment.dailyco_owner_token)
-      return url.toString()
-    } catch { return appointment.dailyco_meeting_url }
-  }, [appointment?.dailyco_meeting_url, appointment?.dailyco_owner_token])
-
-  // ═══════════════════════════════════════════════════════════════
-  // MEETING
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleStartMeeting = useCallback(() => setMeetingActive(true), [])
-  const handleEndMeeting = useCallback(() => { setMeetingActive(false); setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null }; setRecordingTime(0) }, [])
-  const handleToggleRecording = useCallback(() => {
-    if (isRecording) { setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null } }
-    else { setIsRecording(true); setRecordingTime(0); recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000) }
-  }, [isRecording])
-
-  // ═══════════════════════════════════════════════════════════════
-  // DIALPAD / CALL
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleDialPress = useCallback((d: string) => setDialNumber(prev => prev + d), [])
-
-  const handleStartCall = useCallback(async () => {
-    if (!dialNumber) return
-    setCallStatus('connecting')
-    try {
-      const res = await fetch('/api/communication/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: normalizePhone(dialNumber) }) })
-      if (!res.ok) throw new Error('Failed')
-      setCallStatus('connected'); setCallDuration(0)
-      callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
-    } catch { setCallStatus('failed'); setTimeout(() => setCallStatus('idle'), 3000) }
-  }, [dialNumber])
-
-  const handleEndCall = useCallback(() => {
-    setCallStatus('ended')
-    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null }
-    setTimeout(() => setCallStatus('idle'), 3000)
+  // Reset panel width to default
+  const handlePanelResetWidth = useCallback(() => {
+    setPanelWidth(null)
+    try { localStorage.removeItem('medazon_panel_width') } catch {}
   }, [])
+  
+  const [patientAppointments, setPatientAppointments] = useState<Array<{
+    id: string
+    status: string
+    service_type: string
+    visit_type: string
+    created_at: string
+    requested_date_time: string | null
+  }>>([])
 
-  // ═══════════════════════════════════════════════════════════════
-  // SMS — SEND + RECEIVE + REALTIME
-  // ═══════════════════════════════════════════════════════════════
-
-  const fetchSmsHistory = useCallback(async () => {
-    if (!patientPhone) return
-    setSmsLoading(true)
-    try {
-      const normalized = normalizePhone(patientPhone)
-      const digits = normalized.replace(/\D/g, '')
-      const { data } = await supabase
-        .from('communication_logs')
-        .select('id, direction, body, created_at, status')
-        .eq('type', 'sms')
-        .or(`to_number.ilike.%${digits.slice(-10)},from_number.ilike.%${digits.slice(-10)}`)
-        .order('created_at', { ascending: true })
-        .limit(50)
-      if (data) setSmsMessages(data as SmsMessage[])
-    } catch { /* silent */ }
-    finally { setSmsLoading(false) }
-  }, [patientPhone])
-
-  // Fetch on SMS panel open
+  // Fetch patient appointments when overlay is opened
   useEffect(() => {
-    if (openPanels.includes('sms') && patientPhone) fetchSmsHistory()
-  }, [openPanels, patientPhone, fetchSmsHistory])
+    if (showAppointmentsOverlay && appointment?.patient_id) {
+      const fetchPatientAppointments = async () => {
+        try {
+          const { data: currentPatient, error: patientError } = await supabase
+            .from('patients')
+            .select('email')
+            .eq('id', appointment.patient_id)
+            .single()
 
-  // Realtime subscription for inbound SMS
+          if (patientError || !currentPatient?.email) {
+            console.error('Error fetching patient email:', patientError)
+            const { data: fallbackData } = await supabase
+              .from('patients')
+              .select(`
+                id,
+                appointments:appointments!appointments_patient_id_fkey (
+                  id, status, service_type, visit_type, created_at, requested_date_time
+                )
+              `)
+              .eq('id', appointment.patient_id)
+              .single()
+            
+            if (fallbackData?.appointments) {
+              const sorted = [...(fallbackData.appointments as any[])].sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )
+              setPatientAppointments(sorted)
+            }
+            return
+          }
+
+          const { data: allPatientsData, error: allPatientsError } = await supabase
+            .from('patients')
+            .select(`
+              id,
+              appointments:appointments!appointments_patient_id_fkey (
+                id, status, service_type, visit_type, created_at, requested_date_time
+              )
+            `)
+            .eq('email', currentPatient.email)
+
+          if (allPatientsError) {
+            console.error('Error fetching all patients by email:', allPatientsError)
+            return
+          }
+
+          const allAppointments: any[] = []
+          if (allPatientsData) {
+            allPatientsData.forEach(patient => {
+              if (patient.appointments && Array.isArray(patient.appointments)) {
+                allAppointments.push(...patient.appointments)
+              }
+            })
+          }
+
+          const sorted = allAppointments.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          setPatientAppointments(sorted)
+        } catch (err) {
+          console.error('Error fetching patient appointments:', err)
+        }
+      }
+      fetchPatientAppointments()
+    }
+  }, [showAppointmentsOverlay, appointment?.patient_id])
+
+  // Initialize SOAP notes when appointment data loads
+  const initializedRef = useRef<string | null>(null)
+  const cdssCheckedRef = useRef<string | null>(null)
+  
   useEffect(() => {
-    if (!openPanels.includes('sms') || !patientPhone) return
-    const digits = normalizePhone(patientPhone).replace(/\D/g, '').slice(-10)
-    const channel = supabase
-      .channel(`sms-${digits}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'communication_logs',
-        filter: `type=eq.sms`,
-      }, (payload) => {
-        const row = payload.new as any
-        const fromDigits = (row.from_number || '').replace(/\D/g, '').slice(-10)
-        const toDigits = (row.to_number || '').replace(/\D/g, '').slice(-10)
-        if (fromDigits === digits || toDigits === digits) {
-          setSmsMessages(prev => {
-            if (prev.some(m => m.id === row.id)) return prev
-            return [...prev, { id: row.id, direction: row.direction, body: row.body, created_at: row.created_at, status: row.status }]
-          })
+    let isMounted = true
+    let timeoutId: NodeJS.Timeout | null = null
+    let idleCallbackId: number | null = null
+    
+    if (appointment && appointmentId && initializedRef.current !== appointmentId) {
+      initializedRef.current = appointmentId
+      cdssCheckedRef.current = null
+      
+      fetchAppointmentDetails().then((result: any) => {
+        if (!isMounted || initializedRef.current !== appointmentId) return
+        
+        if (result) {
+          initializeSoapNotes(result.clinicalNotes || [], result.appointmentData)
+          
+          if (checkAndLoadCDSS && cdssCheckedRef.current !== appointmentId) {
+            cdssCheckedRef.current = appointmentId
+            const scheduleCDSS = (callback: () => void) => {
+              if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                idleCallbackId = (window as any).requestIdleCallback(callback, { timeout: 3000 })
+              } else {
+                timeoutId = setTimeout(callback, 600)
+              }
+            }
+            
+            scheduleCDSS(() => {
+              if (!isMounted || initializedRef.current !== appointmentId) return
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🚀 AppointmentDetailModal: Calling checkAndLoadCDSS (deferred)', { appointmentId })
+              }
+              checkAndLoadCDSS(appointmentId, result.appointmentData)
+            })
+          }
+        }
+      }).catch((err: unknown) => {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error fetching appointment details:', err)
         }
       })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [openPanels, patientPhone])
-
-  // Auto-scroll SMS
-  useEffect(() => { smsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [smsMessages])
-
-  const handleSendSms = useCallback(async () => {
-    if (!smsText.trim() || !patientPhone) return
-    setSmsSending(true)
-    try {
-      const to = normalizePhone(patientPhone)
-      if (onSendQuickSms) { onSendQuickSms(smsText) }
-      else {
-        const { data: { session } } = await supabase.auth.getSession()
-        await fetch('/api/communication/sms', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: session?.access_token ? `Bearer ${session.access_token}` : '' },
-          body: JSON.stringify({ to, message: smsText, patientId: undefined, appointmentId: appointment?.id }),
-        })
+    }
+    
+    if (!appointmentId) {
+      initializedRef.current = null
+      cdssCheckedRef.current = null
+    }
+    
+    return () => {
+      isMounted = false
+      if (timeoutId) clearTimeout(timeoutId)
+      if (idleCallbackId && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        (window as any).cancelIdleCallback(idleCallbackId)
       }
-      setSmsText('')
-      fetchSmsHistory()
-    } catch (err) { console.error('SMS send error:', err) }
-    finally { setSmsSending(false) }
-  }, [smsText, patientPhone, onSendQuickSms, appointment?.id, fetchSmsHistory])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentId, appointment?.id])
 
   // ═══════════════════════════════════════════════════════════════
-  // EMAIL
+  // ALL EXISTING ACTION HANDLERS — UNCHANGED
   // ═══════════════════════════════════════════════════════════════
 
-  const handleSendEmail = useCallback(async () => {
-    if (!emailTo.trim() || !emailSubject.trim() || !emailBody.trim()) return
-    setEmailSending(true)
+  // Cleanup any active media streams (mic/camera) when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      // Release all active media tracks to stop mic/camera indicators
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+        try {
+          // Stop any getUserMedia streams that may be lingering
+          navigator.mediaDevices.enumerateDevices().then(() => {
+            // Get all active tracks from the page
+            const streams = (window as any).__activeMediaStreams as MediaStream[] | undefined
+            if (streams) {
+              streams.forEach(stream => {
+                stream.getTracks().forEach(track => track.stop())
+              })
+              ;(window as any).__activeMediaStreams = []
+            }
+          }).catch(() => {})
+        } catch {}
+      }
+    }
+  }, [isOpen])
+
+  const handleAppointmentAction = useCallback(async (action: 'accept' | 'reject' | 'complete') => {
+    if (!appointmentId) return
+    setActionLoading(action)
+    try {
+      if (action === 'complete') {
+        const { error } = await supabase
+          .from('appointments')
+          .update({ status: 'completed' })
+          .eq('id', appointmentId)
+        if (error) throw error
+      } else {
+        const response = await fetch(`/api/appointments/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appointmentId })
+        })
+        if (!response.ok) throw new Error(`Failed to ${action} appointment`)
+      }
+      onStatusChange()
+      onClose()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }, [appointmentId, onStatusChange, onClose, setError])
+
+  const handleReschedule = useCallback(async () => {
+    if (!appointmentId || !newDateTime) {
+      setError('Please select a new date and time')
+      return
+    }
+    setRescheduleLoading(true)
+    try {
+      const doctorTimezone = PROVIDER_TIMEZONE
+      const utcDateTime = convertDateTimeLocalToUTC(newDateTime, doctorTimezone)
+      
+      const response = await fetch('/api/appointments/reschedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, newDateTime: utcDateTime })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to reschedule appointment')
+      }
+
+      const result = await response.json()
+      setShowRescheduleForm(false)
+      setNewDateTime('')
+      setSmartAlerts(prev => [...prev, 'Appointment rescheduled'])
+      
+      if (onSmsSent) {
+        const newDateObj = new Date(result.data?.newDateTime || utcDateTime)
+        onSmsSent(`Appointment rescheduled to ${newDateObj.toLocaleString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+        })}. Navigate to that date on the calendar to see it.`)
+      }
+      
+      onStatusChange()
+      onClose()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setRescheduleLoading(false)
+    }
+  }, [appointmentId, newDateTime, setError, setNewDateTime, onStatusChange, onSmsSent, onClose])
+
+  const handleCancelAppointment = useCallback(async () => {
+    if (!appointment?.id) return
+    setCancelling(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/appointments/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: appointment.id, reason: 'Cancelled by provider' })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to cancel appointment')
+      if (onSmsSent) onSmsSent('Appointment cancelled successfully')
+      onStatusChange()
+      setCancelling(false)
+      setShowCancelConfirm(false)
+      onClose()
+    } catch (err: any) {
+      setError(err.message || 'Failed to cancel appointment')
+      setCancelling(false)
+      setShowCancelConfirm(false)
+    }
+  }, [appointment?.id, onStatusChange, onClose, onSmsSent, setError])
+
+  // Update appointment status (light — just updates the field)
+  const handleStatusChange = useCallback(async (newStatus: string) => {
+    if (!appointmentId) return
+    setStatusUpdating(true)
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: newStatus })
+        .eq('id', appointmentId)
+      if (error) throw error
+      setAppointment((prev: any) => prev ? { ...prev, status: newStatus } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error updating status:', err)
+      setError(err.message || 'Failed to update status')
+    } finally {
+      setStatusUpdating(false)
+    }
+  }, [appointmentId, onStatusChange, setAppointment, setError])
+
+  // Toggle chart lock
+  const handleChartLockToggle = useCallback(async () => {
+    if (!appointmentId) return
+    const newLocked = !chartLocked
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ chart_locked: newLocked, is_locked: newLocked })
+        .eq('id', appointmentId)
+      if (error) throw error
+      setChartLocked(newLocked)
+      setAppointment((prev: any) => prev ? { ...prev, chart_locked: newLocked, is_locked: newLocked } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error toggling chart lock:', err)
+      setError(err.message || 'Failed to toggle chart lock')
+    }
+  }, [appointmentId, chartLocked, onStatusChange, setAppointment, setError])
+
+  // ─── Sign & Lock Chart (via API) ─────────────────────────────
+  const handleSignAndLockChart = useCallback(async () => {
+    if (!appointmentId || !currentUser) return
+    const doctorName = currentUser.full_name || currentUser.email || 'Provider'
+    setChartActionLoading('sign')
+    try {
+      const res = await fetch('/api/chart/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, providerName: doctorName, providerRole: 'provider' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to sign chart')
+
+      setChartLocked(true)
+      setChartStatus('signed')
+      setChartSignedAt(data.signed_at)
+      setChartSignedBy(data.signed_by)
+      setAppointment((prev: any) => prev ? { ...prev, chart_locked: true, is_locked: true, chart_status: 'signed', chart_signed_at: data.signed_at, chart_signed_by: data.signed_by } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error signing chart:', err)
+      setError(err.message || 'Failed to sign chart')
+    } finally {
+      setChartActionLoading(null)
+    }
+  }, [appointmentId, currentUser, onStatusChange, setAppointment, setError])
+
+  // ─── Close Chart (via API — generates PDF) ──────────────────
+  const handleCloseChart = useCallback(async () => {
+    if (!appointmentId || !currentUser) return
+    const doctorName = currentUser.full_name || currentUser.email || 'Provider'
+    setChartActionLoading('close')
+    try {
+      const res = await fetch('/api/chart/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, providerName: doctorName, providerRole: 'provider' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to close chart')
+
+      setChartStatus('closed')
+      setChartClosedAt(data.closed_at)
+      setChartClosedBy(data.closed_by)
+      setClinicalNotePdfUrl(data.pdf_url)
+      setAppointment((prev: any) => prev ? { ...prev, chart_status: 'closed', chart_closed_at: data.closed_at, chart_closed_by: data.closed_by, clinical_note_pdf_url: data.pdf_url } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error closing chart:', err)
+      setError(err.message || 'Failed to close chart')
+    } finally {
+      setChartActionLoading(null)
+    }
+  }, [appointmentId, currentUser, onStatusChange, setAppointment, setError])
+
+  // ─── Unlock Chart (via API — requires reason) ──────────────
+  const handleUnlockChart = useCallback(async () => {
+    if (!appointmentId || !currentUser || !unlockReason.trim()) return
+    const doctorName = currentUser.full_name || currentUser.email || 'Provider'
+    setChartActionLoading('unlock')
+    try {
+      const res = await fetch('/api/chart/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, providerName: doctorName, providerRole: 'provider', reason: unlockReason.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to unlock chart')
+
+      setChartLocked(false)
+      setChartStatus('draft')
+      setChartSignedAt(null)
+      setChartSignedBy(null)
+      setUnlockReason('')
+      setShowUnlockDialog(false)
+      setAppointment((prev: any) => prev ? { ...prev, chart_locked: false, is_locked: false, chart_status: 'draft', chart_signed_at: null, chart_signed_by: null } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error unlocking chart:', err)
+      setError(err.message || 'Failed to unlock chart')
+    } finally {
+      setChartActionLoading(null)
+    }
+  }, [appointmentId, currentUser, unlockReason, onStatusChange, setAppointment, setError])
+
+  // ─── Save Addendum (via API — regenerates PDF) ─────────────
+  const handleSaveAddendum = useCallback(async () => {
+    if (!appointmentId || !currentUser || !addendumText.trim()) return
+    const authorName = currentUser.full_name || currentUser.email || 'Provider'
+    setSavingAddendum(true)
+    try {
+      const res = await fetch('/api/chart/addendum', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId,
+          text: addendumText.trim(),
+          addendumType,
+          reason: addendumType === 'correction' ? addendumReason.trim() : undefined,
+          authorName,
+          authorRole: 'provider',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to save addendum')
+
+      if (data.addendum) setAddendums(prev => [...prev, { ...data.addendum, created_by: authorName }])
+      setChartStatus('amended')
+      if (data.pdf_url) setClinicalNotePdfUrl(data.pdf_url)
+      setAddendumText('')
+      setAddendumType('addendum')
+      setAddendumReason('')
+      setShowAddendumForm(false)
+      setAppointment((prev: any) => prev ? { ...prev, chart_status: 'amended', clinical_note_pdf_url: data.pdf_url || prev.clinical_note_pdf_url } : prev)
+      onStatusChange()
+    } catch (err: any) {
+      console.error('Error saving addendum:', err)
+      setError(err.message || 'Failed to save addendum')
+    } finally {
+      setSavingAddendum(false)
+    }
+  }, [appointmentId, currentUser, addendumText, addendumType, addendumReason, onStatusChange, setAppointment, setError])
+
+  // ─── Fetch Audit Trail ──────────────────────────────────────
+  const handleFetchAuditTrail = useCallback(async () => {
+    if (!appointmentId) return
+    try {
+      const res = await fetch(`/api/chart/audit?appointmentId=${appointmentId}`)
+      const data = await res.json()
+      if (data.audit_trail) setAuditEntries(data.audit_trail)
+      setShowAuditTrail(true)
+    } catch (err: any) {
+      console.error('Error fetching audit trail:', err)
+    }
+  }, [appointmentId])
+
+  // ─── View Clinical Note PDF ─────────────────────────────────
+  const handleViewPdf = useCallback(async () => {
+    if (!appointmentId) return
+    try {
+      const res = await fetch(`/api/chart/pdf?appointmentId=${appointmentId}&action=view`)
+      const data = await res.json()
+      if (data.pdf_url) {
+        setClinicalNotePdfUrl(data.pdf_url)
+        setShowPdfViewer(true)
+      }
+    } catch (err: any) {
+      console.error('Error fetching PDF:', err)
+      setError(err.message || 'Failed to load clinical note')
+    }
+  }, [appointmentId, setError])
+
+  const handleMoveAppointment = useCallback(async () => {
+    if (!appointmentId || !selectedMoveTime) {
+      setError('Please select a new time')
+      return
+    }
+    setMoveLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/appointments/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, newTime: selectedMoveTime })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to move appointment')
+      }
+      setMoveLoading(false)
+      setShowMoveForm(false)
+      setSelectedMoveTime('')
+      setSmartAlerts(prev => [...prev, 'Appointment moved'])
+      setTimeout(() => { onStatusChange() }, 0)
+      fetchAppointmentDetails().catch((err: unknown) => console.error('Error refreshing details:', err))
+    } catch (err: any) {
+      setError(err.message || 'Failed to move appointment')
+    } finally {
+      setMoveLoading(false)
+    }
+  }, [appointmentId, selectedMoveTime, fetchAppointmentDetails, setError, onStatusChange])
+
+  const handleSignAndLock = handleSignAndLockChart
+
+  const handleDocumentDownload = useCallback(async (doc: any) => {
+    let downloadUrl: string | null = null
+    let blobUrl: string | null = null
+    let anchorElement: HTMLAnchorElement | null = null
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      downloadUrl = doc.file_url
+      if (!downloadUrl) throw new Error('Invalid download URL')
+      if (!downloadUrl.startsWith('http') || downloadUrl.includes('/storage/v1/object/public/')) {
+        let filePath = downloadUrl
+        if (downloadUrl.includes('/storage/v1/object/public/appointment-documents/')) {
+          const match = downloadUrl.match(/\/storage\/v1\/object\/public\/appointment-documents\/(.+)$/)
+          filePath = match ? decodeURIComponent(match[1]) : downloadUrl
+        }
+        const { data: urlData, error: urlError } = await supabase.storage
+          .from('appointment-documents')
+          .createSignedUrl(filePath, 3600)
+        if (urlError) throw new Error('Failed to generate download URL')
+        if (urlData?.signedUrl) downloadUrl = urlData.signedUrl
+        else throw new Error('Failed to generate download URL')
+      }
+      if (!downloadUrl) throw new Error('Invalid download URL')
+      const response = await fetch(downloadUrl)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      blobUrl = window.URL.createObjectURL(blob)
+      anchorElement = document.createElement('a')
+      anchorElement.href = blobUrl
+      anchorElement.download = doc.document_name || doc.file_name || 'document'
+      document.body.appendChild(anchorElement)
+      anchorElement.click()
+    } catch (err: any) {
+      console.error('Download error:', err)
+      setError(`Failed to download file: ${err.message}`)
+    } finally {
+      if (blobUrl) window.URL.revokeObjectURL(blobUrl)
+      if (anchorElement && document.body.contains(anchorElement)) {
+        try { document.body.removeChild(anchorElement) } catch (e) {}
+      }
+    }
+  }, [setError])
+
+  const handleSendEmail = useCallback(async (to: string, subject: string, body: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const auth = session?.access_token ? `Bearer ${session.access_token}` : ''
-      // Try Gmail first, fallback to SMTP
-      let res = await fetch('/api/gmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
-      if (!res.ok) {
-        res = await fetch('/api/communication/email', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
+      const accessToken = session?.access_token
+      const response = await fetch('/api/communication/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': accessToken ? `Bearer ${accessToken}` : '',
+        },
+        body: JSON.stringify({ to, subject, body, patientId: appointment?.patient_id, appointmentId })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send email')
       }
-      if (!res.ok) throw new Error('Failed to send email')
-      setEmailSuccess(true); setEmailSubject(''); setEmailBody('')
-      setTimeout(() => setEmailSuccess(false), 3000)
-    } catch (err) { console.error('Email error:', err) }
-    finally { setEmailSending(false) }
-  }, [emailTo, emailSubject, emailBody, appointment?.id])
+    } catch (error: any) {
+      console.error('Error sending email:', error)
+      throw error
+    }
+  }, [appointmentId, appointment?.patient_id])
+
+  const handleApplyCDSSWithMedications = useCallback(async () => {
+    if (!handleApplyCDSS) return
+    try {
+      await handleApplyCDSS((medications: any[]) => {
+        if (medications && medications.length > 0) {
+          prescriptions.setRxList((prev: any[]) => [...prev, ...medications])
+        }
+      })
+    } catch (err: any) {
+      setError(err.message || 'Failed to apply CDSS suggestions')
+    }
+  }, [handleApplyCDSS, prescriptions, setError])
+
+  const useSectionProps = (sectionId: string, panel: 'left' | 'right', layout: any) => {
+    const isDragging = layout.draggedSection === sectionId
+    const isDragOver = layout.dragOverSection === sectionId
+    return {
+      draggable: layout.isCustomizeMode,
+      onDragStart: (e: React.DragEvent) => layout.handleDragStart(e, sectionId),
+      onDragOver: (e: React.DragEvent) => layout.handleDragOver(e, sectionId, panel),
+      onDragLeave: layout.handleDragLeave,
+      onDrop: (e: React.DragEvent) => layout.handleDrop(e, sectionId, panel),
+      onDragEnd: layout.handleDragEnd,
+      'data-section-id': sectionId,
+      className: `relative ${layout.isCustomizeMode ? 'cursor-move' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'ring-2 ring-cyan-500 ring-offset-2' : ''} transition-all`,
+      style: { contain: 'layout style paint' }
+    }
+  }
+
+  const handleCloseCDSS = useCallback(() => {
+    setShowCDSSResults(false)
+    setCdssError?.(null)
+  }, [setCdssError])
 
   // ═══════════════════════════════════════════════════════════════
-  // CLEANUP
+  // ALL EXISTING renderSection and renderDoctorNotes — UNCHANGED
   // ═══════════════════════════════════════════════════════════════
 
-  useEffect(() => () => {
-    if (callTimerRef.current) clearInterval(callTimerRef.current)
-    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-  }, [])
+  const renderDoctorNotes = useCallback(
+    (sectionProps: any) => (
+      <DoctorNotesSection
+        appointment={appointment}
+        soapNotes={memoizedSoapNotes}
+        doctorNotes={doctorNotes}
+        activeTab={activeTab}
+        soapSaveStatus={soapSaveStatus}
+        isSigning={isSigning}
+        isCustomizeMode={layout.isCustomizeMode}
+        sectionProps={sectionProps}
+        onSoapNotesChange={handleSoapNotesChange}
+        onDoctorNotesChange={handleDoctorNotesChangeMemoized}
+        onTabChange={setActiveTab}
+        onSignAndLock={handleSignAndLock}
+        appointmentDocuments={memoizedAppointmentDocuments}
+        uploadingDocument={documentUpload.uploadingDocument}
+        selectedDocument={documentUpload.selectedDocument}
+        uploadError={documentUpload.uploadError}
+        onDocumentUpload={documentUpload.handleDocumentUpload}
+        onDocumentSelect={documentUpload.setSelectedDocument}
+        onDocumentDownload={handleDocumentDownload}
+      />
+    ),
+    [appointment, memoizedSoapNotes, doctorNotes, activeTab, soapSaveStatus, isSigning, layout.isCustomizeMode, handleSoapNotesChange, handleDoctorNotesChangeMemoized, setActiveTab, handleSignAndLock, memoizedAppointmentDocuments, documentUpload.uploadingDocument, documentUpload.selectedDocument, documentUpload.uploadError, documentUpload.handleDocumentUpload, documentUpload.setSelectedDocument, handleDocumentDownload]
+  )
+  
+  const renderSection = useCallback(
+    (sectionId: string, panel: 'left' | 'right') => {
+      const sectionProps = useSectionProps(sectionId, panel, layout)
+  
+      switch (sectionId) {
+        case 'patient-header':
+          return (
+            <PatientHeader
+              key={sectionId}
+              appointment={appointment}
+              surgeriesDetails={surgeriesDetails}
+              medicalIssuesDetails={problemsMedications.medicalIssuesDetails}
+              chiefComplaint={soapNotes.chiefComplaint}
+              isCustomizeMode={layout.isCustomizeMode}
+              sectionProps={sectionProps}
+            />
+          )
+  
+        case 'doctor-notes':
+          return <React.Fragment key={sectionId}>{renderDoctorNotes(sectionProps)}</React.Fragment>
+
+        case 'meeting-info':
+          return null
+
+        case 'erx-composer':
+          return null
+
+
+        default:
+          return null
+      }
+    },
+    [layout, appointment, currentUser, problemsMedications, renderDoctorNotes, problemsMedicationsHandlers, surgeriesDetails, prescriptions, communication, error, setError, labResults, referralsFollowUp, priorAuth, handleSendEmail, onStatusChange, soapNotes, setActiveTab]
+  )
+
+  // Fetch communication history when appointment loads
+  useEffect(() => {
+    if (appointment?.patients?.phone) {
+      communication.fetchCommunicationHistory(appointment.patients.phone)
+    }
+  }, [appointment?.patients?.phone, communication.fetchCommunicationHistory])
+
+  // Reset scroll position
+  const preventAutoScrollRef = useRef(false)
+  const scrollResetIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  useEffect(() => {
+    if (isOpen && layout.scrollContainerRef.current) {
+      preventAutoScrollRef.current = true
+      const container = layout.scrollContainerRef.current
+      container.scrollTop = 0
+      const resetScroll = () => { if (container && preventAutoScrollRef.current) container.scrollTop = 0 }
+      requestAnimationFrame(resetScroll)
+      const timers = [setTimeout(resetScroll, 0), setTimeout(resetScroll, 50), setTimeout(resetScroll, 100), setTimeout(resetScroll, 200), setTimeout(resetScroll, 300), setTimeout(resetScroll, 500)]
+      scrollResetIntervalRef.current = setInterval(() => { if (preventAutoScrollRef.current && container.scrollTop > 10) container.scrollTop = 0 }, 50)
+      const timer4 = setTimeout(() => {
+        preventAutoScrollRef.current = false
+        if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }
+      }, 800)
+      return () => { timers.forEach(t => clearTimeout(t)); clearTimeout(timer4); if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }; preventAutoScrollRef.current = false }
+    } else {
+      preventAutoScrollRef.current = false
+      if (scrollResetIntervalRef.current) { clearInterval(scrollResetIntervalRef.current); scrollResetIntervalRef.current = null }
+    }
+  }, [isOpen, appointmentId])
+
+  // ── Audit log: record PHI access ──
+  useEffect(() => {
+    if (isOpen && appointmentId) {
+      logViewAppointment(appointmentId)
+    }
+  }, [isOpen, appointmentId])
 
   // ═══════════════════════════════════════════════════════════════
-  // HELPERS
+  // ALL EXISTING HELPER FUNCTIONS — UNCHANGED
   // ═══════════════════════════════════════════════════════════════
 
-  const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
-  const copyText = (t: string) => { navigator.clipboard?.writeText(t) }
-  const panelLabel = (p: SidePanel) => p === 'dialpad' ? 'Dialpad' : p === 'sms' ? 'SMS' : p === 'email' ? 'Email' : 'Scribe'
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  }
+
+  const getDateString = (date: Date, timezone?: string): string => {
+    if (timezone) {
+      const options: Intl.DateTimeFormatOptions = { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }
+      const formatter = new Intl.DateTimeFormat('en-US', options)
+      const parts = formatter.formatToParts(date)
+      const getValue = (type: string) => parts.find(part => part.type === type)?.value || '0'
+      return `${getValue('year')}-${getValue('month')}-${getValue('day')}`
+    }
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const roundToNearestSlot = (appointmentDate: Date): Date => {
+    const rounded = new Date(appointmentDate)
+    const minutes = appointmentDate.getUTCMinutes()
+    const hours = appointmentDate.getUTCHours()
+    if (minutes < 15) { rounded.setUTCMinutes(0, 0, 0); rounded.setUTCHours(hours) }
+    else if (minutes < 45) { rounded.setUTCMinutes(30, 0, 0); rounded.setUTCHours(hours) }
+    else { rounded.setUTCMinutes(0, 0, 0); rounded.setUTCHours(hours + 1) }
+    return rounded
+  }
+
+  const getAppointmentForSlot = (date: Date, time: Date): CalendarAppointment | null => {
+    if (!stableAppointments || stableAppointments.length === 0) return null
+    const doctorTimezone = PROVIDER_TIMEZONE
+    const dateInPhoenix = convertToTimezone(date.toISOString(), doctorTimezone)
+    const slotDateStr = getDateString(dateInPhoenix, doctorTimezone)
+    const phoenixYear = dateInPhoenix.getUTCFullYear()
+    const phoenixMonth = dateInPhoenix.getUTCMonth()
+    const phoenixDay = dateInPhoenix.getUTCDate()
+    const phoenixHour = time.getHours()
+    const phoenixMinute = time.getMinutes()
+    const timeSlotAsPhoenix = new Date(Date.UTC(phoenixYear, phoenixMonth, phoenixDay, phoenixHour, phoenixMinute, 0))
+    const hour = timeSlotAsPhoenix.getUTCHours()
+    const minute = timeSlotAsPhoenix.getUTCMinutes()
+    const slotKey = `${slotDateStr}_${hour}_${minute}`
+    const appointmentMap = new Map<string, CalendarAppointment>()
+    stableAppointments.forEach(apt => {
+      if (!apt.requested_date_time) return
+      const aptDate = convertToTimezone(apt.requested_date_time, doctorTimezone)
+      const roundedSlot = roundToNearestSlot(aptDate)
+      const dateStr = getDateString(aptDate, doctorTimezone)
+      const aptHour = roundedSlot.getUTCHours()
+      const aptMinute = roundedSlot.getUTCMinutes()
+      const key = `${dateStr}_${aptHour}_${aptMinute}`
+      appointmentMap.set(key, apt)
+    })
+    return appointmentMap.get(slotKey) || null
+  }
+
+  const getAppointmentReason = (apt: CalendarAppointment): string => {
+    if ((apt as any).clinical_notes && Array.isArray((apt as any).clinical_notes) && (apt as any).clinical_notes.length > 0) {
+      const reasonNote = (apt as any).clinical_notes.find((note: any) => note.note_type === 'chief_complaint' || note.note_type === 'subjective')
+      if (reasonNote?.content) return reasonNote.content
+    }
+    const aptAny = apt as any
+    return aptAny.chief_complaint || aptAny.reason || ''
+  }
 
   // ═══════════════════════════════════════════════════════════════
-  // RENDER
+  // RENDER: Left sidebar time slots — UNCHANGED
+  // ═══════════════════════════════════════════════════════════════
+  const renderCurrentDaySlots = () => {
+    if (!appointment?.requested_date_time) return null
+    const doctorTimezone = PROVIDER_TIMEZONE
+    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+    const slots: Date[] = []
+    for (let hour = 5; hour <= 20; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const time = new Date(appointmentDate)
+        time.setHours(hour, minute, 0, 0)
+        slots.push(time)
+      }
+    }
+    
+    return (
+      <div style={{ padding: '12px', background: 'linear-gradient(180deg, #0d1424, #0b1222)', height: '100%', overflowY: 'auto', borderRight: '1px solid #1b2b4d', scrollbarWidth: 'thin', scrollbarColor: '#1b2b4d #0a1222' }} className="scrollbar-thin scrollbar-thumb-[#1b2b4d] scrollbar-track-[#0a1222]">
+        <div style={{ color: '#cfe1ff', fontWeight: 'bold', fontSize: '14px', marginBottom: '16px', position: 'sticky', top: 0, background: 'linear-gradient(180deg, #0d1424, #0b1222)', paddingBottom: '12px', borderBottom: '1px solid #1b2b4d', zIndex: 10 }}>
+          {appointmentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+          {slots.map((time) => {
+            const slotAppointment = getAppointmentForSlot(appointmentDate, time)
+            const isSelected = slotAppointment?.id === appointment?.id
+            const isAvailable = !slotAppointment
+            const isMoveSelected = showMoveForm && selectedMoveTime === `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`
+            return (
+              <div key={time.getTime()}
+                onClick={() => {
+                  if (showMoveForm && isAvailable) setSelectedMoveTime(`${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`)
+                  else if (slotAppointment && slotAppointment.id !== appointment?.id && onAppointmentSwitch) onAppointmentSwitch(slotAppointment.id)
+                }}
+                style={{
+                  padding: '10px', borderRadius: '10px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s',
+                  background: isMoveSelected ? 'linear-gradient(135deg, rgba(0, 230, 255, 0.3), rgba(0, 230, 255, 0.2))' : isSelected ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.3), rgba(211, 47, 47, 0.2))' : slotAppointment ? 'linear-gradient(135deg, rgba(229, 57, 53, 0.2), rgba(211, 47, 47, 0.15))' : 'linear-gradient(135deg, rgba(25,214,127,.18), rgba(25,214,127,.12))',
+                  border: isMoveSelected ? '2px solid #00e6ff' : isSelected ? '2px solid #00e6ff' : slotAppointment ? '2px solid rgba(229, 57, 53, 0.6)' : '2px solid rgba(25,214,127,.6)',
+                  boxShadow: isMoveSelected ? '0 0 12px rgba(0, 230, 255, 0.4)' : isSelected ? '0 0 12px rgba(229, 57, 53, 0.4), 0 0 20px rgba(0, 230, 255, 0.3)' : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                  color: slotAppointment ? '#ffcdd2' : '#cde7da'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.15)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.filter = 'brightness(1)' }}
+              >
+                <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{formatTime(time)}</div>
+                {slotAppointment && (
+                  <>
+                    <div style={{ fontSize: '11px', marginTop: '4px', fontWeight: '600' }}>{slotAppointment.patients?.first_name} {slotAppointment.patients?.last_name}</div>
+                    <span style={{
+                      display: 'inline-block', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', marginTop: '4px', textTransform: 'uppercase',
+                      background: slotAppointment.visit_type === 'video' ? 'rgba(0, 230, 255, 0.25)' : slotAppointment.visit_type === 'phone' ? 'rgba(0, 194, 110, 0.25)' : slotAppointment.visit_type === 'async' ? 'rgba(176, 122, 255, 0.25)' : 'rgba(255,255,255,0.1)',
+                      border: `1px solid ${slotAppointment.visit_type === 'video' ? '#00e6ff' : slotAppointment.visit_type === 'phone' ? '#00c26e' : slotAppointment.visit_type === 'async' ? '#b07aff' : 'transparent'}`,
+                      color: slotAppointment.visit_type === 'video' ? '#00e6ff' : slotAppointment.visit_type === 'phone' ? '#00c26e' : slotAppointment.visit_type === 'async' ? '#b07aff' : '#fff'
+                    }}>
+                      {slotAppointment.visit_type || 'visit'}
+                    </span>
+                  </>
+                )}
+                {isAvailable && <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8, fontWeight: '600' }}>Available</div>}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  if (!isOpen) return null
+
+  // ═══════════════════════════════════════════════════════════════
+  // ORIGINAL RENDER — Standard slide-out panel layout
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div key={sectionId} {...(sectionProps as React.HTMLAttributes<HTMLDivElement>)} className="relative">
-      {isCustomizeMode && (
-        <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+    <>
+      <div 
+        className="fixed top-0 right-0 bottom-0 bg-black/40 z-40 transition-opacity duration-300"
+        style={{ left: panelWidth ? `calc(100vw - ${panelWidth}px)` : 'var(--sidebar-width, 240px)' }}
+        onClick={onClose}
+      />
+      
+      {/* Main container — resizable panel */}
+      <div className="fixed top-0 right-0 h-full z-50 flex" style={{ left: panelWidth ? `calc(100vw - ${panelWidth}px)` : 'var(--sidebar-width, 240px)' }}>
+        {/* ─── Resize handle (left edge) — only active when unlocked ─── */}
+        <div
+          onMouseDown={panelLocked ? undefined : handlePanelResizeStart}
+          className={`w-2 h-full flex-shrink-0 group relative z-10 ${panelLocked ? 'cursor-default' : 'cursor-col-resize'}`}
+          style={{ background: 'rgba(255,255,255,0.03)' }}
+          title={panelLocked ? 'Panel locked — click unlock button to resize' : 'Drag to resize panel'}
+        >
+          {!panelLocked && (
+            <>
+              <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="w-1 h-1 rounded-full bg-cyan-400" />
+                  <div className="w-0.5 h-8 rounded-full bg-cyan-400/60" />
+                  <div className="w-1 h-1 rounded-full bg-cyan-400" />
+                </div>
+              </div>
+              <div className="absolute inset-y-0 left-0 w-full group-hover:bg-cyan-500/20 transition-colors" />
+            </>
+          )}
+        </div>
+
+        {/* Panel */}
+        <div className={`flex-1 h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-l border-white/20 shadow-2xl transform transition-transform duration-300 ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        } flex flex-col overflow-hidden`}>
+          {/* Header */}
+          <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-white/10 z-10 flex-shrink-0 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-bold text-sm sm:text-base">
+                <span className="text-cyan-400">APPOINTMENT</span>
+                {appointment?.requested_date_time && (
+                  <> • {(() => {
+                    const doctorTimezone = PROVIDER_TIMEZONE
+                    const appointmentDate = convertToTimezone(appointment.requested_date_time, doctorTimezone)
+                    return appointmentDate.toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+                    })
+                  })()}</>
+                )}
+                {appointment?.status && (
+                  <select
+                    value={appointment.status}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    disabled={statusUpdating}
+                    className={`ml-2 px-2 py-0.5 rounded text-xs font-bold cursor-pointer border-0 outline-none ${
+                      appointment.status === 'pending' ? 'bg-yellow-600 text-white' :
+                      appointment.status === 'accepted' ? 'bg-green-600 text-white' :
+                      appointment.status === 'completed' ? 'bg-blue-600 text-white' :
+                      appointment.status === 'cancelled' ? 'bg-gray-600 text-white' :
+                      appointment.status === 'no_show' ? 'bg-red-800 text-white' : 'bg-gray-600 text-white'
+                    }`}
+                  >
+                    <option value="pending">PENDING</option>
+                    <option value="accepted">ACCEPTED</option>
+                    <option value="completed">COMPLETED</option>
+                    <option value="cancelled">CANCELLED</option>
+                    <option value="no_show">NO SHOW</option>
+                  </select>
+                )}
+                {/* Chart Status Badge — click to open Chart Management panel */}
+                <button
+                  onClick={() => setShowChartManagementPanel(true)}
+                  className={`ml-2 flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold cursor-pointer transition-all hover:opacity-80 ${
+                    chartStatus === 'draft'
+                      ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40'
+                      : chartStatus === 'signed'
+                      ? 'bg-green-600/20 text-green-400 border border-green-500/40'
+                      : chartStatus === 'closed'
+                      ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40'
+                      : 'bg-blue-600/20 text-blue-400 border border-blue-500/40'
+                  }`}
+                  title="Open Chart Management panel"
+                >
+                  {chartStatus === 'draft' ? (
+                    <><Edit className="h-3 w-3" />Draft</>
+                  ) : chartStatus === 'signed' ? (
+                    <><Lock className="h-3 w-3" />Signed</>
+                  ) : chartStatus === 'closed' ? (
+                    <><Lock className="h-3 w-3" />Closed</>
+                  ) : (
+                    <><FileText className="h-3 w-3" />Amended ({addendums.length})</>
+                  )}
+                </button>
+              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* EHR Panel Buttons */}
+                {!layout.isCustomizeMode && appointment && EHR_PANELS.map(panel => {
+                  const Icon = panel.icon
+                  const isErx = panel.id === 'drchrono-erx'
+                  return (
+                    <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
+                      className={`flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white ${
+                        isErx
+                          ? 'px-4 py-2.5 text-sm border-green-500/60 bg-green-600/20 text-green-300 hover:bg-green-600/40 hover:border-green-400 shadow-lg shadow-green-900/30 animate-pulse-subtle'
+                          : 'px-2 py-1.5 text-[11px] border-white/10 hover:border-white/30 text-slate-300'
+                      }`}
+                      style={isErx ? {} : { background: 'rgba(255,255,255,0.05)' }}>
+                      <Icon className={isErx ? 'h-5 w-5' : 'h-3.5 w-3.5'} style={{ color: panel.color }} />{panel.label}
+                    </button>
+                  )
+                })}
+
+                {/* Action Buttons */}
+                {!layout.isCustomizeMode && appointment && (
+                  <>
+                    {appointment.status === 'pending' && (
+                      <>
+                        <button onClick={() => handleAppointmentAction('accept')} disabled={actionLoading === 'accept'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs disabled:opacity-50">
+                          {actionLoading === 'accept' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                          Accept
+                        </button>
+                        <button onClick={() => handleAppointmentAction('reject')} disabled={actionLoading === 'reject'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs disabled:opacity-50">
+                          {actionLoading === 'reject' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <XCircle className="h-3.5 w-3.5" />}
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    
+                    <button onClick={() => { setShowMoveForm(!showMoveForm); setShowRescheduleForm(false); setShowCancelConfirm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showMoveForm ? 'bg-cyan-700' : 'bg-cyan-600'} text-white rounded-lg hover:bg-cyan-700 transition-colors text-xs`}>
+                      <ArrowRight className="h-3.5 w-3.5" />{showMoveForm ? 'Cancel Move' : 'Move'}
+                    </button>
+                    
+                    <button onClick={() => { setShowRescheduleForm(!showRescheduleForm); setShowMoveForm(false); setShowCancelConfirm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showRescheduleForm ? 'bg-orange-700' : 'bg-orange-600'} text-white rounded-lg hover:bg-orange-700 transition-colors text-xs`}>
+                      <RotateCcw className="h-3.5 w-3.5" />{showRescheduleForm ? 'Cancel' : 'Reschedule'}
+                    </button>
+                    
+                    <button onClick={() => { setShowCancelConfirm(!showCancelConfirm); setShowMoveForm(false); setShowRescheduleForm(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 ${showCancelConfirm ? 'bg-red-700' : 'bg-red-600'} text-white rounded-lg hover:bg-red-700 transition-colors text-xs`}>
+                      <XCircle className="h-3.5 w-3.5" />Cancel Appt
+                    </button>
+                    
+                    {appointment.status === 'accepted' && (
+                      <button onClick={() => handleAppointmentAction('complete')} disabled={actionLoading === 'complete'}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs disabled:opacity-50">
+                        {actionLoading === 'complete' ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                        Complete
+                      </button>
+                    )}
+                  </>
+                )}
+                
+                {layout.isCustomizeMode ? (
+                  <>
+                    <button onClick={layout.saveLayout} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm">
+                      <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Save Layout</span><span className="sm:hidden">Save</span>
+                    </button>
+                    <button onClick={() => layout.setIsCustomizeMode(false)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm">
+                      <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Cancel</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Panel width controls */}
+                    <div className="flex items-center gap-1 border-r border-white/10 pr-2 mr-1">
+                      <button
+                        onClick={() => setPanelLocked(!panelLocked)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${panelLocked ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-400' : 'border-white/10 text-gray-500 hover:text-white hover:border-white/30'}`}
+                        title={panelLocked ? 'Panel size locked — click to unlock' : 'Panel size unlocked — drag left edge to resize'}
+                      >
+                        {panelLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                        <span className="hidden sm:inline">{panelLocked ? 'Locked' : 'Resize'}</span>
+                      </button>
+                      {panelWidth !== null && (
+                        <button
+                          onClick={handlePanelResetWidth}
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold text-gray-500 hover:text-orange-400 border border-white/10 hover:border-orange-400/30 transition-all"
+                          title="Reset to default width"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          <span className="hidden sm:inline">Reset</span>
+                        </button>
+                      )}
+                      {panelWidth !== null && (
+                        <span className="text-[9px] text-gray-600 font-mono hidden lg:block">{panelWidth}px</span>
+                      )}
+                    </div>
+
+                    <button onClick={() => layout.setIsCustomizeMode(true)} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs sm:text-sm">
+                      <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Customize</span><span className="sm:hidden">Edit</span>
+                    </button>
+                    <button onClick={onClose} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs sm:text-sm">
+                      <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            
+            {/* Action Forms */}
+            {showMoveForm && (
+              <div className="mt-3 p-3 bg-cyan-900/50 rounded-lg border border-cyan-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="text-cyan-300 text-sm">
+                    <Clock className="h-4 w-4 inline mr-2" />
+                    Select a new time slot from the calendar on the left
+                    {selectedMoveTime && <span className="ml-2 font-bold">Selected: {selectedMoveTime}</span>}
+                  </div>
+                  <button onClick={handleMoveAppointment} disabled={!selectedMoveTime || moveLoading}
+                    className="px-4 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+                    {moveLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Confirm Move'}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {showRescheduleForm && (
+              <div className="mt-3 p-3 bg-orange-900/50 rounded-lg border border-orange-500/30">
+                <div className="flex items-center gap-3">
+                  <Calendar className="h-4 w-4 text-orange-300" />
+                  <input type="datetime-local" value={newDateTime} onChange={(e) => setNewDateTime(e.target.value)}
+                    className="flex-1 px-3 py-1.5 bg-slate-800 border border-white/20 rounded-lg text-white text-sm" />
+                  <button onClick={handleReschedule} disabled={!newDateTime || rescheduleLoading}
+                    className="px-4 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+                    {rescheduleLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Confirm Reschedule'}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {showCancelConfirm && (
+              <div className="mt-3 p-3 bg-red-900/50 rounded-lg border border-red-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="text-red-300 text-sm">Are you sure you want to cancel this appointment? This action cannot be undone.</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowCancelConfirm(false)} className="px-4 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">No, Keep It</button>
+                    <button onClick={handleCancelAppointment} disabled={cancelling}
+                      className="px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm flex items-center gap-2">
+                      {cancelling ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Yes, Cancel Appointment'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Content — Original 2-column grid layout */}
+          <div 
+            ref={layout.scrollContainerRef}
+            className="flex-1 overflow-y-auto overflow-x-auto p-4 sm:p-6 min-w-0"
+            style={{ scrollBehavior: 'auto', scrollPaddingTop: '0' }}
+            onFocus={(e) => {
+              if (preventAutoScrollRef.current && layout.scrollContainerRef.current) {
+                e.stopPropagation()
+                setTimeout(() => { if (layout.scrollContainerRef.current) layout.scrollContainerRef.current.scrollTop = 0 }, 0)
+              }
+            }}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
+              </div>
+            ) : error ? (
+              <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">{error}</div>
+            ) : appointment ? (
+              <>
+                {/* ─── Open Video Consultation Button ─── */}
+                <button 
+                  onClick={() => setShowVideoPanel(true)}
+                  className="flex items-center justify-center gap-3 w-full px-6 py-4 rounded-xl font-bold text-base text-white transition-all hover:brightness-110 mb-5 shadow-lg shadow-cyan-900/30"
+                  style={{ background: 'linear-gradient(135deg, #0e7490, #1e40af)' }}>
+                  <Video className="h-5 w-5" />
+                  Open Video Consultation
+                </button>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {/* Left Panel */}
+                  <div className="space-y-4 sm:space-y-6">
+                    {layout.leftPanelSections.map((sectionId: string) => renderSection(sectionId, 'left'))}
+                  </div>
+
+                  {/* Right Panel */}
+                  <div className="space-y-4 sm:space-y-6">
+                    {layout.rightPanelSections.map((sectionId: string) => renderSection(sectionId, 'right'))}
+                  </div>
+                </div>
+
+                {/* Spacer — allows unlimited scroll so floating panels can be placed below content */}
+                <div className="h-[200vh] flex-shrink-0" aria-hidden="true" />
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ OVERLAY PANELS ═══ */}
+
+      {documentUpload.selectedDocument && (
+        <DocumentViewer document={documentUpload.selectedDocument} onClose={() => documentUpload.setSelectedDocument(null)} />
+      )}
+
+      {appointment?.patient_id && (
+        <MedicationHistoryPanel isOpen={showMedicationHistoryPanel} onClose={() => setShowMedicationHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} patientDOB={appointment?.patients?.date_of_birth ?? undefined}
+          onReconcile={(medications: any[]) => {
+            const newMeds = medications.map((med: any, idx: number) => ({ id: `reconciled-${Date.now()}-${idx}`, medication: med.medication_name, provider: med.prescriber || 'Surescripts', date: med.start_date || new Date().toISOString().split('T')[0] }))
+            newMeds.forEach((med: any) => { problemsMedications.handleAddMedicationHistory(med.medication, med.provider, med.date) })
+          }}
+        />
+      )}
+
+      {appointment?.patient_id && (
+        <OrdersPanel isOpen={showOrdersPanel} onClose={() => setShowOrdersPanel(false)} patientId={appointment.patient_id} patientName={`${appointment.patients?.first_name || ''} ${appointment.patients?.last_name || ''}`} appointmentId={appointment.id} />
+      )}
+
+      {appointment?.patient_id && (
+        <PrescriptionHistoryPanel isOpen={showPrescriptionHistoryPanel} onClose={() => setShowPrescriptionHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment.patients?.first_name || ''} ${appointment.patients?.last_name || ''}`} appointmentId={appointment.id} />
+      )}
+
+      {appointment?.patient_id && (
+        <AppointmentsOverlayPanel isOpen={showAppointmentsOverlay} onClose={() => setShowAppointmentsOverlay(false)} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} patientDOB={appointment?.patients?.date_of_birth ?? undefined} appointments={patientAppointments}
+          onViewAppointment={(apptId: string) => { setShowAppointmentsOverlay(false); if (onAppointmentSwitch) onAppointmentSwitch(apptId) }}
+        />
+      )}
+
+      {appointment?.patient_id && (
+        <AllergiesPanel isOpen={showAllergiesPanel} onClose={() => setShowAllergiesPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <VitalsPanel isOpen={showVitalsPanel} onClose={() => setShowVitalsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} appointmentId={appointmentId ?? undefined} />
+      )}
+
+      {appointment?.patient_id && (
+        <MedicationsPanel isOpen={showMedicationsPanel} onClose={() => setShowMedicationsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {/* Phase 1B: New EHR Overlay Panels */}
+      {appointment?.patient_id && (
+        <DemographicsPanel isOpen={showDemographicsPanel} onClose={() => setShowDemographicsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <ProblemsPanel isOpen={showProblemsPanel} onClose={() => setShowProblemsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <ClinicalNotesPanel isOpen={showClinicalNotesPanel} onClose={() => setShowClinicalNotesPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <LabResultsPanel isOpen={showLabResultsPanel} onClose={() => setShowLabResultsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <ImmunizationsPanel isOpen={showImmunizationsPanel} onClose={() => setShowImmunizationsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <DocumentsPanel isOpen={showDocumentsPanel} onClose={() => setShowDocumentsPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <FamilyHistoryPanel isOpen={showFamilyHistoryPanel} onClose={() => setShowFamilyHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <SocialHistoryPanel isOpen={showSocialHistoryPanel} onClose={() => setShowSocialHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <SurgicalHistoryPanel isOpen={showSurgicalHistoryPanel} onClose={() => setShowSurgicalHistoryPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <PharmacyPanel isOpen={showPharmacyPanel} onClose={() => setShowPharmacyPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <CarePlansPanel isOpen={showCarePlansPanel} onClose={() => setShowCarePlansPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {appointment?.patient_id && (
+        <BillingPanel isOpen={showBillingPanel} onClose={() => setShowBillingPanel(false)} patientId={appointment.patient_id} patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'} />
+      )}
+
+      {/* Lab Results Overlay (moved from inline section to EHR toolbar) */}
+      {showLabResultsInline && appointment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLabResultsInline(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 m-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2"><FlaskConical className="h-5 w-5 text-sky-400" />Lab Orders</h2>
+              <button onClick={() => setShowLabResultsInline(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <LabResultsSection labResults={labResults.labResults} isLoadingLabs={labResults.isLoadingLabs} isCustomizeMode={false} sectionProps={{}} onLoadLabResults={labResults.loadLabResults} patientId={appointment?.patient_id || undefined} appointmentId={appointmentId || undefined} />
+          </div>
         </div>
       )}
 
-      {/* ═══════ FLOATING PANEL ═══════ */}
-      <div ref={panelRef} className="fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-cyan-500/30 shadow-2xl shadow-black/40"
-        style={{ left: position.x, top: position.y, width: hasOpenPanel ? Math.max(size.width, 720) : size.width, height: minimized ? 48 : size.height, background: 'linear-gradient(135deg, rgba(6,38,54,0.97), rgba(10,15,30,0.98))', backdropFilter: 'blur(16px)', transition: 'width 0.3s ease, height 0.2s ease' }}>
-
-        {/* Resize handles */}
-        {!locked && !minimized && (<>
-          <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'r')} />
-          <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'b')} />
-          <div className="absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize z-20" onMouseDown={e => handleResizeStart(e, 'rb')} />
-        </>)}
-
-        {/* ═══════ HEADER ═══════ */}
-        <div className={`flex items-center justify-between px-3 py-2 border-b border-white/10 flex-shrink-0 select-none ${locked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
-          onMouseDown={handleDragStart}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Video className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            <span className="text-sm font-bold text-white truncate">Video Consultation</span>
-            {meetingActive && isRecording && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full flex-shrink-0">
-                <Circle className="w-2 h-2 text-red-500 fill-red-500 animate-pulse" /><span className="text-[10px] font-bold text-red-400 font-mono">{fmt(recordingTime)}</span>
-              </div>
-            )}
-            {timeRemaining && !meetingActive && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded-full flex-shrink-0">
-                <Clock className="w-3 h-3 text-white/40" /><span className={`text-[10px] font-bold ${timeRemaining.isPast ? 'text-yellow-400' : 'text-white/50'}`}>{countdownText}</span>
-              </div>
-            )}
-            {(meetingActive || callStatus === 'connected') && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/25 rounded-full flex-shrink-0 cursor-pointer" onClick={() => togglePanel('scribe')} title="Medazon Scribe active — click to view">
-                <Stethoscope className="w-3 h-3 text-emerald-400" /><span className="text-[9px] font-bold text-emerald-400">Scribe</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {meetingActive && <button onClick={handleToggleRecording} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/30 text-red-400' : 'hover:bg-white/10 text-white/40'}`}>{isRecording ? <Square className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}</button>}
-            {joinUrl && <a href={joinUrl} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><ExternalLink className="w-3.5 h-3.5" /></a>}
-            <button onClick={handleToggleLock} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all">{locked ? <Lock className="w-3.5 h-3.5 text-cyan-400" /> : <Unlock className="w-3.5 h-3.5 text-white/40" />}</button>
-            <button onClick={handleReset} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><RefreshCw className="w-3.5 h-3.5" /></button>
-            <button onClick={handleToggleMinimize} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all">{minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}</button>
-            {onClose && <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-all" title="Close video panel"><X className="w-3.5 h-3.5" /></button>}
+      {/* Referrals & Follow-Up Overlay (moved from inline section to EHR toolbar) */}
+      {showReferralsPanel && appointment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowReferralsPanel(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 m-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2"><ArrowRight className="h-5 w-5 text-orange-400" />Referrals & Follow-Up</h2>
+              <button onClick={() => setShowReferralsPanel(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <ReferralsFollowUpSection referrals={referralsFollowUp.referrals} showReferralForm={referralsFollowUp.showReferralForm} setShowReferralForm={referralsFollowUp.setShowReferralForm} newReferral={referralsFollowUp.newReferral} setNewReferral={referralsFollowUp.setNewReferral} showFollowUpScheduler={referralsFollowUp.showFollowUpScheduler} setShowFollowUpScheduler={referralsFollowUp.setShowFollowUpScheduler} followUpData={referralsFollowUp.followUpData} setFollowUpData={referralsFollowUp.setFollowUpData} isSchedulingFollowUp={referralsFollowUp.isSchedulingFollowUp} isCustomizeMode={false} sectionProps={{}}
+              onCreateReferral={async () => { try { await referralsFollowUp.handleCreateReferral() } catch (err: any) { setError(err.message) } }}
+              onScheduleFollowUp={async () => { try { await referralsFollowUp.handleScheduleFollowUp(); onStatusChange() } catch (err: any) { setError(err.message) } }}
+              error={error}
+              patientId={appointment?.patient_id || undefined}
+              appointmentId={appointmentId || undefined}
+            />
           </div>
         </div>
+      )}
 
-        {/* ═══════ BODY ═══════ */}
-        {!minimized && (
-          <div className="flex-1 flex overflow-hidden">
-
-            {/* ─── LEFT: VIDEO ─── */}
-            <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2 border-r border-white/10' : 'w-full'}`} style={{ transition: 'width 0.3s ease' }}>
-              {meetingActive && joinUrl ? (
-                <div className="flex-1 relative min-h-0 bg-black">
-                  <DailyIframe roomUrl={joinUrl} />
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                    <button onClick={handleEndMeeting} className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-red-600/30 flex items-center gap-2 transition-all"><PhoneOff className="w-4 h-4" /> End</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, rgba(6,38,54,0.5), rgba(10,15,30,0.5))' }}>
-                  <div className="w-14 h-14 rounded-full bg-cyan-500/10 border-2 border-cyan-500/30 flex items-center justify-center mb-3"><Video className="w-7 h-7 text-cyan-400" /></div>
-                  <h3 className="text-sm font-bold text-white mb-1">{appointment?.dailyco_meeting_url ? 'Ready to Start' : 'No Meeting'}</h3>
-                  <p className="text-[10px] text-white/40 mb-3 text-center truncate w-full">{appointment?.dailyco_room_name ? `Room: ${appointment.dailyco_room_name}` : ''}</p>
-                  {appointment?.dailyco_meeting_url && (
-                    <button onClick={handleStartMeeting} className="px-5 py-2.5 rounded-xl font-bold text-xs text-white shadow-lg transition-all hover:brightness-110 flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #0891b2, #06b6d4)' }}><Video className="w-4 h-4" /> Start Video Call</button>
-                  )}
-                </div>
-              )}
-
-              {/* Phone bar */}
-              {patientPhone && (
-                <div className="flex items-center gap-1.5 px-3 py-2 border-t border-white/5 flex-shrink-0" style={{ background: 'rgba(14,165,233,0.04)' }}>
-                  <Phone className="h-3 w-3 text-sky-400 flex-shrink-0" />
-                  <span className="text-[10px] font-mono text-white font-bold flex-1 truncate">{formatPhoneDisplay(patientPhone)}</span>
-                  <button onClick={() => copyText(normalizePhone(patientPhone))} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-sky-400 border border-sky-500/30 hover:border-sky-400 transition-all">Copy</button>
-                  <button onClick={() => togglePanel('dialpad')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('dialpad') ? 'text-green-300 border-green-400 bg-green-500/20' : 'text-green-400 border-green-500/30 hover:border-green-400'}`}><Phone className="h-2.5 w-2.5 inline mr-0.5" />Dial</button>
-                  <button onClick={() => togglePanel('sms')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('sms') ? 'text-blue-300 border-blue-400 bg-blue-500/20' : 'text-blue-400 border-blue-500/30 hover:border-blue-400'}`}><MessageSquare className="h-2.5 w-2.5 inline mr-0.5" />SMS</button>
-                  <button onClick={() => togglePanel('email')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('email') ? 'text-purple-300 border-purple-400 bg-purple-500/20' : 'text-purple-400 border-purple-500/30 hover:border-purple-400'}`}><Mail className="h-2.5 w-2.5 inline mr-0.5" />Email</button>
-                  <button onClick={() => togglePanel('scribe')} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all ${openPanels.includes('scribe') ? 'text-emerald-300 border-emerald-400 bg-emerald-500/20' : 'text-emerald-400 border-emerald-500/30 hover:border-emerald-400'}`}><Stethoscope className="h-2.5 w-2.5 inline mr-0.5" />Scribe</button>
-                  {onOpenCommHub && <button onClick={() => onOpenCommHub('call')} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-orange-400 border border-orange-500/30 hover:border-orange-400 transition-all"><PhoneCall className="h-2.5 w-2.5 inline mr-0.5" />Hub</button>}
-                </div>
-              )}
+      {/* Prior Authorization Overlay (moved from inline section to EHR toolbar) */}
+      {showPriorAuthPanel && appointment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowPriorAuthPanel(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto p-6 m-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-violet-400" />Prior Authorization</h2>
+              <button onClick={() => setShowPriorAuthPanel(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
             </div>
-
-            {/* ─── RIGHT: SIDE PANEL CAROUSEL ─── */}
-            {hasOpenPanel && (
-              <div className="w-1/2 flex flex-col overflow-hidden" style={{ transition: 'width 0.3s ease' }}>
-
-                {/* Panel nav header */}
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/5 flex-shrink-0">
-                  {openPanels.length > 1 && <button onClick={navPrev} disabled={activePanelIdx === 0} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronLeft className="w-3.5 h-3.5" /></button>}
-                  <div className="flex gap-1 flex-1 justify-center">
-                    {openPanels.map((p, i) => (
-                      <button key={p} onClick={() => setActivePanelIdx(i)}
-                        className={`px-2 py-1 rounded text-[9px] font-bold transition-all ${i === activePanelIdx ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}>
-                        {panelLabel(p)}
-                      </button>
-                    ))}
-                  </div>
-                  {openPanels.length > 1 && <button onClick={navNext} disabled={activePanelIdx >= openPanels.length - 1} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronRight className="w-3.5 h-3.5" /></button>}
-                  <button onClick={() => closePanel(activePanel!)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-500/20 text-white/20 hover:text-red-400"><X className="w-3 h-3" /></button>
-                </div>
-
-                {/* ─── CALL/SMS PANEL (uses CommunicationDialer — same as /doctor/communication page) ─── */}
-                {(activePanel === 'dialpad' || activePanel === 'sms') && (
-                  <CommunicationDialer
-                    initialPhone={patientPhone}
-                    patientName={patientName}
-                    patientId={appointment?.id}
-                    defaultTab={activePanel === 'sms' ? 'sms' : 'call'}
-                    compact
-                  />
-                )}
-
-                {/* ─── EMAIL PANEL ─── */}
-                {activePanel === 'email' && (
-                  <div className="flex-1 flex flex-col p-3 gap-2 overflow-y-auto">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">To</span>
-                      <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="patient@email.com"
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">From</span>
-                      <div className="flex-1 bg-white/5 border border-white/5 rounded-lg px-2 py-1.5 text-white/40 text-[11px]">{providerEmail || 'Provider'}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">Subj</span>
-                      <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="Subject..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} placeholder="Compose..."
-                      className="flex-1 min-h-[120px] bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs resize-none focus:border-purple-500/50 focus:outline-none leading-relaxed"
-                      onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendEmail() }} />
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-white/25">⌘+Enter to send</span>
-                      <button onClick={handleSendEmail} disabled={emailSending || !emailTo.trim() || !emailSubject.trim() || !emailBody.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-500 disabled:opacity-40 transition-all">
-                        {emailSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}Send
-                      </button>
-                    </div>
-                    {emailSuccess && <div className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-green-300 text-[10px]">Email sent!</div>}
-                  </div>
-                )}
-
-                {/* ─── SCRIBE PANEL (always mounted, visible when active) ─── */}
-                <div className={activePanel === 'scribe' ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'}>
-                  <MedazonScribe
-                    appointmentId={appointment?.id}
-                    patientName={patientName}
-                    doctorName={_currentUser?.name || 'Doctor'}
-                    doctorId={_currentUser?.id || providerId}
-                    callActive={meetingActive || callStatus === 'connected'}
-                    onSoapGenerated={onSoapGenerated}
-                    visible={activePanel === 'scribe'}
-                  />
-                </div>
-              </div>
-            )}
+            <PriorAuthSection priorAuths={priorAuth.priorAuths} showPriorAuthForm={priorAuth.showPriorAuthForm} setShowPriorAuthForm={priorAuth.setShowPriorAuthForm} newPriorAuth={priorAuth.newPriorAuth} setNewPriorAuth={priorAuth.setNewPriorAuth} isSubmitting={priorAuth.isSubmitting} isCustomizeMode={false} sectionProps={{}}
+              onSubmitPriorAuth={async () => { try { await priorAuth.handleSubmitPriorAuth() } catch (err: any) { setError(err.message) } }}
+              error={error}
+              patientId={appointment?.patient_id || undefined}
+              appointmentId={appointmentId || undefined}
+            />
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Background scribe — runs when call active even if panel closed */}
-        {!openPanels.includes('scribe') && (meetingActive || callStatus === 'connected') && (
-          <MedazonScribe
-            appointmentId={appointment?.id}
-            patientName={patientName}
-            doctorName={_currentUser?.name || 'Doctor'}
-            doctorId={_currentUser?.id || providerId}
-            callActive={meetingActive || callStatus === 'connected'}
-            onSoapGenerated={onSoapGenerated}
-            visible={false}
-          />
-        )}
-      </div>
-    </div>
+      {/* Floating Video Consultation Panel — only shows after doctor clicks Start Video Call */}
+
+      {/* Chart Management Panel */}
+      {appointmentId && (
+        <ChartManagementPanel
+          isOpen={showChartManagementPanel}
+          onClose={() => setShowChartManagementPanel(false)}
+          appointmentId={appointmentId}
+          chartStatus={chartStatus}
+          chartSignedAt={chartSignedAt}
+          chartSignedBy={chartSignedBy}
+          chartClosedAt={chartClosedAt}
+          chartClosedBy={chartClosedBy}
+          clinicalNotePdfUrl={clinicalNotePdfUrl}
+          addendums={addendums}
+          currentUserName={currentUser?.full_name || currentUser?.email || 'Provider'}
+          onChartStatusChange={onStatusChange}
+          onSetChartStatus={setChartStatus}
+          onSetChartLocked={setChartLocked}
+          onSetChartSignedAt={setChartSignedAt}
+          onSetChartSignedBy={setChartSignedBy}
+          onSetChartClosedAt={setChartClosedAt}
+          onSetChartClosedBy={setChartClosedBy}
+          onSetClinicalNotePdfUrl={setClinicalNotePdfUrl}
+          onSetAddendums={setAddendums}
+          onSetAppointment={setAppointment}
+          onSetError={setError}
+          chartActionLoading={chartActionLoading}
+          onSetChartActionLoading={setChartActionLoading}
+        />
+      )}
+
+      {/* Enterprise Chart Management Panel V2 — Letters, Settings, Staff, Reviews
+          Opens alongside the quick-actions panel. Drag both independently. */}
+      {appointmentId && appointment?.patient_id && showChartManagementPanel && (
+        <ChartManagementPanelV2
+          isOpen={showChartManagementPanel}
+          onClose={() => {}} 
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          appointmentId={appointmentId}
+          chartStatus={chartStatus}
+          doctorId={doctorId || appointment?.doctor_id}
+          doctorName={currentUser?.full_name || currentUser?.email || 'Provider'}
+        />
+      )}
+
+      {/* Floating Video Consultation Panel — only shows after doctor clicks Start Video Call */}
+      {showVideoPanel && (
+        <DailyMeetingEmbed
+          {...{
+            appointment: appointment ? {
+              id: appointment.id,
+              requested_date_time: appointment.requested_date_time,
+              dailyco_meeting_url: (appointment as any).dailyco_meeting_url || null,
+              dailyco_room_name: (appointment as any).dailyco_room_name || null,
+              dailyco_owner_token: (appointment as any).dailyco_owner_token || null,
+              recording_url: (appointment as any).recording_url || null
+            } : null,
+            currentUser,
+            patientPhone: appointment?.patients?.phone || '',
+            patientName: `${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim(),
+            patientEmail: appointment?.patients?.email || '',
+            providerId: currentUser?.id,
+            providerEmail: currentUser?.email || '',
+            onOpenCommHub: () => { setShowCommHub(true) },
+            onClose: () => setShowVideoPanel(false),
+            onSoapGenerated: (soap: any) => {
+              if (handleSoapNotesChange) {
+                handleSoapNotesChange('chiefComplaint', soap.subjective)
+                handleSoapNotesChange('assessmentPlan', soap.assessment + '\n\n' + soap.plan)
+              }
+            }
+          } as any}
+        />
+      )}
+
+      {/* Unified Communication Hub */}
+      <UnifiedCommHub
+        isOpen={showCommHub}
+        onClose={() => setShowCommHub(false)}
+        patientId={appointment?.patient_id || undefined}
+        patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+        patientPhone={appointment?.patients?.phone || ''}
+        patientEmail={appointment?.patients?.email || ''}
+        appointmentId={appointmentId}
+        providerId={currentUser?.id}
+        providerName={currentUser?.name || 'Provider'}
+        providerEmail={currentUser?.email || ''}
+        onSendEmail={handleSendEmail}
+        onSmsSent={onSmsSent}
+      />
+    </>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
