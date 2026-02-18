@@ -99,17 +99,42 @@ export async function POST(req: NextRequest) {
       ? String(drchronoPatient.default_pharmacy)
       : null
 
-    // Check if patient already exists by email or drchrono chart_id
+    // Check if patient already exists by drchrono_patient_id (exact match) or email
     let existingPatient: any = null
 
-    if (drchronoPatient.email) {
+    // PRIORITY 1: Match by drchrono_patient_id (most reliable)
+    if (drchronoPatient.id) {
       const { data } = await supabaseAdmin
         .from('patients')
         .select('id')
-        .eq('email', drchronoPatient.email)
+        .eq('drchrono_patient_id', drchronoPatient.id)
         .limit(1)
-        .single()
+        .maybeSingle()
       existingPatient = data
+      if (existingPatient) {
+        console.log(`[PatientSync] Matched by drchrono_patient_id: ${drchronoPatient.id} → ${existingPatient.id}`)
+      }
+    }
+
+    // PRIORITY 2: Match by email + name (to avoid collisions with shared emails)
+    if (!existingPatient && drchronoPatient.email) {
+      const { data } = await supabaseAdmin
+        .from('patients')
+        .select('id, first_name, last_name')
+        .eq('email', drchronoPatient.email)
+      
+      if (data && data.length === 1) {
+        existingPatient = data[0]
+        console.log(`[PatientSync] Matched by email (unique): ${drchronoPatient.email} → ${existingPatient.id}`)
+      } else if (data && data.length > 1) {
+        // Multiple patients with same email — match by name too
+        const nameMatch = data.find(p => 
+          p.first_name?.toLowerCase() === drchronoPatient.first_name?.toLowerCase() &&
+          p.last_name?.toLowerCase() === drchronoPatient.last_name?.toLowerCase()
+        )
+        existingPatient = nameMatch || null
+        console.log(`[PatientSync] Multiple patients with email ${drchronoPatient.email} (${data.length}). Name match: ${nameMatch ? nameMatch.id : 'none — will create new'}`)
+      }
     }
 
     // Upsert patient record
