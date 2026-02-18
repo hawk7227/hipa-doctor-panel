@@ -319,7 +319,7 @@ export default function DailyMeetingEmbed({
         showFullscreenButton: true,
         showLocalVideo: true,
         showParticipantsBar: true,
-        prejoinUI: false,
+        ...(({ prejoinUI: false }) as any),
         // Dark theme customization
         theme: {
           colors: {
