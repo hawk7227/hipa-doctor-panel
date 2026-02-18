@@ -14,6 +14,7 @@ import MedicalRecordsView from './MedicalRecordsView'
 import OrdersPanel from './OrdersPanel'
 import PrescriptionHistoryPanel from './PrescriptionHistoryPanel'
 import ChartManagementPanel from './ChartManagementPanel'
+import ChartManagementPanelV2 from './panels/ChartManagementPanelV2'
 
 // Hooks
 import { useAppointmentData } from './appointment/hooks/useAppointmentData'
@@ -1855,6 +1856,21 @@ export default function AppointmentDetailModal({
           onSetError={setError}
           chartActionLoading={chartActionLoading}
           onSetChartActionLoading={setChartActionLoading}
+        />
+      )}
+
+      {/* Enterprise Chart Management Panel V2 — Letters, Settings, Staff, Reviews
+          Opens alongside the quick-actions panel. Drag both independently. */}
+      {appointmentId && appointment?.patient_id && showChartManagementPanel && (
+        <ChartManagementPanelV2
+          isOpen={showChartManagementPanel}
+          onClose={() => {}} 
+          patientId={appointment.patient_id}
+          patientName={`${appointment?.patients?.first_name || ''} ${appointment?.patients?.last_name || ''}`.trim() || 'Patient'}
+          appointmentId={appointmentId}
+          chartStatus={chartStatus}
+          doctorId={doctorId || appointment?.doctor_id}
+          doctorName={currentUser?.full_name || currentUser?.email || 'Provider'}
         />
       )}
 

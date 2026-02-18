@@ -891,7 +891,7 @@ export default function WorkspaceCanvas({
                 'care-plans': <CarePlansPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'billing': <BillingPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'comm-hub': <CommHubPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} onClose={close} />,
-                'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} onClose={close} />,
+                'chart-management': <ChartManagementPanelV2 isOpen patientId={pid} patientName={pname} appointmentId={aid} chartStatus={chart.chartStatus as string} doctorId={appointment?.doctor_id || doctorId} doctorName={currentUser?.full_name || currentUser?.email || 'Provider'} onClose={close} />,
                 'prior-auth': <PriorAuthPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'insurance': <InsurancePanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
                 'alerts': <AlertsPanelV2 isOpen patientId={pid} patientName={pname} onClose={close} />,
