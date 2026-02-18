@@ -15,9 +15,13 @@ import {
   RefreshCw, Search, ChevronRight, Edit3, Filter, Pen,
   X, FileSignature, CheckSquare, Square, Download,
   BarChart3, Users, AlertCircle, Eye, History,
-  Unlock, UserCheck, GitBranch
+  Unlock, UserCheck, GitBranch,
+  Settings, Palette, Bell, FileEdit, UserCog
 } from 'lucide-react'
 import InlinePanel from '@/components/InlinePanel'
+import ChartSettingsTab from '@/components/chart-management/ChartSettingsTab'
+import LetterGeneratorTab from '@/components/chart-management/LetterGeneratorTab'
+import PendingReviewsTab from '@/components/chart-management/PendingReviewsTab'
 
 const CHART_HOW_TO = {
   title: 'How to Use Chart Management',
@@ -133,6 +137,7 @@ export default function ChartManagementPage() {
   const [doctorId, setDoctorId] = useState<string | null>(null)
   const [doctorName, setDoctorName] = useState('')
   const [actorRole, setActorRole] = useState<string>('provider') // who is actually using the system
+  const [mainTab, setMainTab] = useState<'charts' | 'letters' | 'settings' | 'staff' | 'reviews'>('charts')
   const [filter, setFilter] = useState<ChartFilter>('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -455,6 +460,57 @@ export default function ChartManagementPage() {
 
         <InlinePanel title="Chart Management" icon={Shield} accentColor="#a855f7" howTo={CHART_HOW_TO} showHowToOnMount={false}>
         <div className="p-4 space-y-5">
+
+        {/* ═══ MAIN TAB BAR ═══ */}
+        <div className="flex space-x-1 bg-[#0a1f1f] rounded-xl p-1 border border-[#1a3d3d]">
+          {([
+            { key: 'charts' as const, label: 'Charts', icon: Shield, badge: 0 },
+            { key: 'letters' as const, label: 'Letters', icon: FileEdit, badge: 0 },
+            { key: 'settings' as const, label: 'Settings', icon: Settings, badge: 0 },
+            { key: 'staff' as const, label: 'Staff', icon: UserCog, badge: 0 },
+            { key: 'reviews' as const, label: 'Reviews', icon: Bell, badge: 0 },
+          ]).map(({ key, label, icon: TabIcon, badge }) => (
+            <button key={key} onClick={() => setMainTab(key)}
+              className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all ${mainTab === key ? 'bg-gradient-to-r from-teal-600/20 to-purple-600/20 text-teal-400 border border-teal-500/30 shadow-lg shadow-teal-500/5' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+              <TabIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{label}</span>
+              {badge > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* ═══ LETTERS TAB ═══ */}
+        {mainTab === 'letters' && (
+          <LetterGeneratorTab doctorId={doctorId} doctorName={doctorName} />
+        )}
+
+        {/* ═══ SETTINGS TAB ═══ */}
+        {mainTab === 'settings' && (
+          <ChartSettingsTab doctorId={doctorId} />
+        )}
+
+        {/* ═══ STAFF TAB ═══ */}
+        {mainTab === 'staff' && (
+          <div className="space-y-4">
+            <div className="bg-[#0a1f1f] rounded-lg p-6 border border-[#1a3d3d] text-center">
+              <UserCog className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Staff management is available at</p>
+              <button onClick={() => router.push('/doctor/settings/staff')}
+                className="mt-2 px-4 py-2 rounded-lg bg-teal-600/20 text-teal-400 text-sm font-bold hover:bg-teal-600/30 transition-colors">
+                Open Staff Settings →
+              </button>
+              <p className="text-[10px] text-gray-600 mt-2">Invite staff, manage permissions, schedules, and audit logs</p>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ REVIEWS TAB ═══ */}
+        {mainTab === 'reviews' && (
+          <PendingReviewsTab doctorId={doctorId} doctorName={doctorName} />
+        )}
+
+        {/* ═══ CHARTS TAB (existing content) ═══ */}
+        {mainTab === 'charts' && (<>
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -924,6 +980,9 @@ export default function ChartManagementPage() {
           </div>
         </div>
       )}
+      </>)}
+      {/* ═══ END CHARTS TAB ═══ */}
+
       </div>
     </div>
   )
