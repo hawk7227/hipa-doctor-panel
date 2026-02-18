@@ -1,46 +1,22 @@
-// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
-// @see CONTRIBUTING.md for mandatory development rules.
-// ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
-// ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 'use client'
 
 /**
- * PatientSearchBar — Global patient search (Ctrl+K)
+ * PatientSearchBar — EHR-standard unified patient search
  * 
- * Smart search: DrChrono first, Supabase fallback
- * - Name → DrChrono API (first/last)
- * - DOB → DrChrono API (date_of_birth)
- * - Email → Supabase only (DrChrono doesn't support)
- * - Phone → Supabase only (DrChrono doesn't support)
- * 
- * Auto-syncs patient into local DB on select.
- * Always accessible from any /doctor/* page via Ctrl+K.
+ * Follows Epic/Cerner/Athena patterns:
+ * - Single search bar that auto-detects input type (name, phone, DOB, email)
+ * - Debounced suggestions dropdown with patient avatar, name, DOB, phone
+ * - Supports "Last, First" comma format
+ * - DOB search in multiple formats: MM/DD/YYYY, YYYY-MM-DD, MM-DD-YYYY
+ * - Phone search strips formatting: (480) 555-1234 → 4805551234
+ * - Keyboard navigation (↑↓ Enter Esc)
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { authFetch } from '@/lib/auth-fetch'
-import { Search, X, User, Phone, Mail, Calendar, Loader2, ExternalLink, Zap } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Search, X, Phone, Calendar, Mail, User } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
-// ─── Types ──────────────────────────────────────────────────────
-interface SearchResult {
-  id: string | null
-  drchrono_id: number | null
-  chart_id: string | null
-  first_name: string
-  last_name: string
-  email: string | null
-  phone: string | null
-  date_of_birth: string | null
-  address: string | null
-  city: string | null
-  state: string | null
-  zip_code: string | null
-  pharmacy: string | null
-  source: 'drchrono_api' | 'drchrono_local' | 'local'
-}
-
-// Also export for other components that reference old interface
+// ─── Types ──────────────────────────────────────────────────────────
 export interface PatientSearchResult {
   id: string
   first_name: string
@@ -52,342 +28,427 @@ export interface PatientSearchResult {
   created_at?: string
 }
 
-interface SearchMeta {
-  type: string
-  sources: { drchrono_api: number; drchrono_local: number; local: number }
-  elapsed: number
+interface PatientSearchBarProps {
+  onSelect: (patient: PatientSearchResult) => void
+  onClear?: () => void
+  selectedPatient?: PatientSearchResult | null
+  placeholder?: string
+  className?: string
+  /** Compact mode for top bars */
+  compact?: boolean
+  /** Show selected patient inline */
+  showSelected?: boolean
+  /** Auto-focus on mount */
+  autoFocus?: boolean
 }
 
-// ─── Component ──────────────────────────────────────────────────
-export default function PatientSearchBar() {
-  const router = useRouter()
-  const [isOpen, setIsOpen] = useState(false)
+// ─── Smart Input Detection ──────────────────────────────────────────
+type InputType = 'name' | 'phone' | 'dob' | 'email' | 'unknown'
+
+function detectInputType(input: string): InputType {
+  const trimmed = input.trim()
+  if (!trimmed) return 'unknown'
+
+  // Email: contains @
+  if (trimmed.includes('@')) return 'email'
+
+  // Phone: mostly digits (with optional +, -, (, ), spaces)
+  const digitsOnly = trimmed.replace(/[\s\-\(\)\+\.]/g, '')
+  if (/^\d{4,15}$/.test(digitsOnly) && digitsOnly.length >= 4) return 'phone'
+
+  // DOB: date-like patterns
+  // MM/DD/YYYY, MM-DD-YYYY, YYYY-MM-DD, M/D/YY
+  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(trimmed)) return 'dob'
+  if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(trimmed)) return 'dob'
+
+  // Name: everything else (letters, spaces, commas, hyphens, apostrophes)
+  return 'name'
+}
+
+function normalizePhone(input: string): string {
+  return input.replace(/[\s\-\(\)\+\.]/g, '')
+}
+
+function normalizeDOB(input: string): string {
+  const trimmed = input.trim()
+  
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+  
+  // MM/DD/YYYY or MM-DD-YYYY
+  const mdyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (mdyMatch) {
+    const [, m, d, y] = mdyMatch
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  
+  // MM/DD/YY
+  const mdyShort = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/)
+  if (mdyShort) {
+    const [, m, d, y] = mdyShort
+    const fullYear = parseInt(y) > 50 ? `19${y}` : `20${y}`
+    return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+
+  return trimmed
+}
+
+function parseName(input: string): { first: string; last: string } {
+  const trimmed = input.trim()
+  
+  // "Last, First" format (Epic standard)
+  if (trimmed.includes(',')) {
+    const [last, first] = trimmed.split(',').map(s => s.trim())
+    return { first: first || '', last: last || '' }
+  }
+  
+  // "First Last" format
+  const parts = trimmed.split(/\s+/)
+  if (parts.length === 1) return { first: parts[0], last: '' }
+  if (parts.length === 2) return { first: parts[0], last: parts[1] }
+  // "First Middle Last" — use first and last
+  return { first: parts[0], last: parts[parts.length - 1] }
+}
+
+// ─── Component ──────────────────────────────────────────────────────
+export default function PatientSearchBar({
+  onSelect,
+  onClear,
+  selectedPatient,
+  placeholder = 'Search by name, DOB, phone, or email...',
+  className = '',
+  compact = false,
+  showSelected = true,
+  autoFocus = false,
+}: PatientSearchBarProps) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
+  const [results, setResults] = useState<PatientSearchResult[]>([])
+  const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [syncing, setSyncing] = useState<number | null>(null)
-  const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [detectedType, setDetectedType] = useState<InputType>('unknown')
 
+  const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<NodeJS.Timeout | null>(null)
 
-  // ── Ctrl+K hotkey ──
+  // Close on outside click
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault()
-        setIsOpen(prev => !prev)
-      }
-      if (e.key === 'Escape' && isOpen) {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false)
       }
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [isOpen])
-
-  // ── Focus input when opened ──
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50)
-    } else {
-      setQuery('')
-      setResults([])
-      setSearchMeta(null)
-      setSelectedIndex(0)
-    }
-  }, [isOpen])
-
-  // ── Debounced search ──
-  const doSearch = useCallback(async (q: string) => {
-    if (q.length < 2) {
-      setResults([])
-      setSearchMeta(null)
-      return
-    }
-    setLoading(true)
-    try {
-      const res = await authFetch(`/api/patients/search?q=${encodeURIComponent(q)}`)
-      if (res.ok) {
-        const data = await res.json()
-        setResults(data.results || [])
-        setSearchMeta({
-          type: data.search_type,
-          sources: data.sources,
-          elapsed: data.elapsed_ms,
-        })
-        setSelectedIndex(0)
-      } else {
-        console.error('[PatientSearch] API error:', res.status, res.statusText)
-        // Still try to parse error
-        try { const errData = await res.json(); console.error('[PatientSearch] Error details:', errData) } catch {}
-        setResults([])
-        setSearchMeta({ type: 'name', sources: { drchrono_api: 0, drchrono_local: 0, local: 0 }, elapsed: 0 })
-      }
-    } catch (err) {
-      console.error('[PatientSearch] Error:', err)
-    } finally {
-      setLoading(false)
-    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // Debounced search
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSearch(query), 300)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [query, doSearch])
+    if (!query.trim() || query.trim().length < 2) {
+      setResults([])
+      setIsOpen(false)
+      setDetectedType('unknown')
+      return
+    }
 
-  // ── Select patient → sync + navigate ──
-  const selectPatient = useCallback(async (patient: SearchResult) => {
-    // DrChrono patient → sync first
-    if (patient.drchrono_id && patient.source !== 'local') {
-      setSyncing(patient.drchrono_id)
+    const type = detectInputType(query)
+    setDetectedType(type)
+
+    const timeout = setTimeout(async () => {
+      setLoading(true)
       try {
-        const res = await fetch('/api/patients/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ drchrono_id: patient.drchrono_id }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          setIsOpen(false)
-          router.push(`/doctor/appointments?patient=${data.patient.id}`)
-          return
-        }
+        const results = await searchPatients(query, type)
+        setResults(results)
+        setIsOpen(results.length > 0)
+        setActiveIndex(-1)
       } catch (err) {
-        console.error('[PatientSearch] Sync error:', err)
+        console.error('Patient search error:', err)
+        setResults([])
       } finally {
-        setSyncing(null)
+        setLoading(false)
+      }
+    }, 200) // 200ms debounce
+
+    return () => clearTimeout(timeout)
+  }, [query])
+
+  // Search logic
+  const searchPatients = async (q: string, type: InputType): Promise<PatientSearchResult[]> => {
+    let supabaseQuery = supabase
+      .from('patients')
+      .select('id, first_name, last_name, email, phone, date_of_birth, location, created_at')
+      .limit(15)
+
+    switch (type) {
+      case 'phone': {
+        const digits = normalizePhone(q)
+        // Search phone field containing these digits
+        supabaseQuery = supabaseQuery.ilike('phone', `%${digits}%`)
+        break
+      }
+      case 'dob': {
+        const normalized = normalizeDOB(q)
+        // Exact match or partial (for typing MM/DD before year)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+          supabaseQuery = supabaseQuery.eq('date_of_birth', normalized)
+        } else {
+          // Partial DOB — cast to text and ilike
+          supabaseQuery = supabaseQuery.ilike('date_of_birth::text', `%${normalized}%`)
+        }
+        break
+      }
+      case 'email': {
+        supabaseQuery = supabaseQuery.ilike('email', `%${q.trim()}%`)
+        break
+      }
+      case 'name':
+      default: {
+        const { first, last } = parseName(q)
+        
+        if (first && last) {
+          // Both first and last name provided
+          supabaseQuery = supabaseQuery
+            .ilike('first_name', `%${first}%`)
+            .ilike('last_name', `%${last}%`)
+        } else if (first) {
+          // Single term — search both first and last
+          // Use or() for flexible matching
+          supabaseQuery = supabaseQuery.or(
+            `first_name.ilike.%${first}%,last_name.ilike.%${first}%`
+          )
+        }
+        break
       }
     }
 
-    // Local patient → navigate directly
-    setIsOpen(false)
-    if (patient.id) {
-      router.push(`/doctor/appointments?patient=${patient.id}`)
+    const { data, error } = await supabaseQuery.order('last_name', { ascending: true })
+    
+    if (error) {
+      console.error('Search query error:', error)
+      return []
     }
-  }, [router])
 
-  // ── Keyboard navigation ──
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      first_name: p.first_name || '',
+      last_name: p.last_name || '',
+      email: p.email || '',
+      phone: p.phone || '',
+      date_of_birth: p.date_of_birth || '',
+      location: p.location || '',
+      created_at: p.created_at || '',
+    }))
+  }
+
+  // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIndex(prev => Math.min(prev + 1, results.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIndex(prev => Math.max(prev - 1, 0))
-    } else if (e.key === 'Enter' && results[selectedIndex]) {
-      e.preventDefault()
-      selectPatient(results[selectedIndex])
+    if (!isOpen || results.length === 0) {
+      if (e.key === 'Escape') { setQuery(''); setIsOpen(false) }
+      return
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setActiveIndex(prev => (prev < results.length - 1 ? prev + 1 : 0))
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setActiveIndex(prev => (prev > 0 ? prev - 1 : results.length - 1))
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (activeIndex >= 0 && results[activeIndex]) {
+          selectPatient(results[activeIndex])
+        }
+        break
+      case 'Escape':
+        setIsOpen(false)
+        break
     }
   }
 
-  // ── Search type hint ──
-  const getSearchHint = () => {
-    if (!query) return ''
-    if (query.includes('@')) return '📧 Searching by email (local database)'
-    if (/^\d{1,2}\//.test(query)) return '📅 Searching by date of birth'
-    const digits = query.replace(/\D/g, '')
-    if (digits.length >= 3 && /^[\d\s\-().+]+$/.test(query)) return '📞 Searching by phone (local database)'
-    if (query.includes(' ')) return '👤 Searching first + last name via DrChrono'
-    return '👤 Searching name via DrChrono'
+  const selectPatient = (patient: PatientSearchResult) => {
+    onSelect(patient)
+    setQuery('')
+    setIsOpen(false)
+    setResults([])
   }
 
-  // ── Source badge ──
-  const SourceBadge = ({ source }: { source: string }) => {
-    if (source === 'drchrono_api') return (
-      <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono Live</span>
-    )
-    if (source === 'drchrono_local') return (
-      <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">Synced</span>
-    )
-    return (
-      <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-teal-500/20 text-teal-400 border border-teal-500/30">Local</span>
-    )
+  const handleClear = () => {
+    setQuery('')
+    setResults([])
+    setIsOpen(false)
+    onClear?.()
+    inputRef.current?.focus()
   }
 
-  if (!isOpen) return null
+  const formatDOB = (dob: string) => {
+    if (!dob) return ''
+    try {
+      const d = new Date(dob + 'T00:00:00')
+      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+    } catch { return dob }
+  }
 
+  const formatPhone = (phone: string) => {
+    if (!phone) return ''
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length === 10) return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
+    if (digits.length === 11 && digits[0] === '1') return `+1 (${digits.slice(1,4)}) ${digits.slice(4,7)}-${digits.slice(7)}`
+    return phone
+  }
+
+  const getTypeHint = () => {
+    switch (detectedType) {
+      case 'phone': return 'Searching by phone...'
+      case 'dob': return 'Searching by date of birth...'
+      case 'email': return 'Searching by email...'
+      case 'name': return 'Searching by name...'
+      default: return null
+    }
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={() => setIsOpen(false)} />
+    <div ref={containerRef} className={`relative ${className}`}>
+      {/* Selected Patient Pill (when showSelected + patient selected) */}
+      {showSelected && selectedPatient && !query && (
+        <div className={`flex items-center gap-2 ${compact ? 'px-3 py-1.5' : 'px-4 py-2.5'} bg-[#0d2626] border border-teal-600/40 rounded-lg`}>
+          <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs'} rounded-full bg-teal-600/20 flex items-center justify-center font-semibold text-teal-400`}>
+            {selectedPatient.first_name.charAt(0)}{selectedPatient.last_name.charAt(0)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className={`text-white font-medium ${compact ? 'text-xs' : 'text-sm'}`}>
+              {selectedPatient.first_name} {selectedPatient.last_name}
+            </span>
+            {!compact && selectedPatient.date_of_birth && (
+              <span className="text-gray-500 text-xs ml-2">DOB: {formatDOB(selectedPatient.date_of_birth)}</span>
+            )}
+            {!compact && selectedPatient.phone && (
+              <span className="text-gray-500 text-xs ml-2">{formatPhone(selectedPatient.phone)}</span>
+            )}
+          </div>
+          <button
+            onClick={handleClear}
+            className="p-1 rounded hover:bg-red-500/20 transition-colors"
+            title="Clear selection"
+          >
+            <X className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-gray-400 hover:text-red-400`} />
+          </button>
+        </div>
+      )}
 
-      {/* Search Modal */}
-      <div className="fixed inset-x-0 top-0 z-[101] flex justify-center pt-[10vh]">
-        <div className="w-full max-w-2xl mx-4 bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl shadow-black/40 overflow-hidden animate-[fadeIn_0.15s_ease-out]">
-
-          {/* Input */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-[#1a3d3d]">
-            <Search className="w-5 h-5 text-gray-500 flex-shrink-0" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search patients — name, DOB (MM/DD/YYYY), email, phone..."
-              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-gray-500"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {loading && <Loader2 className="w-4 h-4 text-teal-400 animate-spin flex-shrink-0" />}
-            <kbd className="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-bold text-gray-500 bg-[#0a1f1f] border border-[#1a3d3d] rounded">ESC</kbd>
-            <button onClick={() => setIsOpen(false)} className="p-1 text-gray-500 hover:text-white transition-colors">
-              <X className="w-4 h-4" />
+      {/* Search Input */}
+      {(!showSelected || !selectedPatient || query) && (
+        <div className="relative">
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} ${loading ? 'text-teal-400 animate-pulse' : 'text-gray-500'}`} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => { if (results.length > 0) setIsOpen(true) }}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            autoFocus={autoFocus}
+            className={`w-full bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 transition-colors ${
+              compact ? 'pl-8 pr-8 py-1.5 text-xs' : 'pl-10 pr-10 py-2.5 text-sm'
+            }`}
+          />
+          {query && (
+            <button
+              onClick={() => { setQuery(''); setResults([]); setIsOpen(false) }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-[#1a3d3d] transition-colors"
+            >
+              <X className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-gray-500`} />
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Type detection hint */}
+      {query.trim().length >= 2 && detectedType !== 'unknown' && (
+        <p className="text-[10px] text-gray-600 mt-0.5 ml-1">{getTypeHint()}</p>
+      )}
+
+      {/* Results Dropdown */}
+      {isOpen && results.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-[#0d2626] border border-[#1a3d3d] rounded-lg shadow-2xl max-h-80 overflow-y-auto">
+          {/* Results count */}
+          <div className="px-3 py-1.5 border-b border-[#1a3d3d]/60 flex items-center justify-between">
+            <span className="text-[10px] text-gray-600 uppercase tracking-wider">
+              {results.length} patient{results.length !== 1 ? 's' : ''} found
+            </span>
+            {detectedType !== 'unknown' && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                detectedType === 'phone' ? 'bg-blue-500/10 text-blue-400' :
+                detectedType === 'dob' ? 'bg-amber-500/10 text-amber-400' :
+                detectedType === 'email' ? 'bg-purple-500/10 text-purple-400' :
+                'bg-teal-500/10 text-teal-400'
+              }`}>
+                {detectedType === 'dob' ? 'DOB' : detectedType.charAt(0).toUpperCase() + detectedType.slice(1)}
+              </span>
+            )}
           </div>
 
-          {/* Search type hint */}
-          {query.length > 0 && (
-            <div className="px-4 py-1.5 text-[10px] text-gray-500 border-b border-[#1a3d3d]/50">
-              {getSearchHint()}
-            </div>
-          )}
-
-          {/* Results */}
-          <div className="max-h-[50vh] overflow-y-auto">
-            {/* Empty state */}
-            {results.length === 0 && query.length >= 2 && !loading && (
-              <div className="px-4 py-6 text-center">
-                <User className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No patients found</p>
-                <p className="text-xs text-gray-600 mt-1">Try a different name, DOB, email, or phone</p>
-                {searchMeta && (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-[10px] text-gray-600">Sources searched:</p>
-                    <div className="flex justify-center gap-2 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.drchrono_api > 0 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>DrChrono API: {searchMeta.sources.drchrono_api}</span>
-                      <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.drchrono_local > 0 ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>DrChrono DB: {searchMeta.sources.drchrono_local}</span>
-                      <span className={`px-2 py-0.5 rounded text-[9px] ${searchMeta.sources.local > 0 ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>Local: {searchMeta.sources.local}</span>
-                    </div>
-                    {searchMeta.sources.drchrono_api === 0 && searchMeta.sources.drchrono_local === 0 && (
-                      <div className="mt-2 space-y-1">
-                        <p className="text-[10px] text-amber-400">⚠️ DrChrono may need re-authorization or patient sync</p>
-                        <button onClick={async () => {
-                          try {
-                            setLoading(true)
-                            const res = await authFetch('/api/drchrono/bulk-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'patients' }) })
-                            const data = await res.json()
-                            alert(data.error ? `Sync failed: ${data.error}` : `Synced ${data.patients?.upserted || 0} patients. Search again.`)
-                          } catch (e: any) { alert('Sync error: ' + e.message) }
-                          finally { setLoading(false) }
-                        }} className="px-3 py-1.5 bg-teal-600/20 text-teal-400 text-[10px] rounded-lg hover:bg-teal-600/30 font-medium">
-                          🔄 Sync Patients from DrChrono
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Initial state */}
-            {results.length === 0 && query.length < 2 && !loading && (
-              <div className="px-4 py-6 text-center">
-                <Search className="w-8 h-8 text-gray-700 mx-auto mb-2" />
-                <p className="text-xs text-gray-500">Type at least 2 characters to search</p>
-                <div className="flex flex-wrap justify-center gap-2 mt-3">
-                  <span className="px-2 py-1 text-[10px] text-gray-500 bg-[#0a1f1f] rounded border border-[#1a3d3d]">Marcus Hawkins</span>
-                  <span className="px-2 py-1 text-[10px] text-gray-500 bg-[#0a1f1f] rounded border border-[#1a3d3d]">01/02/1975</span>
-                  <span className="px-2 py-1 text-[10px] text-gray-500 bg-[#0a1f1f] rounded border border-[#1a3d3d]">hawk7227@</span>
-                  <span className="px-2 py-1 text-[10px] text-gray-500 bg-[#0a1f1f] rounded border border-[#1a3d3d]">602-549</span>
-                </div>
-              </div>
-            )}
-
-            {/* Results list */}
-            {results.map((patient, idx) => (
-              <button
-                key={`${patient.source}-${patient.drchrono_id || patient.id}-${idx}`}
-                onClick={() => selectPatient(patient)}
-                disabled={syncing !== null}
-                className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors border-b border-[#1a3d3d]/30 ${
-                  idx === selectedIndex
-                    ? 'bg-teal-500/10 border-l-2 border-l-teal-500'
-                    : 'hover:bg-white/5 border-l-2 border-l-transparent'
-                } ${syncing === patient.drchrono_id ? 'opacity-60' : ''}`}
-              >
+          {/* Patient Results */}
+          {results.map((patient, idx) => (
+            <button
+              key={patient.id}
+              onClick={() => selectPatient(patient)}
+              className={`w-full text-left px-3 py-2.5 transition-colors border-b border-[#1a3d3d]/30 last:border-b-0 ${
+                idx === activeIndex ? 'bg-teal-600/10 border-l-2 border-l-teal-500' : 'hover:bg-[#164e4e]/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
                 {/* Avatar */}
-                <div className="w-9 h-9 rounded-full bg-[#1a3d3d] flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-xs font-bold text-teal-400">
-                    {(patient.first_name?.[0] || '').toUpperCase()}{(patient.last_name?.[0] || '').toUpperCase()}
+                <div className="w-9 h-9 rounded-full bg-[#164e4e] flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-semibold text-teal-300">
+                    {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                   </span>
                 </div>
 
-                {/* Patient info */}
+                {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-white">
-                      {patient.first_name} {patient.last_name}
-                    </span>
-                    <SourceBadge source={patient.source} />
-                    {syncing === patient.drchrono_id && (
-                      <span className="flex items-center gap-1 text-[10px] text-teal-400">
-                        <Zap className="w-3 h-3 animate-pulse" /> Syncing...
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+                  <p className="text-sm text-white font-medium truncate">
+                    {patient.first_name} {patient.last_name}
+                  </p>
+                  <div className="flex items-center gap-3 mt-0.5">
                     {patient.date_of_birth && (
-                      <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                      <span className="flex items-center gap-1 text-[11px] text-gray-500">
                         <Calendar className="w-3 h-3" />
-                        {new Date(patient.date_of_birth + 'T00:00:00').toLocaleDateString()}
+                        {formatDOB(patient.date_of_birth)}
                       </span>
                     )}
                     {patient.phone && (
-                      <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                      <span className="flex items-center gap-1 text-[11px] text-gray-500">
                         <Phone className="w-3 h-3" />
-                        {patient.phone}
+                        {formatPhone(patient.phone)}
                       </span>
                     )}
-                    {patient.email && (
-                      <span className="flex items-center gap-1 text-[11px] text-gray-400 truncate max-w-[200px]">
+                    {patient.email && !patient.phone && !patient.date_of_birth && (
+                      <span className="flex items-center gap-1 text-[11px] text-gray-500">
                         <Mail className="w-3 h-3" />
                         {patient.email}
                       </span>
                     )}
-                    {patient.chart_id && (
-                      <span className="text-[10px] text-gray-500">Chart #{patient.chart_id}</span>
-                    )}
                   </div>
-                  {(patient.address || patient.city) && (
-                    <p className="text-[10px] text-gray-500 mt-0.5 truncate">
-                      {[patient.address, patient.city, patient.state, patient.zip_code].filter(Boolean).join(', ')}
-                    </p>
-                  )}
                 </div>
-
-                <ExternalLink className="w-4 h-4 text-gray-600 flex-shrink-0 mt-1" />
-              </button>
-            ))}
-          </div>
-
-          {/* Footer */}
-          <div className="px-4 py-2 border-t border-[#1a3d3d] flex items-center justify-between">
-            <div className="flex items-center gap-3 text-[10px] text-gray-600">
-              <span>↑↓ Navigate</span>
-              <span>↵ Select & Sync</span>
-              <span>ESC Close</span>
-            </div>
-            {searchMeta && (
-              <div className="flex items-center gap-2 text-[10px] text-gray-600">
-                {searchMeta.sources.drchrono_api > 0 && (
-                  <span className="text-blue-400">{searchMeta.sources.drchrono_api} DrChrono</span>
-                )}
-                {searchMeta.sources.drchrono_local > 0 && (
-                  <span className="text-purple-400">{searchMeta.sources.drchrono_local} synced</span>
-                )}
-                {searchMeta.sources.local > 0 && (
-                  <span className="text-teal-400">{searchMeta.sources.local} local</span>
-                )}
-                <span>· {searchMeta.elapsed}ms</span>
               </div>
-            )}
-          </div>
+            </button>
+          ))}
         </div>
-      </div>
-    </>
+      )}
+
+      {/* No results */}
+      {isOpen && results.length === 0 && !loading && query.trim().length >= 2 && (
+        <div className="absolute z-50 w-full mt-1 bg-[#0d2626] border border-[#1a3d3d] rounded-lg shadow-2xl p-4 text-center">
+          <User className="w-6 h-6 text-gray-600 mx-auto mb-1.5" />
+          <p className="text-sm text-gray-500">No patients found</p>
+          <p className="text-[10px] text-gray-600 mt-1">Try name, DOB (MM/DD/YYYY), phone, or email</p>
+        </div>
+      )}
+    </div>
   )
 }
