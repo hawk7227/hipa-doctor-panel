@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
         reason: reason?.trim() || 'Chart reopened for editing',
         created_by_name: providerName,
         created_by_role: providerRole || 'provider',
-      }).catch(err => console.error('[Chart/Unlock] Auto-addendum error:', err))
+      })
+      if (false) console.error('addendum placeholder')
       console.log(`[Chart/Unlock] Auto-addendum created for unlock of ${appointment.chart_status} chart`)
     }
 
