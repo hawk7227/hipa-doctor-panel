@@ -57,7 +57,8 @@ export function getChipBorderStyle(chartStatus: ChartStatus): React.CSSPropertie
 
 // ─── STATUS ICON (top-right corner of chip) ──────────────────
 // Returns the icon string + color for the top-right indicator
-// Every state gets an icon so the doctor always knows the chart state at a glance
+// GTR-STYLE: Gold lock for closed/locked, gold checkmark for signed,
+// grayed unlocked lock for draft (default)
 export function getChipStatusIcon(chartStatus: ChartStatus): {
   icon: string
   color: string
@@ -67,8 +68,8 @@ export function getChipStatusIcon(chartStatus: ChartStatus): {
     case CHART_STATUS.DRAFT:
       return {
         icon: '🔓',
-        color: '#6b7280',
-        title: 'Draft — Unlocked',
+        color: '#6b728088',
+        title: 'Draft — Unlocked (grayed)',
       }
 
     case CHART_STATUS.PRELIMINARY:
@@ -80,30 +81,30 @@ export function getChipStatusIcon(chartStatus: ChartStatus): {
 
     case CHART_STATUS.SIGNED:
       return {
-        icon: '✓',
-        color: '#22c55e',
-        title: 'Signed — Complete',
+        icon: '✅',
+        color: '#fbbf24',
+        title: 'Signed — Complete (gold check)',
       }
 
     case CHART_STATUS.CLOSED:
       return {
         icon: '🔒',
         color: '#fbbf24',
-        title: 'Chart locked',
+        title: 'Chart locked (gold lock)',
       }
 
     case CHART_STATUS.AMENDED:
       return {
         icon: '🔒✎',
-        color: '#a855f7',
-        title: 'Amended',
+        color: '#fbbf24',
+        title: 'Amended (gold lock)',
       }
 
     default:
       return {
         icon: '🔓',
-        color: '#6b7280',
-        title: 'Draft — Unlocked',
+        color: '#6b728088',
+        title: 'Draft — Unlocked (grayed)',
       }
   }
 }

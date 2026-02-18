@@ -143,6 +143,12 @@ export default function ChartManagementPanelV2({
   const s = STATUS_MAP[cs] || STATUS_MAP.draft
   const StatusIcon = s.icon
 
+  // GTR-style color map for inline styles
+  const STATUS_COLOR_MAP: Record<string, string> = {
+    draft: '#6b7280', preliminary: '#f59e0b', signed: '#22c55e',
+    closed: '#3b82f6', amended: '#a855f7', locked: '#ef4444', open: '#14b8a6',
+  }
+
   if (!isOpen) return null
 
   return (
@@ -204,11 +210,64 @@ export default function ChartManagementPanelV2({
           {tab === 'chart' && (
             <div className="space-y-3">
 
-              {/* Status Hero Card */}
-              <div className={`${s.bg} border ${s.border} rounded-xl p-5 text-center`}>
-                <StatusIcon className={`w-12 h-12 mx-auto mb-2 ${s.color}`} />
-                <div className={`text-2xl font-black tracking-wide ${s.color}`}>{s.label}</div>
-                <div className="text-xs text-gray-500 mt-1">Chart status for this encounter</div>
+              {/* ── GTR-STYLE STATUS HERO CARD ── */}
+              {/* Color bar + Status icon + Locked/Unlocked badge + View Clinical Note button */}
+              <div className={`rounded-xl overflow-hidden border ${s.border}`}
+                style={{ borderLeftWidth: '5px', borderLeftColor: STATUS_COLOR_MAP[cs] || '#6b7280' }}>
+                {/* Color gradient bar */}
+                <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${STATUS_COLOR_MAP[cs] || '#6b7280'}, ${STATUS_COLOR_MAP[cs] || '#6b7280'}66)` }} />
+
+                <div className={`${s.bg} p-4 space-y-3`}>
+                  {/* Icon + Label + Lock Badge row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl flex items-center justify-center"
+                        style={{ backgroundColor: (STATUS_COLOR_MAP[cs] || '#6b7280') + '20', border: `2px solid ${(STATUS_COLOR_MAP[cs] || '#6b7280')}40` }}>
+                        {(cs === 'closed' || cs === 'locked') ? (
+                          <Lock className="w-7 h-7" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 6px #fbbf2480)' }} />
+                        ) : cs === 'signed' ? (
+                          <CheckCircle className="w-7 h-7" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 6px #fbbf2480)' }} />
+                        ) : cs === 'amended' ? (
+                          <Pen className="w-7 h-7" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 6px #fbbf2480)' }} />
+                        ) : (
+                          <StatusIcon className={`w-7 h-7 ${s.color}`} />
+                        )}
+                      </div>
+                      <div>
+                        <div className={`text-xl font-black tracking-wide ${s.color}`}>{s.label}</div>
+                        <div className="text-[10px] text-gray-500">
+                          {(cs === 'closed' || cs === 'locked') ? 'Chart is locked — read only' :
+                           cs === 'signed' ? 'Chart signed — complete' :
+                           cs === 'draft' || cs === 'open' ? 'Chart unlocked — editable' :
+                           'Chart status for this encounter'}
+                        </div>
+                      </div>
+                    </div>
+                    {(cs === 'closed' || cs === 'locked' || cs === 'amended') ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                        <Lock className="w-3 h-3" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 3px #fbbf2480)' }} />LOCKED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold bg-gray-500/10 text-gray-500 border border-gray-500/20">
+                        <Unlock className="w-3 h-3" />UNLOCKED
+                      </span>
+                    )}
+                  </div>
+
+                  {/* View Clinical Note Button — GTR style */}
+                  <button className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-xl text-white text-sm font-black transition-all shadow-lg hover:brightness-110"
+                    style={{ background: `linear-gradient(135deg, ${STATUS_COLOR_MAP[cs] || '#6b7280'}, ${STATUS_COLOR_MAP[cs] || '#6b7280'}bb)`, boxShadow: `0 4px 14px ${STATUS_COLOR_MAP[cs] || '#6b7280'}30` }}
+                    onClick={() => { if (appointmentId) window.open(`/api/chart/pdf?appointment_id=${appointmentId}`, '_blank') }}>
+                    {(cs === 'closed' || cs === 'locked' || cs === 'amended') ? (
+                      <Lock className="w-5 h-5" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 3px #fbbf2480)' }} />
+                    ) : cs === 'signed' ? (
+                      <CheckCircle className="w-5 h-5" style={{ color: '#fbbf24', filter: 'drop-shadow(0 0 3px #fbbf2480)' }} />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                    <span>{(cs === 'closed' || cs === 'locked') ? '🔒 View Clinical Note' : cs === 'signed' ? '✅ View Clinical Note' : '✎ View Clinical Note'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* ── BIG ACTION BUTTONS ── */}
