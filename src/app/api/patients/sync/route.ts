@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { createZoomMeeting } from "@/lib/zoom";
 import { sendSMS } from "@/lib/clicksend";
-import { generateSMSMessage } from "@/lib/sms-template";
 import { sendEmail, generateAppointmentEmailHTML, generateDoctorAppointmentEmailHTML } from "@/lib/email";
 import Stripe from "stripe";
 
