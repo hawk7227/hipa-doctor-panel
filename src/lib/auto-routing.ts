@@ -117,7 +117,7 @@ export async function fireAutoRouting(
             body: `Chart ${trigger === 'on_sign' ? 'signed' : 'closed'} by ${providerName}`,
             type: 'chart_event',
             read: false,
-          }).catch(() => {}) // Best effort
+          })
           tasksCreated++
         }
       }
