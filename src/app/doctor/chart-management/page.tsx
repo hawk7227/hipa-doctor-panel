@@ -1,989 +1,1496 @@
-// @build-manifest: Read src/lib/system-manifest/index.ts BEFORE modifying this file.
-// @see CONTRIBUTING.md for mandatory development rules.
-// ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
-// ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
-'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
-import { CHART_STATUS_CONFIG } from '@/lib/constants'
-import type { ChartStatus } from '@/lib/constants'
-import {
-  Shield, FileText, Clock, AlertTriangle, CheckCircle, Lock,
-  RefreshCw, Search, ChevronRight, Edit3, Filter, Pen,
-  X, FileSignature, CheckSquare, Square, Download,
-  BarChart3, Users, AlertCircle, Eye, History,
-  Unlock, UserCheck, GitBranch,
-  Settings, Palette, Bell, FileEdit, UserCog
-} from 'lucide-react'
-import InlinePanel from '@/components/InlinePanel'
-import ChartSettingsTab from '@/components/chart-management/ChartSettingsTab'
-import LetterGeneratorTab from '@/components/chart-management/LetterGeneratorTab'
-import PendingReviewsTab from '@/components/chart-management/PendingReviewsTab'
+'use client';
+import { useState } from 'react';
 
-const CHART_HOW_TO = {
-  title: 'How to Use Chart Management',
-  description: 'Review, sign, close, and manage patient charts. HIPAA-compliant workflow with full audit trail.',
-  steps: [
-    'Charts appear in the table below — filter by status (Draft, Preliminary, Signed, Closed, Amended)',
-    'Click a chart row to expand and view details, SOAP notes summary, and actions',
-    'Use "Sign" to lock the chart — this makes it read-only and timestamps your signature',
-    'Use "Close" on signed charts to finalize them (no further edits without unlock)',
-    'To edit a signed/closed chart: click "Unlock" and provide a written reason (HIPAA required)',
-    'Use "Amend" to add an addendum to a signed chart without unlocking it',
-    'The audit trail tracks every action: who signed, when, unlock reasons, amendments',
-    'Use bulk actions (checkboxes) to sign or close multiple charts at once',
-  ],
-  tips: [
-    'Draft charts older than 48 hours show as "overdue" with red warning badges',
-    'The timeline view shows the full history of a chart from creation to close',
-    'All chart actions are logged in the audit system for HIPAA compliance',
-    'Charts flow: Draft → Preliminary → Signed → Closed. Each step is irreversible without unlock.',
-  ],
-}
+export default function Intake() {
+  const [step,setStep]=useState(1);
+  const [form,setForm]=useState({
+    drug_allergies:null,
+    drug_allergies_detail:'',
+    recent_surgeries:null,
+    recent_surgeries_detail:'',
+    medical_issues:null,
+    medical_issues_detail:'',
+    visit_mode:'',
+    appointment_datetime:'',
+    pharmacy:'',
+    full_name:'',
+    dob:'',
+    address:'',
+    phone:'',
+    email:''
+  });
 
-// ═══════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════
+  function update(k,v){ setForm(p=>({...p,[k]:v})); }
+  function next(){ setStep(step+1); }
+  function back(){ setStep(step-1); }
 
-interface ChartRecord {
-  id: string
-  patient_id: string
-  doctor_id: string
-  status: string
-  visit_type: string
-  chart_status: string | null
-  chart_locked: boolean | null
-  chart_signed_at: string | null
-  chart_signed_by: string | null
-  chart_closed_at: string | null
-  chart_closed_by: string | null
-  clinical_note_pdf_url: string | null
-  scheduled_time: string | null
-  created_at: string
-  updated_at: string | null
-  // Cosign / supervising
-  cosigned_by: string | null
-  cosigned_at: string | null
-  needs_cosign: boolean | null
-  patients: {
-    first_name: string
-    last_name: string
-    email: string
-  } | null
-  clinical_notes: {
-    id: string
-    note_type: string
-    content: any
-    created_at: string
-    updated_at: string | null
-  }[] | null
-}
-
-interface AuditEntry {
-  id: string
-  appointment_id: string
-  action: string
-  performed_by_name: string
-  performed_by_role: string
-  reason: string | null
-  details: any
-  created_at: string
-}
-
-type ChartFilter = 'all' | 'draft' | 'preliminary' | 'signed' | 'closed' | 'amended' | 'overdue' | 'unsigned' | 'needs_cosign'
-
-// ═══════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-function deriveChartStatus(record: ChartRecord): ChartStatus {
-  if (record.chart_status) {
-    const s = record.chart_status as ChartStatus
-    if (['draft', 'preliminary', 'signed', 'closed', 'amended'].includes(s)) return s
-  }
-  if (record.chart_locked) return 'closed'
-  if (record.status === 'completed') return 'signed'
-  return 'draft'
-}
-
-function isOverdue(record: ChartRecord): boolean {
-  if (record.chart_locked) return false
-  if (record.status !== 'completed') return false
-  const cs = deriveChartStatus(record)
-  if (cs === 'closed' || cs === 'amended') return false
-  const completedAt = record.updated_at || record.scheduled_time || record.created_at
-  const hoursAgo = (Date.now() - new Date(completedAt).getTime()) / (1000 * 60 * 60)
-  return hoursAgo > 24
-}
-
-function formatTimeAgo(dateStr: string): string {
-  const hours = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60)
-  if (hours < 1) return `${Math.round(hours * 60)}m ago`
-  if (hours < 24) return `${Math.round(hours)}h ago`
-  return `${Math.round(hours / 24)}d ago`
-}
-
-// ═══════════════════════════════════════════════════════════════
-// COMPONENT
-// ═══════════════════════════════════════════════════════════════
-
-export default function ChartManagementPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [records, setRecords] = useState<ChartRecord[]>([])
-  const [doctorId, setDoctorId] = useState<string | null>(null)
-  const [doctorName, setDoctorName] = useState('')
-  const [actorRole, setActorRole] = useState<string>('provider') // who is actually using the system
-  const [mainTab, setMainTab] = useState<'charts' | 'letters' | 'settings' | 'staff' | 'reviews'>('charts')
-  const [filter, setFilter] = useState<ChartFilter>('all')
-  const [search, setSearch] = useState('')
-  const [refreshing, setRefreshing] = useState(false)
-
-  // Action states
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [bulkLoading, setBulkLoading] = useState(false)
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-
-  // Modals
-  const [signModal, setSignModal] = useState<ChartRecord | null>(null)
-  const [addendumModal, setAddendumModal] = useState<ChartRecord | null>(null)
-  const [auditModal, setAuditModal] = useState<ChartRecord | null>(null)
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
-  const [auditLoading, setAuditLoading] = useState(false)
-  const [unlockModal, setUnlockModal] = useState<ChartRecord | null>(null)
-  const [unlockReason, setUnlockReason] = useState('')
-  const [timelineModal, setTimelineModal] = useState<ChartRecord | null>(null)
-  const [timelineEntries, setTimelineEntries] = useState<AuditEntry[]>([])
-  const [timelineLoading, setTimelineLoading] = useState(false)
-
-  // Addendum form
-  const [addendumText, setAddendumText] = useState('')
-  const [addendumType, setAddendumType] = useState<'addendum' | 'late_entry' | 'correction'>('addendum')
-  const [addendumReason, setAddendumReason] = useState('')
-
-  const showNotification = (type: 'success' | 'error', message: string) => {
-    setNotification({ type, message })
-    setTimeout(() => setNotification(null), 4000)
+  async function submit(){
+    const r=await fetch('/api/intake/submit',{method:'POST',body:JSON.stringify(form)}).then(r=>r.json());
+    const s=await fetch('/api/stripe/create-checkout',{method:'POST',body:JSON.stringify({email:form.email,intakeId:r.intakeId})}).then(r=>r.json());
+    window.location=s.url;
   }
 
-  // ── Auth + Fetch ──
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const authUser = await getCurrentUser()
-        if (!authUser?.doctor) { router.push('/login'); return }
-        setDoctorId(authUser.doctor.id)
-        // Check if this user is actually a staff member viewing doctor's panel
-        const { data: staffRecord } = await supabase
-          .from('practice_staff')
-          .select('id, first_name, last_name, role')
-          .eq('email', authUser.email)
-          .eq('doctor_id', authUser.doctor.id)
-          .eq('active', true)
-          .maybeSingle()
-        if (staffRecord) {
-          setDoctorName(`${staffRecord.first_name || ''} ${staffRecord.last_name || ''}`.trim() || authUser.email)
-          setActorRole(staffRecord.role || 'assistant')
-        } else {
-          setDoctorName(`Dr. ${authUser.doctor.first_name || ''} ${authUser.doctor.last_name || ''}`.trim())
-          setActorRole('provider')
-        }
-        await fetchRecords(authUser.doctor.id)
-      } catch (err) {
-        console.error('Chart management init error:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    init()
-  }, [router])
-
-  const fetchRecords = async (docId: string) => {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select(`
-        id, patient_id, doctor_id, status, visit_type,
-        chart_status, chart_locked, chart_signed_at, chart_signed_by,
-        chart_closed_at, chart_closed_by, clinical_note_pdf_url,
-        cosigned_by, cosigned_at, needs_cosign,
-        scheduled_time, created_at, updated_at,
-        patients!appointments_patient_id_fkey(first_name, last_name, email),
-        clinical_notes(id, note_type, content, created_at, updated_at)
-      `)
-      .eq('doctor_id', docId)
-      .neq('status', 'cancelled')
-      .order('scheduled_time', { ascending: false })
-      .limit(500)
-    if (error) console.error('Chart fetch error:', error)
-    else setRecords((data || []) as unknown as ChartRecord[])
-  }
-
-  const handleRefresh = useCallback(async () => {
-    if (!doctorId || refreshing) return
-    setRefreshing(true)
-    await fetchRecords(doctorId)
-    setRefreshing(false)
-  }, [doctorId, refreshing])
-
-  // ═══════════════════════════════════════════════════════════════
-  // ACTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  const handleSign = async (record: ChartRecord) => {
-    setActionLoading(record.id)
-    try {
-      const res = await fetch('/api/chart/sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Sign failed')
-      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, chart_status: 'signed', chart_signed_at: data.signed_at, chart_signed_by: doctorName, chart_locked: true } : r))
-      showNotification('success', `Chart signed for ${record.patients?.first_name || 'patient'}`)
-      setSignModal(null)
-    } catch (err: any) {
-      showNotification('error', err.message)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleClose = async (record: ChartRecord) => {
-    setActionLoading(record.id)
-    try {
-      const res = await fetch('/api/chart/close', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Close failed')
-      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, chart_status: 'closed', chart_closed_at: data.closed_at, chart_closed_by: doctorName, chart_locked: true, clinical_note_pdf_url: data.pdf_url } : r))
-      showNotification('success', `Chart closed & PDF generated`)
-    } catch (err: any) {
-      showNotification('error', err.message)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleAddendum = async () => {
-    if (!addendumModal || !addendumText.trim()) return
-    setActionLoading(addendumModal.id)
-    try {
-      const res = await fetch('/api/chart/addendum', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appointmentId: addendumModal.id, text: addendumText.trim(),
-          addendumType, reason: addendumReason.trim() || undefined,
-          authorName: doctorName, authorRole: actorRole,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Addendum failed')
-      setRecords(prev => prev.map(r => r.id === addendumModal.id ? { ...r, chart_status: 'amended', clinical_note_pdf_url: data.pdf_url || r.clinical_note_pdf_url } : r))
-      showNotification('success', 'Addendum added to chart')
-      setAddendumModal(null)
-      setAddendumText('')
-      setAddendumReason('')
-      setAddendumType('addendum')
-    } catch (err: any) {
-      showNotification('error', err.message)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleBulkSign = async () => {
-    const signable = filtered.filter(r => selectedIds.has(r.id) && deriveChartStatus(r) === 'draft')
-    if (signable.length === 0) { showNotification('error', 'No draft charts selected'); return }
-    setBulkLoading(true)
-    let success = 0, failed = 0
-    for (const record of signable) {
-      try {
-        const res = await fetch('/api/chart/sign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
-        })
-        if (res.ok) {
-          success++
-          setRecords(prev => prev.map(r => r.id === record.id ? { ...r, chart_status: 'signed', chart_signed_at: new Date().toISOString(), chart_signed_by: doctorName, chart_locked: true } : r))
-        } else { failed++ }
-      } catch { failed++ }
-    }
-    setSelectedIds(new Set())
-    setBulkLoading(false)
-    showNotification(failed === 0 ? 'success' : 'error', `Bulk sign: ${success} signed${failed > 0 ? `, ${failed} failed` : ''}`)
-  }
-
-  const handleViewAudit = async (record: ChartRecord) => {
-    setAuditModal(record)
-    setAuditLoading(true)
-    try {
-      const { data } = await supabase.from('chart_audit_log').select('*').eq('appointment_id', record.id).order('created_at', { ascending: false })
-      setAuditEntries((data || []) as AuditEntry[])
-    } catch (err) { console.error('Audit fetch error:', err) }
-    finally { setAuditLoading(false) }
-  }
-
-  // ── Unlock/Reopen Chart ──
-  const handleUnlock = async () => {
-    if (!unlockModal || !unlockReason.trim()) return
-    setActionLoading(unlockModal.id)
-    try {
-      const res = await fetch('/api/chart/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: unlockModal.id, providerName: doctorName, providerRole: actorRole, reason: unlockReason.trim(), forceReset: true }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Unlock failed')
-      setRecords(prev => prev.map(r => r.id === unlockModal.id ? { ...r, chart_status: 'draft', chart_locked: false } : r))
-      showNotification('success', 'Chart unlocked and returned to draft')
-      setUnlockModal(null)
-      setUnlockReason('')
-    } catch (err: any) { showNotification('error', err.message) }
-    finally { setActionLoading(null) }
-  }
-
-  // ── Cosign (supervising provider signs off) ──
-  const handleCosign = async (record: ChartRecord) => {
-    setActionLoading(record.id)
-    try {
-      const now = new Date().toISOString()
-      const { error } = await supabase.from('appointments').update({ cosigned_by: doctorName, cosigned_at: now, needs_cosign: false }).eq('id', record.id)
-      if (error) throw new Error(error.message)
-      // Audit log
-      await supabase.from('chart_audit_log').insert({ appointment_id: record.id, action: 'cosigned', performed_by_name: doctorName, performed_by_role: actorRole, details: { cosigned_at: now } })
-      setRecords(prev => prev.map(r => r.id === record.id ? { ...r, cosigned_by: doctorName, cosigned_at: now, needs_cosign: false } : r))
-      showNotification('success', `Chart co-signed for ${record.patients?.first_name || 'patient'}`)
-    } catch (err: any) { showNotification('error', err.message) }
-    finally { setActionLoading(null) }
-  }
-
-  // ── Bulk Close ──
-  const handleBulkClose = async () => {
-    const closeable = filtered.filter(r => selectedIds.has(r.id) && deriveChartStatus(r) === 'signed')
-    if (closeable.length === 0) { showNotification('error', 'No signed charts selected'); return }
-    setBulkLoading(true)
-    let success = 0, failed = 0
-    for (const record of closeable) {
-      try {
-        const res = await fetch('/api/chart/close', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ appointmentId: record.id, providerName: doctorName, providerRole: actorRole }),
-        })
-        if (res.ok) {
-          success++
-          const data = await res.json()
-          setRecords(prev => prev.map(r => r.id === record.id ? { ...r, chart_status: 'closed', chart_closed_at: new Date().toISOString(), chart_closed_by: doctorName, chart_locked: true, clinical_note_pdf_url: data.pdf_url } : r))
-        } else { failed++ }
-      } catch { failed++ }
-    }
-    setSelectedIds(new Set())
-    setBulkLoading(false)
-    showNotification(failed === 0 ? 'success' : 'error', `Bulk close: ${success} closed${failed > 0 ? `, ${failed} failed` : ''}`)
-  }
-
-  // ── View Timeline ──
-  const handleViewTimeline = async (record: ChartRecord) => {
-    setTimelineModal(record)
-    setTimelineLoading(true)
-    try {
-      const { data } = await supabase.from('chart_audit_log').select('*').eq('appointment_id', record.id).order('created_at', { ascending: true })
-      setTimelineEntries((data || []) as AuditEntry[])
-    } catch (err) { console.error('Timeline fetch error:', err) }
-    finally { setTimelineLoading(false) }
-  }
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
-  }
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filtered.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(filtered.map(r => r.id)))
-  }
-
-  // ── Computed ──
-  const counts = useMemo(() => {
-    const c = { draft: 0, preliminary: 0, signed: 0, closed: 0, amended: 0, overdue: 0, unsigned: 0, needs_cosign: 0 }
-    records.forEach(r => { const cs = deriveChartStatus(r); c[cs]++; if (isOverdue(r)) c.overdue++; if (cs === 'draft' || cs === 'preliminary') c.unsigned++; if (r.needs_cosign) c.needs_cosign++ })
-    return c
-  }, [records])
-
-  const filtered = useMemo(() => {
-    let list = records
-    if (filter === 'overdue') list = list.filter(isOverdue)
-    else if (filter === 'unsigned') list = list.filter(r => { const cs = deriveChartStatus(r); return cs === 'draft' || cs === 'preliminary' })
-    else if (filter === 'needs_cosign') list = list.filter(r => r.needs_cosign)
-    else if (filter !== 'all') list = list.filter(r => deriveChartStatus(r) === filter)
-    if (search.trim()) { const q = search.toLowerCase(); list = list.filter(r => `${r.patients?.first_name || ''} ${r.patients?.last_name || ''}`.toLowerCase().includes(q)) }
-    return list
-  }, [records, filter, search])
-
-  const metrics = useMemo(() => {
-    const completed = records.filter(r => r.status === 'completed')
-    const signed = records.filter(r => deriveChartStatus(r) !== 'draft' && r.chart_signed_at)
-    const avgSignTimeHrs = signed.length > 0
-      ? signed.reduce((sum, r) => sum + (new Date(r.chart_signed_at!).getTime() - new Date(r.scheduled_time || r.created_at).getTime()) / 3600000, 0) / signed.length
-      : 0
-    const closedOrAmended = records.filter(r => deriveChartStatus(r) === 'closed' || deriveChartStatus(r) === 'amended').length
-    const complianceRate = completed.length > 0 ? Math.round((closedOrAmended / completed.length) * 100) : 100
-    return { avgSignTimeHrs: Math.round(avgSignTimeHrs * 10) / 10, complianceRate, totalCompleted: completed.length, totalSigned: signed.length }
-  }, [records])
-
-  if (loading) return <div className="h-full bg-[#0a1f1f] flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-400" /></div>
-
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════
   return (
-    <div className="h-full overflow-auto bg-[#0a1f1f] text-white">
-      <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-5">
+    <div>
+      <div dangerouslySetInnerHTML={{ __html: `<?php
+// Your PHP code can go here if needed
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medazon Concierge — Private Access</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-        {/* Notification Toast */}
-        {notification && (
-          <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 text-sm font-medium ${notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'} text-white`}>
-            {notification.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span>{notification.message}</span>
-            <button onClick={() => setNotification(null)} className="ml-2 opacity-70 hover:opacity-100"><X className="w-3 h-3" /></button>
-          </div>
-        )}
+    <script>
+document.addEventListener('DOMContentLoaded', function() {
+  var s = document.createElement('script');
+  s.src = "https://js.stripe.com/v3/";
+  s.defer = true;
+  document.body.appendChild(s);
+});
+</script>
 
-        <InlinePanel title="Chart Management" icon={Shield} accentColor="#a855f7" howTo={CHART_HOW_TO} showHowToOnMount={false}>
-        <div className="p-4 space-y-5">
+    <!-- ✅ JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MedicalService",
+  "name": "Medazon Virtual Visit",
+  "description": "Private, secure telehealth visits — instant or scheduled — with licensed U.S. providers. Flat $189 if approved.",
+  "areaServed": "US",
+  "availableService": {
+    "@type": "Service",
+    "serviceType": "Telemedicine Consultation"
+  },
+  "provider": {
+    "@type": "MedicalBusiness",
+    "name": "Medazon Health LLC",
+    "url": "https://medazonhealth.com",
+    "telephone": "+1-480-613-6527",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "2200 E Camelback Rd",
+      "addressLocality": "Phoenix",
+      "addressRegion": "AZ",
+      "postalCode": "85016",
+      "addressCountry": "US"
+    },
+    "openingHours": "Mo-Fr 09:00-18:00",
+    "areaServed": "US",
+    "geo": {
+      "@type": "GeoShape",
+      "circle": "33.5085 -112.0296 1000.0" 
+    }
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "189.00",
+    "priceCurrency": "USD",
+    "url": "https://medazonhealth.com/private/new_checkout.php"
+  }
+}
+"priceRange": "$189 - Flat Rate",
+"image": "https://medazonhealth.com/assets/og-medazon.jpg"
 
-        {/* ═══ MAIN TAB BAR ═══ */}
-        <div className="flex space-x-1 bg-[#0a1f1f] rounded-xl p-1 border border-[#1a3d3d]">
-          {([
-            { key: 'charts' as const, label: 'Charts', icon: Shield, badge: 0 },
-            { key: 'letters' as const, label: 'Letters', icon: FileEdit, badge: 0 },
-            { key: 'settings' as const, label: 'Settings', icon: Settings, badge: 0 },
-            { key: 'staff' as const, label: 'Staff', icon: UserCog, badge: 0 },
-            { key: 'reviews' as const, label: 'Reviews', icon: Bell, badge: 0 },
-          ]).map(({ key, label, icon: TabIcon, badge }) => (
-            <button key={key} onClick={() => setMainTab(key)}
-              className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all ${mainTab === key ? 'bg-gradient-to-r from-teal-600/20 to-purple-600/20 text-teal-400 border border-teal-500/30 shadow-lg shadow-teal-500/5' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
-              <TabIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{label}</span>
-              {badge > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
-            </button>
-          ))}
-        </div>
+</script>
 
-        {/* ═══ LETTERS TAB ═══ */}
-        {mainTab === 'letters' && (
-          <LetterGeneratorTab doctorId={doctorId} doctorName={doctorName} />
-        )}
-
-        {/* ═══ SETTINGS TAB ═══ */}
-        {mainTab === 'settings' && (
-          <ChartSettingsTab doctorId={doctorId} />
-        )}
-
-        {/* ═══ STAFF TAB ═══ */}
-        {mainTab === 'staff' && (
-          <div className="space-y-4">
-            <div className="bg-[#0a1f1f] rounded-lg p-6 border border-[#1a3d3d] text-center">
-              <UserCog className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Staff management is available at</p>
-              <button onClick={() => router.push('/doctor/settings/staff')}
-                className="mt-2 px-4 py-2 rounded-lg bg-teal-600/20 text-teal-400 text-sm font-bold hover:bg-teal-600/30 transition-colors">
-                Open Staff Settings →
-              </button>
-              <p className="text-[10px] text-gray-600 mt-2">Invite staff, manage permissions, schedules, and audit logs</p>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ REVIEWS TAB ═══ */}
-        {mainTab === 'reviews' && (
-          <PendingReviewsTab doctorId={doctorId} doctorName={doctorName} />
-        )}
-
-        {/* ═══ CHARTS TAB (existing content) ═══ */}
-        {mainTab === 'charts' && (<>
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center"><Shield className="w-5 h-5 text-purple-400" /></div>
-            <div>
-              <h1 className="text-xl font-bold text-white">Chart Management</h1>
-              <p className="text-xs text-gray-400">Sign, close, amend charts &bull; Audit trail &bull; Compliance</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            {selectedIds.size > 0 && (<>
-              <button onClick={handleBulkSign} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1.5">
-                {bulkLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <FileSignature className="w-3 h-3" />}
-                <span>Bulk Sign ({selectedIds.size})</span>
-              </button>
-              <button onClick={handleBulkClose} disabled={bulkLoading} className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center space-x-1.5">
-                {bulkLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
-                <span>Bulk Close</span>
-              </button>
-            </>)}
-            <button onClick={handleRefresh} disabled={refreshing} className="p-2 rounded-lg bg-[#0a1f1f] border border-[#1a3d3d] hover:border-teal-500/50 text-gray-300 hover:text-teal-400 transition-colors disabled:opacity-50">
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { icon: BarChart3, color: 'text-teal-400', label: 'Avg Sign Time', value: `${metrics.avgSignTimeHrs}h` },
-            { icon: CheckCircle, color: metrics.complianceRate >= 90 ? 'text-green-400' : metrics.complianceRate >= 70 ? 'text-amber-400' : 'text-red-400', label: 'Compliance', value: `${metrics.complianceRate}%` },
-            { icon: Users, color: 'text-blue-400', label: 'Completed', value: String(metrics.totalCompleted) },
-            { icon: FileSignature, color: 'text-purple-400', label: 'Signed', value: String(metrics.totalSigned) },
-          ].map(({ icon: Icon, color, label, value }, i) => (
-            <div key={i} className="bg-[#0d2626] rounded-lg p-3 border border-[#1a3d3d]">
-              <div className="flex items-center space-x-2 mb-1"><Icon className={`w-3.5 h-3.5 ${color}`} /><span className="text-[10px] uppercase tracking-widest font-bold text-gray-500">{label}</span></div>
-              <p className={`text-lg font-bold ${color === 'text-teal-400' || color === 'text-blue-400' || color === 'text-purple-400' ? 'text-white' : color}`}>{value}</p>
-            </div>
-          ))}
-        </div>
+</script>
 
 
-        {/* Status Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {([
-            { key: 'draft' as ChartFilter, label: 'Draft', icon: FileText, color: 'text-gray-400', count: counts.draft },
-            { key: 'preliminary' as ChartFilter, label: 'Preliminary', icon: Clock, color: 'text-amber-400', count: counts.preliminary },
-            { key: 'signed' as ChartFilter, label: 'Signed', icon: CheckCircle, color: 'text-green-400', count: counts.signed },
-            { key: 'closed' as ChartFilter, label: 'Closed', icon: Lock, color: 'text-blue-400', count: counts.closed },
-            { key: 'amended' as ChartFilter, label: 'Amended', icon: Edit3, color: 'text-purple-400', count: counts.amended },
-          ]).map(({ key, label, icon: Icon, color, count }) => (
-            <button key={key} onClick={() => setFilter(filter === key ? 'all' : key)}
-              className={`bg-[#0d2626] rounded-lg p-4 border transition-all text-left ${filter === key ? 'border-teal-500/50 ring-1 ring-teal-500/20' : 'border-[#1a3d3d] hover:border-[#2a5d5d]'}`}>
-              <div className="flex items-center space-x-2 mb-2"><Icon className={`w-4 h-4 ${color}`} /><span className={`text-[10px] uppercase tracking-widest font-bold ${color}`}>{label}</span></div>
-              <p className="text-2xl font-bold text-white">{count}</p>
-            </button>
-          ))}
-        </div>
+    <style>
+        :root {
+            --mint: #00DDB0;
+            --bright orange: #ff7a00;
+            --dark1: #0B0F12;
+            --dark2: #141B1E;
+            --text-light: #F5F7FA;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-light);
+            background: var(--dark1);
+            overflow-x: hidden;
+        }
 
-        {/* Alert Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <button onClick={() => setFilter(filter === 'overdue' ? 'all' : 'overdue')}
-            className={`bg-[#0d2626] rounded-lg p-4 border transition-all flex items-center justify-between ${filter === 'overdue' ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-[#1a3d3d] hover:border-red-500/30'}`}>
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 bg-red-500/15 rounded-lg flex items-center justify-center"><AlertTriangle className="w-4 h-4 text-red-400" /></div>
-              <div className="text-left"><p className="text-sm font-bold text-white">Overdue Charts</p><p className="text-[10px] text-gray-500">Unsigned &gt; 24 hours after completion</p></div>
-            </div>
-            <span className={`text-2xl font-bold ${counts.overdue > 0 ? 'text-red-400' : 'text-green-400'}`}>{counts.overdue > 0 ? counts.overdue : '✓'}</span>
-          </button>
-          <button onClick={() => setFilter(filter === 'unsigned' ? 'all' : 'unsigned')}
-            className={`bg-[#0d2626] rounded-lg p-4 border transition-all flex items-center justify-between ${filter === 'unsigned' ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-[#1a3d3d] hover:border-amber-500/30'}`}>
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 bg-amber-500/15 rounded-lg flex items-center justify-center"><FileText className="w-4 h-4 text-amber-400" /></div>
-              <div className="text-left"><p className="text-sm font-bold text-white">Unsigned Notes</p><p className="text-[10px] text-gray-500">Draft + Preliminary needing attention</p></div>
-            </div>
-            <span className={`text-2xl font-bold ${counts.unsigned > 0 ? 'text-amber-400' : 'text-green-400'}`}>{counts.unsigned > 0 ? counts.unsigned : '✓'}</span>
-          </button>
-          <button onClick={() => setFilter(filter === 'needs_cosign' ? 'all' : 'needs_cosign')}
-            className={`bg-[#0d2626] rounded-lg p-4 border transition-all flex items-center justify-between ${filter === 'needs_cosign' ? 'border-cyan-500/50 ring-1 ring-cyan-500/20' : 'border-[#1a3d3d] hover:border-cyan-500/30'}`}>
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 bg-cyan-500/15 rounded-lg flex items-center justify-center"><Users className="w-4 h-4 text-cyan-400" /></div>
-              <div className="text-left"><p className="text-sm font-bold text-white">Needs Co-sign</p><p className="text-[10px] text-gray-500">Awaiting supervising provider sign-off</p></div>
-            </div>
-            <span className={`text-2xl font-bold ${counts.needs_cosign > 0 ? 'text-cyan-400' : 'text-green-400'}`}>{counts.needs_cosign > 0 ? counts.needs_cosign : '✓'}</span>
-          </button>
-        </div>
+       /* === Hero background (optimized for image) === */
+.hero {
+  min-height: auto !important;      /* remove forced full screen height */
+  height: auto !important;
+  padding-bottom: 40px !important;  /* just enough breathing room */
+  margin-bottom: 0 !important;
+  background-attachment: scroll !important; /* prevents scroll-gap on Safari/Chrome */
+}
 
-        {/* Search + Filter */}
-        <div className="flex items-center space-x-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patient name..."
-              className="w-full bg-[#0d2626] border border-[#1a3d3d] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50" />
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <Filter className="w-3.5 h-3.5 text-gray-500" />
-            <span className="text-xs text-gray-400 font-medium">{filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}</span>
-            {filter !== 'all' && <button onClick={() => setFilter('all')} className="text-[10px] text-teal-400 hover:text-teal-300 font-bold ml-1">Clear</button>}
-          </div>
-        </div>
 
-        {/* Chart Records Table */}
-        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d] overflow-hidden">
-          <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2.5 border-b border-[#1a3d3d] bg-[#0a1f1f]/50 text-[10px] uppercase tracking-widest font-bold text-gray-500">
-            <div className="col-span-1 flex items-center">
-              <button onClick={toggleSelectAll} className="text-gray-500 hover:text-teal-400">
-                {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <div className="col-span-2">Patient</div>
-            <div className="col-span-1">Date</div>
-            <div className="col-span-1">Type</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-1">Notes</div>
-            <div className="col-span-4 text-right">Actions</div>
-          </div>
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 0;
+}
 
-          {filtered.length === 0 ? (
-            <div className="py-12 text-center"><Shield className="w-8 h-8 text-gray-600 mx-auto mb-2" /><p className="text-sm text-gray-500">{filter === 'all' ? 'No charts found' : `No ${filter} charts`}</p></div>
-          ) : (
-            <div className="divide-y divide-[#1a3d3d]/50 max-h-[50vh] overflow-y-auto">
-              {filtered.map(record => {
-                const cs = deriveChartStatus(record)
-                const config = CHART_STATUS_CONFIG[cs]
-                const overdue = isOverdue(record)
-                const noteCount = record.clinical_notes?.length || 0
-                const patientName = `${record.patients?.first_name || ''} ${record.patients?.last_name || ''}`.trim() || 'Unknown'
-                const dateStr = record.scheduled_time ? new Date(record.scheduled_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'
-                const isActing = actionLoading === record.id
-                const isSelected = selectedIds.has(record.id)
+        .veil, .grad { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .veil { background: rgba(0, 0, 0, .5); }
+        .grad { background: linear-gradient(135deg, rgba(11, 15, 18, 0.75), rgba(20, 27, 30, 0.85)); }
 
-                return (
-                  <div key={record.id} className={`transition-colors hover:bg-white/[0.02] ${overdue ? 'bg-red-500/[0.03]' : ''} ${isSelected ? 'bg-teal-500/[0.05]' : ''}`}
-                    style={{ borderLeft: `3px solid ${config.color}` }}>
-                    {/* Desktop */}
-                    <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 items-center">
-                      <div className="col-span-1">
-                        <button onClick={() => toggleSelect(record.id)} className="text-gray-500 hover:text-teal-400">
-                          {isSelected ? <CheckSquare className="w-3.5 h-3.5 text-teal-400" /> : <Square className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                      <div className="col-span-2 min-w-0">
-                        <p className="text-sm font-bold text-white truncate">{patientName}</p>
-                        {overdue && <span className="text-[9px] bg-red-500/20 text-red-400 px-1 rounded font-bold">OVERDUE</span>}
-                      </div>
-                      <div className="col-span-1"><p className="text-xs text-gray-300">{dateStr}</p></div>
-                      <div className="col-span-1"><span className="text-xs text-gray-400 capitalize">{record.visit_type || '—'}</span></div>
-                      <div className="col-span-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: `${config.color}20`, color: config.color }}>{config.icon} {cs}</span>
-                        {record.chart_signed_by && <p className="text-[9px] text-gray-500 mt-0.5">by {record.chart_signed_by}</p>}
-                        {record.cosigned_by && <p className="text-[9px] text-cyan-500 mt-0.5">✓ co-signed: {record.cosigned_by}</p>}
-                        {record.needs_cosign && !record.cosigned_by && <span className="text-[9px] bg-cyan-500/20 text-cyan-400 px-1 rounded font-bold">NEEDS CO-SIGN</span>}
-                      </div>
-                      <div className="col-span-1"><span className="text-xs text-gray-400">{noteCount} note{noteCount !== 1 ? 's' : ''}</span></div>
-                      <div className="col-span-4 flex items-center justify-end space-x-1.5 flex-wrap gap-y-1">
-                        {cs === 'draft' && (
-                          <button onClick={() => setSignModal(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-green-600/20 text-green-400 hover:bg-green-600/40 transition-colors disabled:opacity-50 flex items-center space-x-1">
-                            <Pen className="w-3 h-3" /><span>Sign</span>
-                          </button>
-                        )}
-                        {cs === 'signed' && (
-                          <button onClick={() => handleClose(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 transition-colors disabled:opacity-50 flex items-center space-x-1">
-                            {isActing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}<span>Close</span>
-                          </button>
-                        )}
-                        {(cs === 'closed' || cs === 'amended') && (
-                          <button onClick={() => setAddendumModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-purple-600/20 text-purple-400 hover:bg-purple-600/40 transition-colors flex items-center space-x-1">
-                            <Edit3 className="w-3 h-3" /><span>Addendum</span>
-                          </button>
-                        )}
-                        {record.needs_cosign && (
-                          <button onClick={() => handleCosign(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/40 transition-colors disabled:opacity-50 flex items-center space-x-1">
-                            <UserCheck className="w-3 h-3" /><span>Co-sign</span>
-                          </button>
-                        )}
-                        {(cs === 'signed' || cs === 'closed' || cs === 'amended') && (
-                          <button onClick={() => setUnlockModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-amber-600/20 text-amber-400 hover:bg-amber-600/40 transition-colors flex items-center space-x-1">
-                            <Unlock className="w-3 h-3" /><span>Unlock</span>
-                          </button>
-                        )}
-                        {record.clinical_note_pdf_url && (
-                          <a href={record.clinical_note_pdf_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded text-[10px] font-bold bg-teal-600/20 text-teal-400 hover:bg-teal-600/40 transition-colors flex items-center space-x-1">
-                            <Download className="w-3 h-3" /><span>PDF</span>
-                          </a>
-                        )}
-                        <button onClick={() => handleViewTimeline(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 transition-colors flex items-center space-x-1">
-                          <GitBranch className="w-3 h-3" /><span>Timeline</span>
-                        </button>
-                        <button onClick={() => handleViewAudit(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-600/20 text-gray-400 hover:bg-gray-600/40 transition-colors flex items-center space-x-1">
-                          <History className="w-3 h-3" /><span>Audit</span>
-                        </button>
-                        <button onClick={() => router.push(`/doctor/appointments?apt=${record.id}`)} className="px-2 py-1 rounded text-[10px] font-bold bg-white/5 text-gray-400 hover:bg-white/10 transition-colors">
-                          <Eye className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                    {/* Mobile */}
-                    <div className="md:hidden px-4 py-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <button onClick={() => toggleSelect(record.id)}>{isSelected ? <CheckSquare className="w-3.5 h-3.5 text-teal-400" /> : <Square className="w-3.5 h-3.5 text-gray-500" />}</button>
-                          <p className="text-sm font-bold text-white truncate">{patientName}</p>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: `${config.color}20`, color: config.color }}>{config.icon} {cs}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {cs === 'draft' && <button onClick={() => setSignModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-green-600/20 text-green-400">Sign</button>}
-                        {cs === 'signed' && <button onClick={() => handleClose(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-blue-600/20 text-blue-400">Close</button>}
-                        {(cs === 'closed' || cs === 'amended') && <button onClick={() => setAddendumModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-purple-600/20 text-purple-400">Addendum</button>}
-                        {record.needs_cosign && <button onClick={() => handleCosign(record)} disabled={isActing} className="px-2 py-1 rounded text-[10px] font-bold bg-cyan-600/20 text-cyan-400">Co-sign</button>}
-                        {(cs === 'signed' || cs === 'closed' || cs === 'amended') && <button onClick={() => setUnlockModal(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-amber-600/20 text-amber-400">Unlock</button>}
-                        <button onClick={() => handleViewTimeline(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-indigo-600/20 text-indigo-400">Timeline</button>
-                        <button onClick={() => handleViewAudit(record)} className="px-2 py-1 rounded text-[10px] font-bold bg-gray-600/20 text-gray-400">Audit</button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+        
+        
 
-        {/* Footer */}
-        <div className="flex items-center justify-between text-[10px] text-gray-500 px-1">
-          <span>Showing {filtered.length} of {records.length} charts</span>
-          <span>Last refreshed: {new Date().toLocaleTimeString()}</span>
-        </div>
-      </div>
-      </InlinePanel>
+        /* === Text === */
+        .hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.5rem;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(0, 221, 176, 0.6),
+    0 0 12px rgba(0, 221, 176, 0.45),
+    0 0 24px rgba(0, 221, 176, 0.25);
+  margin-bottom: 1rem;
+}
 
-      {/* ═══ SIGN MODAL ═══ */}
-      {signModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><FileSignature className="w-5 h-5 text-green-400" /><span>E-Sign Chart</span></h3>
-              <button onClick={() => setSignModal(null)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="bg-[#0a1f1f] rounded-lg p-4 space-y-2">
-              <p className="text-sm text-gray-300">Patient: <span className="text-white font-bold">{signModal.patients?.first_name} {signModal.patients?.last_name}</span></p>
-              <p className="text-sm text-gray-300">Date: <span className="text-white">{signModal.scheduled_time ? new Date(signModal.scheduled_time).toLocaleDateString() : 'N/A'}</span></p>
-              <p className="text-sm text-gray-300">Type: <span className="text-white capitalize">{signModal.visit_type || 'N/A'}</span></p>
-            </div>
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-              <p className="text-xs text-amber-300">By signing, you confirm that you have reviewed the clinical notes and that the information is accurate and complete. This action creates a permanent audit trail entry.</p>
-            </div>
-            <div className="bg-[#0a1f1f] rounded-lg p-3 border border-[#1a3d3d]">
-              <p className="text-xs text-gray-500 mb-1">Electronic Signature</p>
-              <p className="text-sm text-white font-bold">{doctorName}</p>
-              <p className="text-[10px] text-gray-500">{new Date().toLocaleString()}</p>
-            </div>
-            <div className="flex space-x-3">
-              <button onClick={() => setSignModal(null)} className="flex-1 py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white hover:border-[#2a5d5d] text-sm font-medium transition-colors">Cancel</button>
-              <button onClick={() => handleSign(signModal)} disabled={actionLoading === signModal.id}
-                className="flex-1 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
-                {actionLoading === signModal.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Pen className="w-4 h-4" /><span>Sign Chart</span></>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ═══ ADDENDUM MODAL ═══ */}
-      {addendumModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-lg p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><Edit3 className="w-5 h-5 text-purple-400" /><span>Add Addendum</span></h3>
-              <button onClick={() => { setAddendumModal(null); setAddendumText(''); setAddendumReason('') }} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="bg-[#0a1f1f] rounded-lg p-3">
-              <p className="text-sm text-gray-300">Patient: <span className="text-white font-bold">{addendumModal.patients?.first_name} {addendumModal.patients?.last_name}</span></p>
-            </div>
-            {/* Type selector */}
-            <div>
-              <label className="text-xs text-gray-400 font-medium mb-1.5 block">Addendum Type</label>
-              <div className="flex space-x-2">
-                {(['addendum', 'late_entry', 'correction'] as const).map(t => (
-                  <button key={t} onClick={() => setAddendumType(t)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${addendumType === t ? 'bg-purple-600 text-white' : 'bg-[#0a1f1f] text-gray-400 border border-[#1a3d3d] hover:border-purple-500/50'}`}>
-                    {t === 'late_entry' ? 'Late Entry' : t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Reason (required for corrections) */}
-            {addendumType === 'correction' && (
-              <div>
-                <label className="text-xs text-gray-400 font-medium mb-1.5 block">Reason for Correction <span className="text-red-400">*</span></label>
-                <input type="text" value={addendumReason} onChange={e => setAddendumReason(e.target.value)} placeholder="Explain what is being corrected..."
-                  className="w-full bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50" />
-              </div>
-            )}
-            {/* Text */}
-            <div>
-              <label className="text-xs text-gray-400 font-medium mb-1.5 block">Addendum Text <span className="text-red-400">*</span></label>
-              <textarea value={addendumText} onChange={e => setAddendumText(e.target.value)} rows={5} placeholder="Enter addendum text..."
-                className="w-full bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 resize-none" />
-              <p className="text-[10px] text-gray-500 mt-1">{addendumText.length} characters (min 3)</p>
-            </div>
-            <div className="flex space-x-3">
-              <button onClick={() => { setAddendumModal(null); setAddendumText(''); setAddendumReason('') }} className="flex-1 py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Cancel</button>
-              <button onClick={handleAddendum} disabled={actionLoading === addendumModal.id || addendumText.trim().length < 3 || (addendumType === 'correction' && addendumReason.trim().length < 5)}
-                className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
-                {actionLoading === addendumModal.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Edit3 className="w-4 h-4" /><span>Add Addendum</span></>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        /* === Buttons === */
+        .cta-group { margin-bottom: 2rem; }
+        .btn {
+            text-decoration: none; margin: 0 .5rem; padding: 1rem 2rem; border-radius: 10px;
+            font-weight: 600; transition: all .4s ease; display: inline-block;
+        }
+        .btn.primary {
+            background: rgba(0, 221, 176, 0.25); border: 1px solid var(--mint); color: var(--text-light); backdrop-filter: blur(10px);
+        }
+        .btn.primary:hover { box-shadow: 0 0 25px rgba(0, 221, 176, 0.7); }
+        .btn.secondary {
+            border: 1px solid var(--orange); color: var(--orange); background: rgba(255, 255, 255, 0.1);
+        }
+        .btn.secondary:hover { box-shadow: 0 0 15px rgba(192, 198, 202, 0.6); }
 
-      {/* ═══ AUDIT TRAIL MODAL ═══ */}
-      {auditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-lg p-6 space-y-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><History className="w-5 h-5 text-gray-400" /><span>Audit Trail</span></h3>
-              <button onClick={() => setAuditModal(null)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <p className="text-xs text-gray-400">Patient: {auditModal.patients?.first_name} {auditModal.patients?.last_name}</p>
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {auditLoading ? (
-                <div className="flex items-center justify-center py-8"><RefreshCw className="w-5 h-5 animate-spin text-gray-500" /></div>
-              ) : auditEntries.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">No audit entries found</div>
-              ) : (
-                auditEntries.map(entry => (
-                  <div key={entry.id} className="bg-[#0a1f1f] rounded-lg p-3 border border-[#1a3d3d]">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                        entry.action === 'signed' ? 'bg-green-500/20 text-green-400' :
-                        entry.action === 'closed' ? 'bg-blue-500/20 text-blue-400' :
-                        entry.action.includes('addendum') || entry.action.includes('correction') || entry.action.includes('late_entry') ? 'bg-purple-500/20 text-purple-400' :
-                        entry.action === 'pdf_generated' ? 'bg-teal-500/20 text-teal-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>{entry.action.replace(/_/g, ' ')}</span>
-                      <span className="text-[10px] text-gray-500">{new Date(entry.created_at).toLocaleString()}</span>
-                    </div>
-                    <p className="text-xs text-gray-300">By: <span className="text-white font-medium">{entry.performed_by_name}</span> <span className="text-gray-500">({entry.performed_by_role})</span></p>
-                    {entry.reason && <p className="text-xs text-amber-400 mt-1">Reason: {entry.reason}</p>}
-                    {entry.details && typeof entry.details === 'object' && entry.details.text_length && (
-                      <p className="text-[10px] text-gray-500 mt-1">{entry.details.text_length} characters</p>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-            <button onClick={() => setAuditModal(null)} className="w-full py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Close</button>
-          </div>
-        </div>
-      )}
+        /* === Doctor Card === */
+        .doctor-card { margin-top: 1rem; text-align: center; }
+        .doctor-card img {
+            width: 150px; height: 150px; border-radius: 50%; object-fit: cover;
+            border: 3px solid var(--mint); box-shadow: 0 0 25px rgba(0, 221, 176, .3);
+        }
+        .doctor-card h2 { margin-top: .8rem; font-size: 1.1rem; font-weight: 600; }
+        .doctor-card p { font-size: .95rem; color: #bfc3c6; }
+        .doctor-card em { display: block; margin-top: .3rem; font-style: italic; color: #9ea1a3; font-size: .9rem; }
 
-      {/* ═══ UNLOCK MODAL ═══ */}
-      {unlockModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><Unlock className="w-5 h-5 text-amber-400" /><span>Unlock Chart</span></h3>
-              <button onClick={() => { setUnlockModal(null); setUnlockReason('') }} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="bg-[#0a1f1f] rounded-lg p-4 space-y-2">
-              <p className="text-sm text-gray-300">Patient: <span className="text-white font-bold">{unlockModal.patients?.first_name} {unlockModal.patients?.last_name}</span></p>
-              <p className="text-sm text-gray-300">Current Status: <span className="text-white font-bold capitalize">{deriveChartStatus(unlockModal)}</span></p>
-            </div>
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <p className="text-xs text-red-300"><strong>Warning:</strong> Unlocking returns this chart to <strong>draft</strong> status. The existing PDF will remain in storage but the chart will need to be re-signed, re-closed, and a new PDF generated. This action is fully audited.</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 font-medium mb-1.5 block">Reason for Unlocking <span className="text-red-400">*</span></label>
-              <textarea value={unlockReason} onChange={e => setUnlockReason(e.target.value)} rows={3} placeholder="Explain why this chart needs to be unlocked..."
-                className="w-full bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 resize-none" />
-              <p className="text-[10px] text-gray-500 mt-1">{unlockReason.length} characters (min 5)</p>
-            </div>
-            <div className="flex space-x-3">
-              <button onClick={() => { setUnlockModal(null); setUnlockReason('') }} className="flex-1 py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Cancel</button>
-              <button onClick={handleUnlock} disabled={actionLoading === unlockModal.id || unlockReason.trim().length < 5}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
-                {actionLoading === unlockModal.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Unlock className="w-4 h-4" /><span>Unlock Chart</span></>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        /* === Availability Timer === */
+        .availability {
+            margin-top: 1rem; display: flex; justify-content: center; align-items: center;
+            gap: .6rem; font-size: .95rem; color: #C0C6CA; background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1); padding: .5rem 1rem; border-radius: 30px;
+            width: fit-content; margin-inline: auto; box-shadow: 0 0 10px rgba(0, 221, 176, .3);
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4040; animation: pulse 2s infinite; }
+       
+        /* === Badges === */
+        .badges { margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+        .badge {
+            border: 1px solid rgba(255, 255, 255, .1); border-radius: 20px; padding: .5rem 1.2rem;
+            background: rgba(255, 255, 255, .05); box-shadow: 0 0 10px rgba(0, 221, 176, .3); transition: all .4s ease;
+        }
+        .badge:hover { box-shadow: 0 0 15px rgba(0, 221, 176, .8); }
+/* === Override: Book for Later (Orange Theme) === */
+.btn.secondary {
+  border: 1px solid #ff7a00 !important;
+  background-color: #ff7a00 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 15px rgba(255, 122, 0, 0.4) !important;
+}
 
-      {/* ═══ TIMELINE MODAL ═══ */}
-      {timelineModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl w-full max-w-lg p-6 space-y-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white flex items-center space-x-2"><GitBranch className="w-5 h-5 text-indigo-400" /><span>Chart Lifecycle</span></h3>
-              <button onClick={() => setTimelineModal(null)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="bg-[#0a1f1f] rounded-lg p-3 flex items-center justify-between">
-              <p className="text-xs text-gray-400">Patient: <span className="text-white font-bold">{timelineModal.patients?.first_name} {timelineModal.patients?.last_name}</span></p>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ backgroundColor: `${CHART_STATUS_CONFIG[deriveChartStatus(timelineModal)].color}20`, color: CHART_STATUS_CONFIG[deriveChartStatus(timelineModal)].color }}>
-                {deriveChartStatus(timelineModal)}
-              </span>
-            </div>
+.btn.secondary:hover {
+  background-color: #ff9933 !important;
+  border-color: #ff9933 !important;
+  box-shadow: 0 0 20px rgba(255, 153, 51, 0.6) !important;
+  color: #fff !important;
+}
 
-            {/* Built-in lifecycle events */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="relative pl-6 space-y-0">
-                {/* Timeline line */}
-                <div className="absolute left-[9px] top-2 bottom-2 w-px bg-[#1a3d3d]" />
+        /* === Scroll cue === */
+        .scroll-cue { margin-top: 1.5rem; font-size: 1rem; animation: float 2s ease-in-out infinite; }
+        
+        /* === Fold 2 === */
+        #fold2 { background: #0f141b; padding: 60px 16px; color: #fff; text-align: center; }
+        .fold2-title {
+            font-size: 1.7rem; font-weight: 700; background: linear-gradient(90deg, #00ddaf, #2ee6be);
+            -webkit-background-clip: text; color: transparent; margin: 40px 0 10px;
+        }
+        .fold2-sub { color: rgba(255, 255, 255, .7); font-size: .95rem; margin-bottom: 30px; line-height: 1.4; }
+        .six-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 140px; gap: 10px; margin-bottom: 60px; }
+        .svc-card {
+            position: relative; border-radius: 12px; overflow: hidden; background-size: cover; background-position: center;
+            border: 1px solid rgba(255, 255, 255, .1); transition: transform .0s, box-shadow .0s;
+        }
+        .svc-card:hover { transform: scale(1.04); box-shadow: 0 0 20px #00e5be55; }
+        .svc-overlay {
+            position: absolute; inset: 0; background: rgba(0, 0, 0, .55);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .svc-overlay h3 { font-size: 1rem; margin: 0; text-shadow: 0 0 6px #00e5be66; }
+        .svc-overlay span { font-size: .75rem; color: #00e5be; margin-top: 4px; }
+        .how-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 60px; }
+        .how-step {
+            background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 14px; padding: 18px; transition: transform .0s, box-shadow .0s;
+        }
+        .how-step:hover { transform: translateY(-4px); box-shadow: 0 0 15px #00e5be55; }
+        .how-step img { width: 42px; margin-bottom: 10px; filter: invert(1) brightness(1.6); }
+        .how-step p { font-size: .85rem; color: rgba(255, 255, 255, .8); }
+        .visit-type-grid { display: grid; grid-template-columns: repeat(0, 1fr); gap: 14px; }
+        .visit-card {
+            position: relative; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .1);
+            transition: transform .0s;
+        }
+        .visit-card:hover { transform: scale(1.03); }
+        .visit-card img, .visit-card video { width: 100%; height: 220px; object-fit: cover; filter: brightness(.85); }
+        .visit-overlay {
+            position: absolute; inset: 0; background: rgba(0, 0, 0, .55);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .visit-overlay h3 { margin: 0; font-size: 1.05rem; text-shadow: 0 0 6px #00e5be66; }
+        .visit-overlay p { font-size: .85rem; color: #00e5be; margin-top: 6px; }
+        .optional { font-weight: 400; font-size: .8rem; color: #ccc; }
+        .cta-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; margin-top: 36px; }
+        .cta-primary, .cta-secondary {
+            min-width: 240px; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; transition: all .0s ease;
+        }
+        .cta-primary {
+            background: linear-gradient(90deg, #006f5f, #00ddaf); color: #fff; border: 1px solid #00ddaf; box-shadow: 0 0 10px #00e5be55;
+        }
+        .cta-primary:hover { background: linear-gradient(90deg, #00ddaf, #2ee6be); transform: translateY(-2px); }
+        .cta-secondary {
+            background: transparent; color: #fff; border: 1px solid rgba(255, 255, 255, .5);
+        }
+        .cta-secondary:hover { border-color: #00e5be; color: #00e5be; transform: translateY(-2px); }
+        @media (max-width: 768px) {
+            .six-grid { grid-template-columns: repeat(0, 1fr); }
+            .visit-type-grid { grid-template-columns: 1fr; gap: 16px; }
+        }
+        @media (max-width: 600px) { .six-grid { grid-template-columns: 1fr; } }
+/* ---- Mobile Optimizations for Services Grid ---- */
+@media (max-width:768px){
+  .six-grid, .svc-grid, .visit-type-grid {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:10px;
+  }
+  .svc-card, .visit-card {
+    flex:0 0 48%;
+    min-width:160px;
+    height:180px;
+    overflow:hidden;
+    border-radius:10px;
+  }
+  .svc-card img, .visit-card img {
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    transition:none;
+    transform:none !important; /* prevents zoom flicker */
+  }
+}
 
-                {/* Created */}
-                <div className="relative pb-4">
-                  <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-gray-600 border-2 border-[#0d2626] flex items-center justify-center"><FileText className="w-2.5 h-2.5 text-white" /></div>
-                  <p className="text-xs font-bold text-white">Chart Created</p>
-                  <p className="text-[10px] text-gray-500">{new Date(timelineModal.created_at).toLocaleString()}</p>
+/* Disable hover zoom on touch devices */
+@media{
+  .svc-card:hover img,
+  .visit-card:hover img {
+    transform:scale(1.05);
+    transition:transform .0s ease;
+  }
+}
+
+        /* === Fold 3 === */
+        #fold3 {
+            background: #0f141b; padding: 70px 20px; color: #fff; text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, .08);
+        }
+        .fold3-title {
+            font-size: 1.8rem; font-weight: 700; background: linear-gradient(90deg, #00ddaf, #2ee6be);
+            -webkit-background-clip: text; color: transparent; margin-bottom: 14px;
+        }
+        .fold3-lead {
+            color: rgba(255, 255, 255, .75); font-size: .95rem; max-width: 640px; margin: 0 auto 28px; line-height: 1.5;
+        }
+        .cta-tertiary {
+            background: rgba(255, 255, 255, .08); color: #00e5be; border: 1px solid rgba(255, 255, 255, .15);
+        }
+        .cta-tertiary:hover { background: rgba(255, 255, 255, .15); transform: translateY(-2px); }
+        .faq-grid { max-width: 720px; margin: 0 auto 40px; text-align: left; }
+        .faq-item { border-bottom: 1px solid rgba(255, 255, 255, .1); padding: 14px 0; }
+        .faq-question {
+            background: none; border: none; width: 100%; text-align: left; color: #00e5be; font-weight: 600; font-size: 1rem;
+            display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 8px 0;
+        }
+        .faq-question::after { content: "+"; transition: transform .3s; }
+        .faq-item.active .faq-question::after { content: "–"; }
+        .faq-answer { max-height: 0; overflow: hidden; transition: max-height .4s ease; padding-left: 4px; }
+        .faq-item.active .faq-answer { max-height: 300px; margin-top: 6px; }
+        .faq-answer p { color: rgba(255, 255, 255, .75); font-size: .9rem; line-height: 1.45; margin: 0; }
+        .seo-footer {
+            margin: 50px auto 10px; max-width: 800px; color: rgba(255, 255, 255, .5); font-size: .8rem; line-height: 1.5;
+        }
+
+        /* === Footer === */
+        #footer {
+            background: #0a0f14; color: #fff; text-align: center; padding: 60px 16px 30px;
+            border-top: 1px solid rgba(255, 255, 255, .08); backdrop-filter: blur(10px);
+        }
+        .footer-cta { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; margin-bottom: 30px; }
+        .footer-brand .brand { font-size: 1.4rem; font-weight: 700; margin: 4px 0; color: #00e5be; }
+        .footer-brand .tagline { color: rgba(255, 255, 255, .6); font-size: .9rem; margin-bottom: 16px; }
+        .compliance-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-bottom: 20px; }
+        .compliance-links a { color: rgba(255, 255, 255, .6); font-size: .85rem; text-decoration: none; }
+        .compliance-links a:hover { color: #00e5be; }
+        .contact-social { margin-bottom: 20px; }
+        .contact-social a { color: #00e5be; text-decoration: none; font-size: .9rem; }
+        .social a { margin: 0 6px; font-size: 1.1rem; color: rgba(255, 255, 255, .7); }
+        .social a:hover { color: #00e5be; }
+        .legal { font-size: .8rem; color: rgba(255, 255, 255, .5); line-height: 1.5; max-width: 700px; margin: auto; }
+
+        /* === Modal Styles === */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8); z-index: 1000; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: rgba(15, 20, 27, .7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .1);
+            max-width: 480px; width: 90%; border-radius: 20px; padding: 24px; box-shadow: 0 0 20px #00e5be33;
+            position: relative; max-height: 80vh; overflow-y: auto;
+        }
+        .modal-header {
+            background: linear-gradient(90deg, #00ddaf, #2ee6be); color: #0f141b; font-weight: 600;
+            padding: 16px; text-align: center; border-radius: 10px 10px 0 0; position: sticky; top: 0; z-index: 10;
+        }
+        .modal-close {
+            position: absolute; right: 16px; top: 16px; background: none; border: none; color: #0f141b;
+            font-size: 20px; cursor: pointer;
+        }
+        .modal-main { padding: 16px; }
+        .modal-main h2 { font-size: 20px; text-align: center; margin-bottom: 12px; }
+        .modal-main .q-item { margin-bottom: 12px; }
+        .modal-main label { display: block; margin-bottom: 4px; color: #00e5be; }
+        .modal-main input, .modal-main textarea {
+            width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .15);
+            background: rgba(255, 255, 255, .06); color: #fff; font-size: 15px;
+        }
+        .modal-main input:focus { border-color: #00e5be; box-shadow: 0 0 8px #00e5be99 inset; }
+        .reason-pill {
+            padding: 10px 18px; border: none; border-radius: 50px; background: rgba(255, 255, 255, .08);
+            color: #fff; margin-right: 8px; cursor: pointer;
+        }
+        .reason-pill.active { background: linear-gradient(90deg, #00ddaf, #2ee6be); color: #0f141b; }
+        .cta-fixed {
+            width: 100%; height: 56px; border: none; border-radius: 12px;
+            background: linear-gradient(90deg, #00ddaf, #2ee6be); color: #0f141b; font-weight: 600; font-size: 16px;
+            box-shadow: 0 0 12px #00e5be66; margin-top: 20px;
+        }
+        .error-text { color: #ff6b6b; font-size: 13px; text-align: center; }
+        .amount { font-size: 40px; color: #00e5be; text-align: center; margin: 10px 0; }
+        #payment-message { color: #ff6b6b; margin-top: 8px; text-align: center; }
+        .reassure { color: #00e5beaa; font-size: 13px; text-align: center; margin-top: 8px; }
+        #step2, #step3 { display: none; }
+        #step3 { padding: 0; }
+
+        /* === Responsive === */
+        @media (max-width: 768px) {
+            h1 { font-size: 1.7rem; }
+            .btn { display: block; margin: .5rem auto; }
+            .doctor-card img { width: 120px; height: 120px; }
+            .availability { font-size: .85rem; padding: .4rem .8rem; }
+            .modal-content { width: 95%; }
+        }
+        /* ---- Disable all hover transforms site-wide ---- */
+@media (hover:hover){
+  *:hover {
+    transform: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+}
+/* --- Master mobile override (place at the very end of CSS) --- */
+@media (max-width: 768px) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+  html, body {
+    position: relative !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    transform: none !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+/* --- Fix hidden hero header on mobile --- */
+/* --- Mobile hero visibility & spacing fix --- */
+@media (max-width:768px){
+  .hero {
+  min-height: auto !important;      /* remove forced full screen height */
+  height: auto !important;
+  padding-bottom: 40px !important;  /* just enough breathing room */
+  margin-bottom: 0 !important;
+  background-attachment: scroll !important; /* prevents scroll-gap on Safari/Chrome */
+}
+
+
+  .hero-content{
+    transform:none !important;
+    margin-top:0 !important;
+    position:relative;
+    z-index:5 !important;
+  }
+
+  .video-bg,
+  .video-fill{
+    height:100%;
+    min-height:100%;
+  }
+}
+
+/* --- Hero Section tweaks --- */
+.hero {
+  position: relative;
+  height: auto;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 80px 16px 40px;
+  background: transparent;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 3;
+  max-width: 900px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 3rem 2rem;
+  box-shadow: 0 0 40px rgba(0, 229, 190, 0.35);
+}
+
+.pricing-info {
+  margin-top: 1.8rem;
+  text-align: center;
+}
+
+.pricing-info h3 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #00e5be;
+  margin: 0;
+}
+
+.pricing-info .pricing-sub {
+  margin-top: 0.4rem;
+  color: #00e5be;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* --- Doctor profile (moved under hero) --- */
+.doctor-profile {
+  text-align: center;
+  padding: 40px 16px 10px;
+}
+
+.doctor-profile img {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 3px solid #00e5be;
+  box-shadow: 0 0 20px rgba(0, 229, 190, 0.45);
+}
+
+.doctor-profile h2 {
+  margin: 12px 0 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.doctor-profile p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* --- Mobile adjustments --- */
+@media (max-width: 768px) {
+  .hero {
+    padding: 60px 10px 30px;
+  }
+  .pricing-info h3 {
+    font-size: 1.3rem;
+  }
+  .pricing-info .pricing-sub {
+    font-size: 0.9rem;
+  }
+  .doctor-profile {
+    padding: 30px 0 10px;
+  }
+}
+/* --- tighten spacing between doctor profile and services --- */
+.doctor-profile {
+  padding: 20px 0 5px !important;   /* reduce top and bottom padding */
+  margin-bottom: 10px !important;   /* closes the gap before "My Services" */
+}
+
+.doctor-profile img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid #00e5be;
+  box-shadow: 0 0 12px rgba(0, 229, 190, 0.4);
+}
+
+#fold2 {
+  margin-top: 0 !important;         /* ensures services section hugs the profile */
+  padding-top: 20px;                /* keeps a little breathing room */
+}
+
+/* optional: slight shrink for mobile */
+@media (max-width:768px){
+  .doctor-profile{
+    padding: 10px 0 0 !important;
+    margin-bottom: 5px !important;
+  }
+  #fold2{
+    padding-top: 15px;
+  }
+}
+.doctor-profile .states {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: #00e5be;                  /* mint green */
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+
+.doctor-profile .states strong {
+  color: #00ffcc;                  /* brighter mint for emphasis */
+}
+/* --- How It Works Section --- */
+#how-it-works {
+  background: transparent;
+  text-align: center;
+  padding: 60px 20px 40px;
+}
+
+#how-it-works .fold2-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #00ddaf, #2ee6be);
+  -webkit-background-clip: text;
+  color: transparent;
+  margin-bottom: 50px;
+}
+
+.how-steps {
+  /* --- Center the icons inside each step --- */
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;    /* centers the icon horizontally */
+  justify-content: flex-start;
+  text-align: center;
+}
+
+
+/* --- Always-lit mint icons --- */
+.step img {
+  width: 50px;
+  height: 50px;
+  margin-bottom: 12px;
+  display: block;
+
+  /* solid mint color + full glow */
+  filter:
+    invert(86%) sepia(66%) saturate(3750%) hue-rotate(125deg) brightness(110%) contrast(105%)
+    drop-shadow(0 0 4px rgba(0, 229, 190, 1))
+    drop-shadow(0 0 10px rgba(0, 229, 190, .9))
+    drop-shadow(0 0 18px rgba(0, 229, 190, .6));
+}
+
+/* no change on hover — stays lit */
+.step:hover img {
+  filter:
+    invert(86%) sepia(66%) saturate(3750%) hue-rotate(125deg) brightness(110%) contrast(105%)
+    drop-shadow(0 0 4px rgba(0, 229, 190, 1))
+    drop-shadow(0 0 10px rgba(0, 229, 190, .9))
+    drop-shadow(0 0 18px rgba(0, 229, 190, .6));
+}
+
+}
+/* --- Add vertical spacing between steps --- */
+.how-steps {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px; /* adjust this number for more or less space */
+}
+/* --- Tighten spacing before How It Works --- */
+.doctor-profile {
+  margin-bottom: 0 !important;     /* remove excess gap below doctor card */
+  padding-bottom: 10px !important; /* leave a little breathing room */
+}
+
+#how-it-works {
+  margin-top: 0 !important;        /* remove any inherited top margin */
+  padding-top: 20px !important;    /* light spacing for balance */
+}
+.doctor-profile {
+  margin-bottom: 24px !important;  /* reduced from ~100px */
+}
+
+#how-it-works {
+  margin-top: 0 !important;
+  padding-top: 24px !important;
+  padding-bottom: 28px;            /* extra separation before next section */
+}
+
+#trust-section, /* or whatever ID follows */
+.trust-section {
+  margin-top: 28px;
+}
+/* === Tell Us Your Symptoms Section === */
+.symptoms-section {
+  background: #0f141b;
+  padding: 60px 20px 40px;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.symptoms-inner {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.symptoms-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #00ddaf, #2ee6be);
+  -webkit-background-clip: text;
+  color: transparent;
+  margin-bottom: 10px;
+}
+
+.symptoms-desc {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 22px;
+  font-size: 0.95rem;
+}
+
+.symptoms-label {
+  display: block;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+#symptoms-input {
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#symptoms-input:focus {
+  border-color: #00e5be;
+  box-shadow: 0 0 8px rgba(0, 229, 190, 0.6);
+}
+
+/* mobile tweaks */
+@media (max-width: 768px) {
+  .symptoms-section {
+    padding: 40px 16px 30px;
+  }
+  #symptoms-input {
+    width: 90%;
+  }
+}
+/* ---------- SMART SEARCH ---------- */
+.suggestions{
+  list-style:none;
+  margin:4px 0 0;
+  padding:0;
+  background:#fff;
+  border-radius:6px;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  position:absolute;
+  width:100%;
+  max-width:420px;
+  z-index:20;
+}
+.suggestions li{padding:8px 12px;cursor:pointer;}
+.suggestions li:hover{background:#00ddb0;color:#fff;}
+#visitButtons{
+  margin-top:10px;
+  text-align:center;
+}
+#visitButtons button{
+  margin:6px 8px 0 0;
+  padding:8px 16px;
+  border:none;
+  border-radius:6px;
+  background:#00ddb0;
+  color:#0b0f12;
+  font-weight:600;
+  cursor:pointer;
+}
+#visitButtons button:hover{background:#0ef1c3;}
+/* === SMART SEARCH FIELD & DROPDOWN (Medazon Theme) === */
+
+/* Input field styling */
+#symptomSearch {
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 221, 176, 0.25);
+  background: rgba(11, 15, 18, 0.6);
+  color: #ffffff;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 0 10px rgba(0, 221, 176, 0.25);
+}
+#symptomSearch::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+#symptomSearch:focus {
+  border-color: #00ddb0;
+  box-shadow: 0 0 12px rgba(0, 221, 176, 0.6);
+  background: rgba(11, 15, 18, 0.8);
+}
+
+/* Dropdown list */
+.suggestions {
+  list-style: none;
+  margin: 8px auto 0;
+  padding: 0;
+  background: rgba(11, 15, 18, 0.9);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 221, 176, 0.3);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 420px;
+  z-index: 100;
+  border: 1px solid rgba(0, 221, 176, 0.25);
+}
+.suggestions li {
+  padding: 10px 16px;
+  color: #f5f7fa;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.suggestions li:hover {
+  background: rgba(0, 221, 176, 0.25);
+  color: #00ddb0;
+}
+
+/* Visit-type buttons under field */
+#visitButtons {
+  margin-top: 16px;
+  text-align: center;
+}
+#visitButtons button {
+  margin: 6px 8px 0 8px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: #00ddb0;
+  color: #0b0f12;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  box-shadow: 0 0 10px rgba(0, 221, 176, 0.4);
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+#visitButtons button:hover {
+  background: #0ef1c3;
+  transform: translateY(-2px);
+}
+@keyframes shake {
+  0%   { transform: translateX(0); }
+  25%  { transform: translateX(-6px); }
+  50%  { transform: translateX(6px); }
+  75%  { transform: translateX(-6px); }
+  100% { transform: translateX(0); }
+}
+
+.input-error {
+  border-color: #ff6b6b !important;
+  box-shadow: 0 0 12px rgba(255, 100, 100, 0.55) !important;
+  animation: shake 0.35s ease;
+}
+    </style>
+
+</head>
+<body>
+    </div>
+    <!-- Hero Section -->
+   <!-- Hero Section -->
+<section class="hero">
+  <div class="veil"></div>
+  <div class="grad"></div>
+
+  <div class="hero-content">
+    <p class="subhead">Online Telehealth Services</p>
+    <h1>Instant Private Medical Visits</h1>
+    <p class="sub">
+      Confidential concierge care within minutes, handled directly a Private Practice Clinicians..
+    </p>
+
+    <div class="cta-group">
+      <a href="#symptoms-section" class="btn primary"
+   onclick="setTimeout(()=>document.getElementById('symptomSearch').focus(),300)">
+   Start an Instant Visit →
+</a>
+      <a href="#symptoms-section" class="btn secondary"
+   onclick="setTimeout(()=>document.getElementById('symptomSearch').focus(),300)">
+   Book My Appointment →
+</a>
+
+    <!-- Pricing Info -->
+    <div class="pricing-info">
+      <h3>No Waiting. No Sign ups. No Account Needed</h3>
+      <p class="pricing-sub">
+        $0.00 to Book — $189.00 Flat Only if Provider Accept 
+      </p>
+    </div>
+
+    <div class="availability">
+      <span class="dot"></span>
+      <span id="timerText">Lamonia — Next available in 05 m 00 s</span>
+    </div>
+
+    <div class="badges">
+      <span class="badge">🟢 HIPAA Secure</span>
+      <span class="badge">💳 Stripe Encrypted</span>
+      <span class="badge" id="locationBadge">🏥 <span id="userState">Florida</span> Licensed</span>
+
+    </div>
+
+    
+  </div>
+</section>
+
+<!-- Doctor Profile (moved below hero) -->
+<section class="doctor-profile">
+  <img
+    src="F381103B-745E-4447-91B2-F1E32951D47F.jpeg"
+    alt="LaMonica Hodges"
+  />
+  <h2>LaMonica A. Hodges, MSN, APRN, FNP-C</h2>
+  <p>
+    Board-Certified Family Medicine · 10 + Years Experience .Private 
+  </p>
+  <p class="states">
+ AL · AZ · CO · DE · FL · <strong>GA</strong> · ID · IL · <strong>MI</strong> · 
+  <strong>MS</strong> · NV · NM · ND · <strong>OH</strong> · OR · UT · VA · WA · DC
+</p>
+
+</section>
+<!-- ✅ Medazon Concierge Checkout Section -->
+
+
+
+<!-- Fold 2: Services, How It Works, Visit Type -->
+<section id="fold2">
+        <div class="fold2-wrapper">
+            <h2 class="fold2-title">Our Services</h2>
+            <p class="fold2-sub">
+                No waiting rooms · No insurance · No records shared.
+            </p>
+            <div class="six-grid">
+                <div class="svc-card" style="background-image:url('https://medazonhealth.com/private/visit/uti-virtual-visit/1.jpg')">
+                    <div class="svc-overlay"><h3>UTI/STD</h3><span>Start in 5 Minutes</span></div>
+                </div>
+                <div class="svc-card" style="background-image:url('	https://medazonhealth.com/private/visit/adhd-evaluation-follow-up/1.jpg')">
+                    <div class="svc-overlay"><h3>Cold / Flu</h3><span>Fast Relief</span></div>
+                </div>
+                <div class="svc-card" style="background-image:url('https://medazonhealth.com/private/visit/COVID-19/3.jpg')">
+                    <div class="svc-overlay"><h3>Anxiety / Depression</h3><span>Private Care</span></div>
+                </div>
+                <div class="svc-card" style="background-image:url('https://medazonhealth.com/private/visit/weight-loss-initial-consultation/1.jpg')">
+                    <div class="svc-overlay"><h3>Weight Care/Injections</h3><span>Clinician Guided</span></div>
+                </div>
+                <div class="svc-card" style="background-image:url('https://medazonhealth.com/private/visit/phone-call-visit/4.jpg')">
+                    <div class="svc-overlay"><h3>ADHD Initial
+/Follow-Up</h3><span>Same Provider</span></div>
+                </div>
+                <div class="svc-card" style="background-image:url('https://medazonhealth.com/private/visit/urgent-care-general/maw.jpg')">
+                    <div class="svc-overlay"><h3>Men / Women's Health</h3><span>Dermatology</span></div>
+                </div>
+                
+            </div>
+            </div>
+            <!-- 🩺 Patient Symptoms Section -->
+<!-- 🩺 Tell Us Your Symptoms -->
+<section id="symptoms-section" class="symptoms-section">
+  <div class="symptoms-inner">
+    <h2 class="symptoms-title">Tell Us Your Symptoms</h2>
+    <p class="symptoms-desc">
+      A brief description helps the provider review quickly.
+    </p>
+    <label for="symptoms-input" class="symptoms-label">What brings you in today?</label>
+  <div style="position:relative;max-width:420px;margin:auto;">
+  <input id="symptomSearch"
+         type="text"
+         placeholder="Type your symptom or condition..."
+         autocomplete="off"
+         disabled>
+  <ul id="suggestions" class="suggestions"></ul>
+</div>
+<div id="visitButtons"></div>
+  <div class="cta-row mid" id="ctaButtons">
+  <a href="#" class="btn primary" id="anonBtn">Start Anonymously →</a>
+  <a href="#" class="btn secondary" id="bookBtn">Book An Appointment →</a>
+</div>
+
+  </a>
+</div>
+</section>
+
+
+
+            <section id="how-it-works" class="mint-section">
+  <h2 class="fold2-title">How It Works</h2>
+  <div class="how-steps">
+    <div class="step">
+      <img src="https://medazonhealth.com/private/visit/video-visit/download (3).svg" alt="Appointment type">
+      <h3>Choose Your Appointment Type</h3>
+      <p>Talk to a Doctor Now or a Book for Later — both private & secure.</p>
+    </div>
+    <div class="step">
+      <img src="https://medazonhealth.com/private/visit/video-visit/download (2).svg" alt="Intake form">
+      <h3>Answer a Few Quick Questions</h3>
+      <p>Complete 3–5 short intake questions to help your provider prepare or send Rx to phamacy when appropriate.</p>
+    </div>
+    <div class="step">
+      <img src="https://medazonhealth.com/private/visit/video-visit/download (1).svg" alt="Chat with provider">
+      <h3>Consult & Receive Treatment</h3>
+      <p>Speak with a U.S.-licensed provider — if appropriate, medication is sent to your local pharmacy.</p>
+    </div>
+  </div>
+</section>
+
+            </div>
+            <h2 class="fold2-title">Choose Your Visit Type</h2>
+            <div class="visit-type-grid">
+                <div class="visit-card">
+                    <img src= "https://medazonhealth.com/private/visit/flu-cold/2.jpg" alt="Instant Visit">
+                    <div class="visit-overlay"><h3>Instant Visit</h3><p>Get Seen Now</p></div>
+                </div>
+                <div class="visit-card">
+                    <img src= "https://medazonhealth.com/private/visit/flu-cold/3.jpg"alt="Phone Visit">
+                    <div class="visit-overlay"><h3>Book an Appointment <span class="optional"></span></h3><p>Select Your Preferred Time</p></div>
                 </div>
 
-                {/* Signed */}
-                {timelineModal.chart_signed_at && (
-                  <div className="relative pb-4">
-                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-green-600 border-2 border-[#0d2626] flex items-center justify-center"><Pen className="w-2.5 h-2.5 text-white" /></div>
-                    <p className="text-xs font-bold text-white">Signed</p>
-                    <p className="text-[10px] text-gray-400">by {timelineModal.chart_signed_by}</p>
-                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.chart_signed_at).toLocaleString()}</p>
-                  </div>
-                )}
-
-                {/* Co-signed */}
-                {timelineModal.cosigned_at && (
-                  <div className="relative pb-4">
-                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-cyan-600 border-2 border-[#0d2626] flex items-center justify-center"><UserCheck className="w-2.5 h-2.5 text-white" /></div>
-                    <p className="text-xs font-bold text-white">Co-signed</p>
-                    <p className="text-[10px] text-gray-400">by {timelineModal.cosigned_by}</p>
-                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.cosigned_at).toLocaleString()}</p>
-                  </div>
-                )}
-
-                {/* Closed */}
-                {timelineModal.chart_closed_at && (
-                  <div className="relative pb-4">
-                    <div className="absolute left-[-15px] w-5 h-5 rounded-full bg-blue-600 border-2 border-[#0d2626] flex items-center justify-center"><Lock className="w-2.5 h-2.5 text-white" /></div>
-                    <p className="text-xs font-bold text-white">Closed & Locked</p>
-                    <p className="text-[10px] text-gray-400">by {timelineModal.chart_closed_by} &bull; PDF generated</p>
-                    <p className="text-[10px] text-gray-500">{new Date(timelineModal.chart_closed_at).toLocaleString()}</p>
-                  </div>
-                )}
-
-                {/* Audit entries */}
-                {timelineLoading ? (
-                  <div className="py-4 flex justify-center"><RefreshCw className="w-4 h-4 animate-spin text-gray-500" /></div>
-                ) : (
-                  timelineEntries.filter(e => !['signed', 'closed'].includes(e.action)).map(entry => (
-                    <div key={entry.id} className="relative pb-4">
-                      <div className={`absolute left-[-15px] w-5 h-5 rounded-full border-2 border-[#0d2626] flex items-center justify-center ${
-                        entry.action.includes('addendum') || entry.action.includes('amended') ? 'bg-purple-600' :
-                        entry.action.includes('unlock') ? 'bg-amber-600' :
-                        entry.action.includes('cosign') ? 'bg-cyan-600' :
-                        entry.action === 'pdf_generated' ? 'bg-teal-600' : 'bg-gray-600'
-                      }`}><History className="w-2.5 h-2.5 text-white" /></div>
-                      <p className="text-xs font-bold text-white capitalize">{entry.action.replace(/_/g, ' ')}</p>
-                      <p className="text-[10px] text-gray-400">by {entry.performed_by_name}</p>
-                      {entry.reason && <p className="text-[10px] text-amber-400">Reason: {entry.reason}</p>}
-                      <p className="text-[10px] text-gray-500">{new Date(entry.created_at).toLocaleString()}</p>
-                    </div>
-                  ))
-                )}
-              </div>
+                </div>
             </div>
+            <div class="cta-row">
+                <button id="talkDoctor" class="cta-primary">Talk to a Doctor Now →</button>
+                <button id="bookLater" class="cta-secondary">Book for Later →</button>
+                </div>
+    </section>
 
-            <button onClick={() => setTimelineModal(null)} className="w-full py-2 rounded-lg border border-[#1a3d3d] text-gray-400 hover:text-white text-sm font-medium transition-colors">Close</button>
-          </div>
+    <!-- Fold 3: FAQ and SEO -->
+    <section id="fold3">
+        <div class="fold3-wrapper">
+            <h2 class="fold3-title">Why Patients Trust Medazon</h2>
+            <p class="fold3-lead">
+                Every visit is reviewed by U.S.-licensed clinicians with years of real-world experience.
+                Our HIPAA-secure platform ensures expert guidance, transparent pricing, and
+                complete privacy from intake to prescription.
+            </p>
+            <div class="cta-row">
+                <button id="talkDoctor" class="cta-primary">Talk to a Doctor Now →</button>
+                <button id="bookLater" class="cta-secondary">Book for Later →</button>
+            </div>
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <button class="faq-question">What conditions can Medazon treat?</button>
+                    <div class="faq-answer">
+                        <p>We handle a broad range of primary-care and wellness concerns —
+                            including refills, weight management, mental health, and urgent issues.
+                            All consultations are reviewed by credentialed providers.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">How fast will a doctor review my intake?</button>
+                    <div class="faq-answer">
+                        <p>Most requests are reviewed within minutes during business hours
+                            and always within a few hours after submission.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">Is my personal information secure?</button>
+                    <div class="faq-answer">
+                        <p>Yes — Medazon uses HIPAA-compliant encryption and never shares or
+                            sells your data. All records are stored privately and securely.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">Do I need insurance?</button>
+                    <div class="faq-answer">
+                        <p>No insurance required. You pay a flat transparent rate for your visit;
+                            prescriptions are sent to your preferred pharmacy.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">Can I choose my provider?</button>
+                    <div class="faq-answer">
+                        <p>You can request to continue with the same provider for follow-ups
+                            to maintain continuity of care.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">What if my case requires in-person care?</button>
+                    <div class="faq-answer">
+                        <p>Our clinicians will guide you to an appropriate local facility if
+                            an in-person evaluation is needed — no extra charge for the referral.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="cta-row mid">
+                <button id="talkDoctor" class="cta-primary">Talk to a Doctor Now →</button>
+                <button id="bookLater" class="cta-secondary">Book for Later →</button>
+                </div>
+            </div>
+            <div class="seo-footer">
+                <p>
+                    Medazon Health provides secure, same-day virtual medical consultations for adults nationwide.
+                    Our board-certified clinicians offer expert telehealth care for common conditions, renewals,
+                    and preventive wellness — establishing trust and accessibility in digital healthcare.
+                </p>
+            </div>
+            
+    </section>
+
+    <!-- Footer -->
+    <footer id="footer">
+        <div class="footer-wrapper">
+            
+            <div class="footer-brand">
+                <h3 class="brand">Medazon Health</h3>
+                <p class="tagline">Secure · Licensed · Private Virtual Care</p>
+            </div>
+            <div class="compliance-links">
+                <a href="/terms">Terms of Service</a>
+                <a href="/privacy">Privacy Policy</a>
+                <a href="/hipaa">HIPAA Notice</a>
+                <a href="/licensure">State Licensure</a>
+                <a href="/consent">Telehealth Consent</a>
+            </div>
+            <div class="contact-social">
+                <a href="mailto:support@medazonhealth.com">support@medazonhealth.com</a>
+                <div class="social">
+                    <a href="https://facebook.com" aria-label="Facebook">🌐</a>
+                    <a href="https://instagram.com" aria-label="Instagram">📸</a>
+                    <a href="https://linkedin.com" aria-label="LinkedIn">💼</a>
+                </div>
+            </div>
+            <p class="legal">
+                © <span id="year"></span> Medazon Health — All rights reserved.<br>
+                Medazon Health operates under U.S. state telehealth regulations.  
+                All visits are reviewed by licensed providers within the United States.
+            </p>
         </div>
-      )}
-      </>)}
-      {/* ═══ END CHARTS TAB ═══ */}
+        <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "MedicalOrganization",
+            "name": "Medazon Health",
+            "url": "https://medazonhealth.com",
+            "logo": "https://medazonhealth.com/assets/logo.png",
+            "sameAs": [
+                "https://facebook.com/medazonhealth",
+                "https://instagram.com/medazonhealth",
+                "https://linkedin.com/company/medazonhealth"
+            ],
+            "contactPoint": {
+                "@type": "ContactPoint",
+                "contactType": "customer support",
+                "email": "support@medazonhealth.com"
+            },
+            "founder": "U.S. Licensed Clinicians",
+            "description": "Medazon Health provides secure, HIPAA-compliant virtual care, prescriptions, and wellness follow-ups across the United States."
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": "What conditions can Medazon treat?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Medazon Health handles primary-care and wellness visits, including refills, weight management, mental health, and urgent care — all by licensed clinicians."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Is my personal information secure?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Yes. Medazon Health follows HIPAA standards and uses full encryption for every interaction."
+                    }
+                }
+            ]
+        }
+        </script>
+    </footer>
 
-      </div>
-    </div>
-  )
+    <script>
+        // Reset & Step Control Logic
+            document.querySelectorAll('.reason-pill').forEach(pill => pill.classList.remove('active'));
+            document.querySelectorAll('.modal-main input').forEach(input => input.value = '');
+            document.getElementById('step1Error').textContent = '';
+            document.getElementById('step2Error').textContent = '';
+            document.getElementById('payment-message').textContent = '';
+            document.getElementById('reassure').textContent = '';
+        });
+
+        // Step control
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const step3 = document.getElementById('step3');
+
+        document.querySelectorAll('.reason-pill').forEach(b => b.addEventListener('click', () => {
+            document.querySelectorAll('.reason-pill').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+        }));
+
+        document.getElementById('toStep2').onclick = () => {
+            if ([...step1.querySelectorAll('input')].every(i => i.value.trim()) && document.querySelector('.reason-pill.active')) {
+                step1.style.display = 'none';
+                step2.style.display = 'block';
+                document.getElementById('step1Error').textContent = '';
+            } else {
+                document.getElementById('step1Error').textContent = 'Please complete all fields and select a reason for your visit.';
+            }
+        };
+
+        document.getElementById('toStep3').onclick = () => {
+            if ([...step2.querySelectorAll('input')].every(i => i.value.trim())) {
+                step2.style.display = 'none';
+                document.getElementById('step2Error').textContent = '';
+                // Simulate review animation
+                setTimeout(() => { step3.style.display = 'block'; }, 2000);
+            } else {
+                document.getElementById('step2Error').textContent = 'Please complete all information.';
+            }
+        };
+
+        // Stripe initialization
+        const stripe = Stripe('pk_test_12345');
+        const elements = stripe.elements({ appearance: { theme: 'night' } });
+        const cardElement = elements.create('card', {
+            style: {
+                base: {
+                    color: '#fff',
+                    iconColor: '#00e5be',
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                    '::placeholder': { color: '#999' }
+                },
+                invalid: { color: '#ff6b6b', iconColor: '#ff6b6b' }
+            }
+        });
+        cardElement.mount('#card-element');
+
+        document.getElementById('confirm').addEventListener('click', async () => {
+            document.getElementById('payment-message').textContent = '';
+            document.getElementById('reassure').textContent = '';
+            try {
+                const res = await fetch('/api/create-payment-intent', { method: 'POST' });
+                if (!res.ok) throw new Error('No server');
+                const { clientSecret } = await res.json();
+                const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card: cardElement } });
+                if (result.error) {
+                    document.getElementById('payment-message').textContent = result.error.message;
+                    document.getElementById('reassure').textContent = "We’re here for you — please double-check your card details or contact support if you need help.";
+                    fetch('/api/send-support-sms', { method: 'POST' });
+                } else if (result.paymentIntent.status === 'succeeded') {
+                    document.getElementById('payment-message').style.color = '#00e5be';
+                    document.getElementById('payment-message').textContent = '✅ Approved — your provider will review shortly.';
+                }
+            } catch (e) {
+                document.getElementById('payment-message').textContent = 'Unable to reach server — please retry.';
+            }
+        });
+
+        // Timer for availability
+        let totalSeconds = 5 * 60;
+        const timer = document.getElementById('timerText');
+        const dot = document.querySelector('.dot');
+        function updateTimer() {
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+            timer.textContent = \` LaMonica's — Next available in ${m.toString().padStart(2, '0')} m ${s.toString().padStart(2, '0')} s\`;
+            if (totalSeconds <= 0) {
+                dot.style.background = '#00DDB0';
+                timer.textContent = "🟢LaMonica is available now";
+                clearInterval(interval);
+            }
+            totalSeconds--;
+        }
+        const interval = setInterval(updateTimer, 1000);
+
+        // Fold 2 scroll animation
+        // Fold 2 scroll animation (desktop only)
+// ---- Fold 2 slide-in animation (mobile-safe) ----
+document.addEventListener("DOMContentLoaded", () => {
+  const fold2 = document.getElementById("fold2");
+  if (!fold2) return;
+
+  const targets = fold2.querySelectorAll(".svc-card, .how-step, .visit-card");
+
+  // Start hidden
+  targets.forEach(el => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(40px)";
+    el.style.transition = "opacity 0.6s ease, transform 0.6s ease";
+  });
+
+  const reveal = (entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = "1";
+        entry.target.style.transform = "translateY(0)";
+        observer.unobserve(entry.target);   // reveal only once
+      }
+    });
+  };
+
+  // IntersectionObserver = efficient slide-in
+  const observer = new IntersectionObserver(reveal, {
+    threshold: 0.1,
+    rootMargin: "0px 0px -10% 0px"
+  });
+
+  targets.forEach(el => observer.observe(el));
+});
+
+
+        // Fold 3 FAQ collapse and scroll animation
+        document.querySelectorAll('.faq-question').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const item = btn.parentElement;
+                item.classList.toggle('active');
+            });
+        });
+
+// ---- Fold 2 slide-in animation (mobile-safe) ----
+document.addEventListener("DOMContentLoaded", () => {
+  const fold2 = document.getElementById("fold2");
+  if (!fold2) return;
+
+  const targets = fold2.querySelectorAll(".svc-card, .how-step, .visit-card");
+
+  // Start hidden
+  targets.forEach(el => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(40px)";
+    el.style.transition = "opacity 0.6s ease, transform 0.6s ease";
+  });
+
+  const reveal = (entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = "1";
+        entry.target.style.transform = "translateY(0)";
+        observer.unobserve(entry.target);   // reveal only once
+      }
+    });
+  };
+
+  // IntersectionObserver = efficient slide-in
+  const observer = new IntersectionObserver(reveal, {
+    threshold: 0.1,
+    rootMargin: "0px 0px -10% 0px"
+  });
+
+  targets.forEach(el => observer.observe(el));
+});
+
+
+        // Dynamic year in footer
+        document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+      <!-- Smart Search -->
+<script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+<script>
+/* -------------------------
+   CONDITION LIST
+-------------------------- */
+const list = [
+  { symptom:"burning urination", name:"Urinary Tract Infection (UTI)" },
+  { symptom:"headache", name:"Migraine / Headache" },
+  { symptom:"stomach pain", name:"Abdominal Pain / Indigestion" },
+  { symptom:"nausea", name:"Gastroenteritis / Food Poisoning" },
+  { symptom:"weight loss", name:"Weight Management / GLP-1 Consultation" },
+  { symptom:"adhd", name:"ADHD Evaluation / Focus Issues" },
+  { symptom:"anxiety", name:"Anxiety / Depression" },
+  { symptom:"birth control", name:"Birth Control / Contraception" },
+  { symptom:"rash", name:"Rash / Allergic Reaction" },
+  { symptom:"cold", name:"Cold / Flu / Sinus Infection" },
+  { symptom:"back pain", name:"Back Pain / Muscle Strain" },
+  { symptom:"private reason", name:"Private / Sensitive Concern" },
+  { name:"Something Else" }
+];
+
+let fuse = new Fuse(list, { keys:["symptom","name"], threshold:0.35 });
+
+/* -------------------------
+   DOM ELEMENTS
+-------------------------- */
+const input        = document.getElementById("symptomSearch");
+const listEl       = document.getElementById("suggestions");
+const btnBox       = document.getElementById("visitButtons");
+const ctaButtons   = document.getElementById("ctaButtons");
+
+input.disabled = false;
+
+/* -------------------------
+   CTA HIDE / SHOW
+-------------------------- */
+function hideCTAButtons() {
+  if (ctaButtons) ctaButtons.style.display = "none";
 }
+function showCTAButtons() {
+  if (ctaButtons) ctaButtons.style.display = "flex";
+}
+
+/* -------------------------
+   AUTOCOMPLETE
+-------------------------- */
+input.addEventListener("input", e => {
+  const val = e.target.value.trim().toLowerCase();
+
+  listEl.innerHTML = "";
+  btnBox.innerHTML = "";
+
+  // hide CTA buttons while typing
+  hideCTAButtons();
+
+  if (!val) return;
+
+  const results = fuse.search(val).map(r => r.item);
+
+  if (!results.find(r => r.name === "Something Else")) {
+    results.push({ name: "Something Else" });
+  }
+
+  results.slice(0, 8).forEach(item => {
+    const li = document.createElement("li");
+    li.textContent = item.name;
+    li.onclick = () => handleSelection(item);
+    listEl.appendChild(li);
+  });
+});
+
+/* -------------------------
+   HANDLE CONDITION SELECTION
+-------------------------- */
+function handleSelection(item){
+  listEl.innerHTML = "";
+
+  if (item.name === "Something Else") {
+    input.value = "";
+    input.placeholder = "Describe your condition...";
+    input.disabled = false;
+    input.focus();
+  } else {
+    input.value = item.name;
+    input.disabled = false;
+
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }, 10);
+  }
+
+  // Hide CTA buttons once condition selected
+  hideCTAButtons();
+
+  // Show NEXT button
+  btnBox.innerHTML = `
+    <button id="nextButton" class="btn primary">NEXT →</button>
+  `;
+
+  document.getElementById("nextButton").onclick = () => {
+    const selected = input.value.trim();
+    if (!selected) {
+      alert("Please select a condition before continuing.");
+      input.focus();
+      return;
+    }
+    // NEXT routing:
+    window.location.href =
+      "https://medazonhealth.com/private/uti-std/florida/intake-flow.html?type=async&condition=" +
+      encodeURIComponent(selected);
+  };
+}
+
+/* -------------------------
+   BLOCK CTA BUTTONS UNTIL CONDITION SELECTED
+-------------------------- */
+function enforceConditionBeforeCTA(evt) {
+    const val = input.value.trim();
+
+    if (!val) {
+        evt.preventDefault();
+
+        // shake animation on the input
+        input.classList.add("input-error");
+
+        // auto-remove shake class after animation
+        setTimeout(() => {
+            input.classList.remove("input-error");
+        }, 400);
+
+        // focus + scroll to field
+        input.focus();
+        document
+            .getElementById("symptoms-section")
+            .scrollIntoView({ behavior: "smooth" });
+
+        return false;
+    }
+
+    return true;
+}
+
+document.getElementById("anonBtn")?.addEventListener("click", enforceConditionBeforeCTA);
+document.getElementById("bookBtn")?.addEventListener("click", enforceConditionBeforeCTA);
+</script>
+</body>
+</html>
