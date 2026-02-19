@@ -1,14 +1,15 @@
 'use client'
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import MedazonScribe, { SoapNotes } from './MedazonScribe'
-import CommunicationDialer from './CommunicationDialer'
 import {
   Video, Phone, PhoneOff, PhoneCall, Mail, Stethoscope,
   Maximize2, Minimize2, X, ExternalLink, Clock, Copy,
   MessageSquare, Send, Circle, Square, Lock, Unlock, RefreshCw,
-  ChevronLeft, ChevronRight, Loader2, Hash, ArrowLeft
+  ChevronLeft, ChevronRight, Loader2, ArrowLeft
 } from 'lucide-react'
+
 // ═══════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════
@@ -27,10 +28,7 @@ interface CurrentUser {
 }
 interface DailyMeetingEmbedProps {
   appointment: AppointmentData | null
-  currentUser: CurrentUser | null
-  isCustomizeMode?: boolean
-  sectionProps?: Record<string, unknown>
-  sectionId?: string
+  currentUser?: CurrentUser | null
   patientPhone?: string
   patientName?: string
   patientEmail?: string
@@ -40,26 +38,22 @@ interface DailyMeetingEmbedProps {
   onSendQuickSms?: (message: string) => void
   onSoapGenerated?: (soap: SoapNotes) => void
   onClose?: () => void
+  /** 'inline' = fills parent (grid mode), 'floating' = fixed overlay */
+  mode?: 'inline' | 'floating'
 }
 interface VideoPanelPrefs {
-  posX: number
-  posY: number
-  width: number
-  height: number
-  locked: boolean
-  minimized: boolean
+  posX: number; posY: number; width: number; height: number
+  locked: boolean; minimized: boolean
 }
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'ended' | 'failed'
 type SidePanel = 'dialpad' | 'sms' | 'email' | 'scribe'
 interface SmsMessage {
-  id: string
-  direction: 'inbound' | 'outbound'
-  body: string
-  created_at: string
-  status?: string
+  id: string; direction: 'inbound' | 'outbound'; body: string
+  created_at: string; status?: string
 }
+
 // ═══════════════════════════════════════════════════════════════
-// PHONE NORMALIZATION (+1 for US)
+// HELPERS
 // ═══════════════════════════════════════════════════════════════
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/[^\d+]/g, '')
@@ -71,36 +65,38 @@ function normalizePhone(phone: string): string {
   return `+1${justDigits}`
 }
 function formatPhoneDisplay(phone: string): string {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('1')) {
-    const area = digits.slice(1, 4)
-    const pre = digits.slice(4, 7)
-    const line = digits.slice(7, 11)
-    return `+1 (${area}) ${pre}-${line}`
-  }
-  return normalized
+  const n = normalizePhone(phone)
+  const d = n.replace(/\D/g, '')
+  if (d.length === 11 && d.startsWith('1')) return `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`
+  return n
 }
+const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const DEFAULT_POS = { x: 60, y: 40 }
 const DEFAULT_SIZE = { width: 580, height: 640 }
-const MIN_WIDTH = 420
-const MIN_HEIGHT = 400
+const MIN_W = 380
+const MIN_H = 360
 const PREFS_KEY = 'video_panel_layout'
+
 // ═══════════════════════════════════════════════════════════════
-// SMALL COMPONENTS
+// DIALPAD BUTTON
 // ═══════════════════════════════════════════════════════════════
 function DialpadBtn({ digit, sub, onClick }: { digit: string; sub?: string; onClick: (d: string) => void }) {
   return (
     <button onClick={() => onClick(digit)}
-      className="w-12 h-12 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
-      <span className="text-base font-bold text-white leading-none">{digit}</span>
+      className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
+      <span className="text-base sm:text-lg font-bold text-white leading-none">{digit}</span>
       {sub && <span className="text-[7px] text-white/25 uppercase tracking-widest leading-none mt-0.5">{sub}</span>}
     </button>
   )
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DAILY IFRAME
+// ═══════════════════════════════════════════════════════════════
 function DailyIframe({ roomUrl }: { roomUrl: string }) {
   if (!roomUrl) return <div className="text-white p-4 text-sm">No meeting URL found.</div>
   return (
@@ -110,15 +106,38 @@ function DailyIframe({ roomUrl }: { roomUrl: string }) {
       referrerPolicy="no-referrer-when-downgrade" />
   )
 }
+
+// ═══════════════════════════════════════════════════════════════
+// RESIZE EDGES COMPONENT — 8 handles for all edges + corners
+// ═══════════════════════════════════════════════════════════════
+type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+function ResizeHandles({ onStart }: { onStart: (e: React.MouseEvent, edge: Edge) => void }) {
+  const edges: { edge: Edge; cls: string }[] = [
+    { edge: 'n',  cls: 'top-0 left-3 right-3 h-1.5 cursor-ns-resize' },
+    { edge: 's',  cls: 'bottom-0 left-3 right-3 h-1.5 cursor-ns-resize' },
+    { edge: 'w',  cls: 'left-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
+    { edge: 'e',  cls: 'right-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
+    { edge: 'nw', cls: 'top-0 left-0 w-3 h-3 cursor-nwse-resize' },
+    { edge: 'ne', cls: 'top-0 right-0 w-3 h-3 cursor-nesw-resize' },
+    { edge: 'sw', cls: 'bottom-0 left-0 w-3 h-3 cursor-nesw-resize' },
+    { edge: 'se', cls: 'bottom-0 right-0 w-3 h-3 cursor-nwse-resize' },
+  ]
+  return (
+    <>
+      {edges.map(({ edge, cls }) => (
+        <div key={edge} className={`absolute z-20 hover:bg-cyan-400/20 transition-colors ${cls}`}
+          onMouseDown={e => onStart(e, edge)} />
+      ))}
+    </>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
 export default function DailyMeetingEmbed({
   appointment,
-  currentUser: _currentUser,
-  isCustomizeMode = false,
-  sectionProps = {},
-  sectionId,
+  currentUser,
   patientPhone = '',
   patientName = '',
   patientEmail = '',
@@ -128,51 +147,71 @@ export default function DailyMeetingEmbed({
   onSendQuickSms,
   onSoapGenerated,
   onClose,
+  mode: initialMode = 'inline',
 }: DailyMeetingEmbedProps) {
-  // ─── Layout prefs ───
+
+  // ─── Render mode ───
+  const [renderMode, setRenderMode] = useState<'inline' | 'floating'>(initialMode)
+  const isFloating = renderMode === 'floating'
+
+  // ─── Layout prefs (floating mode) ───
   const [position, setPosition] = useState(DEFAULT_POS)
   const [size, setSize] = useState(DEFAULT_SIZE)
   const [locked, setLocked] = useState(false)
   const [minimized, setMinimized] = useState(false)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
+
   // ─── Video state ───
   const [meetingActive, setMeetingActive] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+
   // ─── Side panel carousel ───
   const [openPanels, setOpenPanels] = useState<SidePanel[]>([])
   const [activePanelIdx, setActivePanelIdx] = useState(0)
+
   // ─── Dialpad ───
   const [dialNumber, setDialNumber] = useState(patientPhone ? normalizePhone(patientPhone) : '')
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [callDuration, setCallDuration] = useState(0)
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // ─── SMS ───
   const [smsText, setSmsText] = useState('')
   const [smsSending, setSmsSending] = useState(false)
   const [smsMessages, setSmsMessages] = useState<SmsMessage[]>([])
   const [smsLoading, setSmsLoading] = useState(false)
   const smsEndRef = useRef<HTMLDivElement>(null)
+
   // ─── Email ───
   const [emailTo, setEmailTo] = useState(patientEmail)
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
   const [emailSending, setEmailSending] = useState(false)
   const [emailSuccess, setEmailSuccess] = useState(false)
+
   // ─── Countdown ───
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number; isPast: boolean } | null>(null)
+
+  // ─── Portal mount ───
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
+  useEffect(() => { setPortalTarget(document.body) }, [])
+
   // ─── Drag / resize refs ───
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; edge: string } | null>(null)
+  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; origX: number; origY: number; edge: Edge } | null>(null)
   const prefsRef = useRef<VideoPanelPrefs>({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false })
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Sync props
   useEffect(() => { if (patientPhone) setDialNumber(normalizePhone(patientPhone)) }, [patientPhone])
   useEffect(() => { setEmailTo(patientEmail) }, [patientEmail])
+
   const hasOpenPanel = openPanels.length > 0
   const activePanel = openPanels[activePanelIdx] || null
+
   // ═══════════════════════════════════════════════════════════════
   // PANEL ACTIONS
   // ═══════════════════════════════════════════════════════════════
@@ -198,11 +237,12 @@ export default function DailyMeetingEmbed({
   }, [])
   const navPrev = useCallback(() => setActivePanelIdx(i => Math.max(0, i - 1)), [])
   const navNext = useCallback(() => setActivePanelIdx(i => Math.min(openPanels.length - 1, i + 1)), [openPanels.length])
+
   // ═══════════════════════════════════════════════════════════════
-  // PREFS PERSISTENCE
+  // PREFS PERSISTENCE (floating mode)
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (prefsLoaded) return
+    if (prefsLoaded || !isFloating) return
     let cancelled = false
     const load = async () => {
       try {
@@ -222,7 +262,8 @@ export default function DailyMeetingEmbed({
     }
     load()
     return () => { cancelled = true }
-  }, [prefsLoaded])
+  }, [prefsLoaded, isFloating])
+
   const savePrefs = useCallback((updates: Partial<VideoPanelPrefs>) => {
     prefsRef.current = { ...prefsRef.current, ...updates }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -230,52 +271,69 @@ export default function DailyMeetingEmbed({
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        await supabase.from('doctor_preferences').upsert({ doctor_id: user.id, preference_key: PREFS_KEY, preference_value: prefsRef.current, updated_at: new Date().toISOString() }, { onConflict: 'doctor_id,preference_key' })
+        await supabase.from('doctor_preferences').upsert(
+          { doctor_id: user.id, preference_key: PREFS_KEY, preference_value: prefsRef.current, updated_at: new Date().toISOString() },
+          { onConflict: 'doctor_id,preference_key' }
+        )
       } catch { /* silent */ }
     }, 500)
   }, [])
+
   // ═══════════════════════════════════════════════════════════════
-  // DRAG
+  // DRAG (floating mode only)
   // ═══════════════════════════════════════════════════════════════
   const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (locked) return
+    if (!isFloating || locked) return
     if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
     e.preventDefault()
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: position.x, origY: position.y }
     const move = (ev: MouseEvent) => {
       if (!dragRef.current) return
-      setPosition({ x: Math.max(0, dragRef.current.origX + (ev.clientX - dragRef.current.startX)), y: Math.max(0, dragRef.current.origY + (ev.clientY - dragRef.current.startY)) })
+      const nx = dragRef.current.origX + (ev.clientX - dragRef.current.startX)
+      const ny = dragRef.current.origY + (ev.clientY - dragRef.current.startY)
+      setPosition({ x: Math.max(-size.width + 100, Math.min(nx, window.innerWidth - 100)), y: Math.max(0, Math.min(ny, window.innerHeight - 50)) })
     }
     const up = () => {
+      if (dragRef.current) {
+        const el = panelRef.current
+        if (el) savePrefs({ posX: parseInt(el.style.left) || position.x, posY: parseInt(el.style.top) || position.y })
+      }
       dragRef.current = null
       document.removeEventListener('mousemove', move)
       document.removeEventListener('mouseup', up)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      const el = panelRef.current
-      if (el) savePrefs({ posX: parseInt(el.style.left) || position.x, posY: parseInt(el.style.top) || position.y })
     }
     document.body.style.cursor = 'grabbing'
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', move)
     document.addEventListener('mouseup', up)
-  }, [locked, position, savePrefs])
+  }, [isFloating, locked, position, size.width, savePrefs])
+
   // ═══════════════════════════════════════════════════════════════
-  // RESIZE
+  // RESIZE — all 8 edges (floating mode only)
   // ═══════════════════════════════════════════════════════════════
-  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (locked) return
+  const handleResizeStart = useCallback((e: React.MouseEvent, edge: Edge) => {
+    if (!isFloating || locked) return
     e.preventDefault()
     e.stopPropagation()
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: size.width, origH: size.height, edge }
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: size.width, origH: size.height, origX: position.x, origY: position.y, edge }
     const move = (ev: MouseEvent) => {
       if (!resizeRef.current) return
       const dx = ev.clientX - resizeRef.current.startX
       const dy = ev.clientY - resizeRef.current.startY
-      let w = resizeRef.current.origW, h = resizeRef.current.origH
-      if (edge.includes('r')) w = Math.max(MIN_WIDTH, w + dx)
-      if (edge.includes('b')) h = Math.max(MIN_HEIGHT, h + dy)
-      setSize({ width: Math.min(w, window.innerWidth * 0.95), height: Math.min(h, window.innerHeight * 0.95) })
+      const r = resizeRef.current
+      let w = r.origW, h = r.origH, x = r.origX, y = r.origY
+      // East edges
+      if (edge.includes('e')) w = Math.max(MIN_W, Math.min(r.origW + dx, window.innerWidth * 0.95))
+      // West edges
+      if (edge.includes('w')) { const nw = Math.max(MIN_W, r.origW - dx); x = r.origX + (r.origW - nw); w = nw }
+      // South edges
+      if (edge.includes('s')) h = Math.max(MIN_H, Math.min(r.origH + dy, window.innerHeight * 0.95))
+      // North edges
+      if (edge === 'n' || edge === 'ne' || edge === 'nw') { const nh = Math.max(MIN_H, r.origH - dy); y = r.origY + (r.origH - nh); h = nh }
+      setSize({ width: w, height: h })
+      setPosition({ x, y })
     }
     const up = () => {
       resizeRef.current = null
@@ -284,23 +342,31 @@ export default function DailyMeetingEmbed({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
-    document.body.style.cursor = edge === 'rb' ? 'nwse-resize' : edge === 'r' ? 'ew-resize' : 'ns-resize'
+    const cursors: Record<string, string> = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize', sw: 'nesw-resize' }
+    document.body.style.cursor = cursors[edge] || 'nwse-resize'
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', move)
     document.addEventListener('mouseup', up)
-  }, [locked, size])
-  // Save size
+  }, [isFloating, locked, size, position])
+
+  // Save size on change
   useEffect(() => {
-    if (!prefsLoaded) return
-    const t = setTimeout(() => savePrefs({ width: size.width, height: size.height }), 300)
+    if (!prefsLoaded || !isFloating) return
+    const t = setTimeout(() => savePrefs({ width: size.width, height: size.height, posX: position.x, posY: position.y }), 300)
     return () => clearTimeout(t)
-  }, [size.width, size.height, prefsLoaded, savePrefs])
+  }, [size.width, size.height, position.x, position.y, prefsLoaded, isFloating, savePrefs])
+
   // ═══════════════════════════════════════════════════════════════
-  // LOCK / MINIMIZE / RESET
+  // LOCK / MINIMIZE / RESET / POP-OUT
   // ═══════════════════════════════════════════════════════════════
   const handleToggleLock = useCallback(() => setLocked(v => { const n = !v; savePrefs({ locked: n }); return n }), [savePrefs])
   const handleToggleMinimize = useCallback(() => setMinimized(v => { const n = !v; savePrefs({ minimized: n }); return n }), [savePrefs])
-  const handleReset = useCallback(() => { setPosition(DEFAULT_POS); setSize(DEFAULT_SIZE); setLocked(false); setMinimized(false); savePrefs({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false }) }, [savePrefs])
+  const handleReset = useCallback(() => {
+    setPosition(DEFAULT_POS); setSize(DEFAULT_SIZE); setLocked(false); setMinimized(false)
+    savePrefs({ posX: DEFAULT_POS.x, posY: DEFAULT_POS.y, ...DEFAULT_SIZE, locked: false, minimized: false })
+  }, [savePrefs])
+  const handlePopOut = useCallback(() => setRenderMode(m => m === 'inline' ? 'floating' : 'inline'), [])
+
   // ═══════════════════════════════════════════════════════════════
   // COUNTDOWN
   // ═══════════════════════════════════════════════════════════════
@@ -316,12 +382,14 @@ export default function DailyMeetingEmbed({
     const iv = setInterval(update, 1000)
     return () => clearInterval(iv)
   }, [appointment?.requested_date_time])
+
   const countdownText = useMemo(() => {
     if (!timeRemaining) return ''
     const { hours, minutes, seconds, isPast } = timeRemaining
     const t = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`
     return isPast ? `Started ${t} ago` : `Starts in ${t}`
   }, [timeRemaining])
+
   // ═══════════════════════════════════════════════════════════════
   // JOIN URL
   // ═══════════════════════════════════════════════════════════════
@@ -333,15 +401,21 @@ export default function DailyMeetingEmbed({
       return url.toString()
     } catch { return appointment.dailyco_meeting_url }
   }, [appointment?.dailyco_meeting_url, appointment?.dailyco_owner_token])
+
   // ═══════════════════════════════════════════════════════════════
   // MEETING
   // ═══════════════════════════════════════════════════════════════
   const handleStartMeeting = useCallback(() => setMeetingActive(true), [])
-  const handleEndMeeting = useCallback(() => { setMeetingActive(false); setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null }; setRecordingTime(0) }, [])
+  const handleEndMeeting = useCallback(() => {
+    setMeetingActive(false); setIsRecording(false)
+    if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null }
+    setRecordingTime(0)
+  }, [])
   const handleToggleRecording = useCallback(() => {
     if (isRecording) { setIsRecording(false); if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null } }
     else { setIsRecording(true); setRecordingTime(0); recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000) }
   }, [isRecording])
+
   // ═══════════════════════════════════════════════════════════════
   // DIALPAD / CALL
   // ═══════════════════════════════════════════════════════════════
@@ -361,57 +435,45 @@ export default function DailyMeetingEmbed({
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null }
     setTimeout(() => setCallStatus('idle'), 3000)
   }, [])
+
   // ═══════════════════════════════════════════════════════════════
-  // SMS — SEND + RECEIVE + REALTIME
+  // SMS
   // ═══════════════════════════════════════════════════════════════
   const fetchSmsHistory = useCallback(async () => {
     if (!patientPhone) return
     setSmsLoading(true)
     try {
-      const normalized = normalizePhone(patientPhone)
-      const digits = normalized.replace(/\D/g, '')
-      const { data } = await supabase
-        .from('communication_logs')
-        .select('id, direction, body, created_at, status')
-        .eq('type', 'sms')
-        .or(`to_number.ilike.%${digits.slice(-10)},from_number.ilike.%${digits.slice(-10)}`)
-        .order('created_at', { ascending: true })
-        .limit(50)
+      const digits = normalizePhone(patientPhone).replace(/\D/g, '')
+      const { data } = await supabase.from('communication_logs').select('id, direction, body, created_at, status')
+        .eq('type', 'sms').or(`to_number.ilike.%${digits.slice(-10)},from_number.ilike.%${digits.slice(-10)}`)
+        .order('created_at', { ascending: true }).limit(50)
       if (data) setSmsMessages(data as SmsMessage[])
     } catch { /* silent */ }
     finally { setSmsLoading(false) }
   }, [patientPhone])
-  // Fetch on SMS panel open
+
   useEffect(() => {
     if (openPanels.includes('sms') && patientPhone) fetchSmsHistory()
   }, [openPanels, patientPhone, fetchSmsHistory])
-  // Realtime subscription for inbound SMS
+
+  // Realtime SMS subscription
   useEffect(() => {
     if (!openPanels.includes('sms') || !patientPhone) return
     const digits = normalizePhone(patientPhone).replace(/\D/g, '').slice(-10)
-    const channel = supabase
-      .channel(`sms-${digits}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'communication_logs',
-        filter: `type=eq.sms`,
-      }, (payload) => {
-        const row = payload.new as any
-        const fromDigits = (row.from_number || '').replace(/\D/g, '').slice(-10)
-        const toDigits = (row.to_number || '').replace(/\D/g, '').slice(-10)
-        if (fromDigits === digits || toDigits === digits) {
-          setSmsMessages(prev => {
-            if (prev.some(m => m.id === row.id)) return prev
-            return [...prev, { id: row.id, direction: row.direction, body: row.body, created_at: row.created_at, status: row.status }]
-          })
+    const channel = supabase.channel(`sms-${digits}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'communication_logs', filter: 'type=eq.sms' }, (payload) => {
+        const row = payload.new as Record<string, string>
+        const from = (row.from_number || '').replace(/\D/g, '').slice(-10)
+        const to = (row.to_number || '').replace(/\D/g, '').slice(-10)
+        if (from === digits || to === digits) {
+          setSmsMessages(prev => prev.some(m => m.id === row.id) ? prev : [...prev, { id: row.id, direction: row.direction as 'inbound' | 'outbound', body: row.body, created_at: row.created_at, status: row.status }])
         }
-      })
-      .subscribe()
+      }).subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [openPanels, patientPhone])
-  // Auto-scroll SMS
+
   useEffect(() => { smsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [smsMessages])
+
   const handleSendSms = useCallback(async () => {
     if (!smsText.trim() || !patientPhone) return
     setSmsSending(true)
@@ -422,7 +484,7 @@ export default function DailyMeetingEmbed({
         const { data: { session } } = await supabase.auth.getSession()
         await fetch('/api/communication/sms', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: session?.access_token ? `Bearer ${session.access_token}` : '' },
-          body: JSON.stringify({ to, message: smsText, patientId: undefined, appointmentId: appointment?.id }),
+          body: JSON.stringify({ to, message: smsText, appointmentId: appointment?.id }),
         })
       }
       setSmsText('')
@@ -430,6 +492,7 @@ export default function DailyMeetingEmbed({
     } catch (err) { console.error('SMS send error:', err) }
     finally { setSmsSending(false) }
   }, [smsText, patientPhone, onSendQuickSms, appointment?.id, fetchSmsHistory])
+
   // ═══════════════════════════════════════════════════════════════
   // EMAIL
   // ═══════════════════════════════════════════════════════════════
@@ -439,17 +502,17 @@ export default function DailyMeetingEmbed({
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const auth = session?.access_token ? `Bearer ${session.access_token}` : ''
-      // Try Gmail first, fallback to SMTP
       let res = await fetch('/api/gmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
       if (!res.ok) {
         res = await fetch('/api/communication/email', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ to: emailTo, subject: emailSubject, body: emailBody, appointmentId: appointment?.id }) })
       }
-      if (!res.ok) throw new Error('Failed to send email')
+      if (!res.ok) throw new Error('Failed')
       setEmailSuccess(true); setEmailSubject(''); setEmailBody('')
       setTimeout(() => setEmailSuccess(false), 3000)
     } catch (err) { console.error('Email error:', err) }
     finally { setEmailSending(false) }
   }, [emailTo, emailSubject, emailBody, appointment?.id])
+
   // ═══════════════════════════════════════════════════════════════
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════
@@ -458,220 +521,358 @@ export default function DailyMeetingEmbed({
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
   }, [])
+
   // ═══════════════════════════════════════════════════════════════
-  // HELPERS
+  // SMALL HELPERS
   // ═══════════════════════════════════════════════════════════════
-  const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
   const copyText = (t: string) => { navigator.clipboard?.writeText(t) }
   const panelLabel = (p: SidePanel) => p === 'dialpad' ? 'Dialpad' : p === 'sms' ? 'SMS' : p === 'email' ? 'Email' : 'Scribe'
+
   // ═══════════════════════════════════════════════════════════════
-  // RENDER
+  // PANEL CONTENT — shared between inline and floating
   // ═══════════════════════════════════════════════════════════════
-  return (
-    <div key={sectionId} {...(sectionProps as React.HTMLAttributes<HTMLDivElement>)} className="relative">
-      {isCustomizeMode && (
-        <div className="absolute -top-2 -left-2 z-10 bg-purple-600 text-white p-1 rounded-full">
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+  const panelContent = (
+    <div className="flex flex-col w-full h-full min-h-0">
+      {/* ═══════ HEADER ═══════ */}
+      <div className={`flex items-center justify-between px-2 sm:px-3 py-2 border-b border-white/10 flex-shrink-0 select-none ${isFloating && !locked ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        onMouseDown={isFloating ? handleDragStart : undefined}>
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 overflow-hidden">
+          <Video className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+          <span className="text-xs sm:text-sm font-bold text-white truncate">Video Consultation</span>
+          {meetingActive && isRecording && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full flex-shrink-0">
+              <Circle className="w-2 h-2 text-red-500 fill-red-500 animate-pulse" />
+              <span className="text-[10px] font-bold text-red-400 font-mono">{fmt(recordingTime)}</span>
+            </div>
+          )}
+          {timeRemaining && !meetingActive && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-white/5 rounded-full flex-shrink-0">
+              <Clock className="w-3 h-3 text-white/40" />
+              <span className={`text-[9px] sm:text-[10px] font-bold ${timeRemaining.isPast ? 'text-yellow-400' : 'text-white/50'}`}>{countdownText}</span>
+            </div>
+          )}
+          {(meetingActive || callStatus === 'connected') && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-500/25 rounded-full flex-shrink-0 cursor-pointer"
+              onClick={() => togglePanel('scribe')} title="Medazon Scribe — click to view">
+              <Stethoscope className="w-3 h-3 text-emerald-400" />
+              <span className="text-[9px] font-bold text-emerald-400 hidden sm:inline">Scribe</span>
+            </div>
+          )}
         </div>
-      )}
-      {/* ═══════ FLOATING PANEL ═══════ */}
-      <div ref={panelRef} className="fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-cyan-500/30 shadow-2xl shadow-black/40"
-        style={{ left: position.x, top: position.y, width: hasOpenPanel ? Math.max(size.width, 720) : size.width, height: minimized ? 48 : size.height, background: 'linear-gradient(135deg, rgba(6,38,54,0.97), rgba(10,15,30,0.98))', backdropFilter: 'blur(16px)', transition: 'width 0.3s ease, height 0.2s ease' }}>
-        {/* Resize handles */}
-        {!locked && !minimized && (<>
-          <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'r')} />
-          <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-cyan-500/10 z-10" onMouseDown={e => handleResizeStart(e, 'b')} />
-          <div className="absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize z-20" onMouseDown={e => handleResizeStart(e, 'rb')} />
-        </>)}
-        {/* ═══════ HEADER ═══════ */}
-        <div className={`flex items-center justify-between px-3 py-2 border-b border-white/10 flex-shrink-0 select-none ${locked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
-          onMouseDown={handleDragStart}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Video className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            <span className="text-sm font-bold text-white truncate">Video Consultation</span>
-            {meetingActive && isRecording && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full flex-shrink-0">
-                <Circle className="w-2 h-2 text-red-500 fill-red-500 animate-pulse" /><span className="text-[10px] font-bold text-red-400 font-mono">{fmt(recordingTime)}</span>
-              </div>
-            )}
-            {timeRemaining && !meetingActive && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded-full flex-shrink-0">
-                <Clock className="w-3 h-3 text-white/40" /><span className={`text-[10px] font-bold ${timeRemaining.isPast ? 'text-yellow-400' : 'text-white/50'}`}>{countdownText}</span>
-              </div>
-            )}
-            {(meetingActive || callStatus === 'connected') && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/25 rounded-full flex-shrink-0 cursor-pointer" onClick={() => togglePanel('scribe')} title="Medazon Scribe active — click to view">
-                <Stethoscope className="w-3 h-3 text-emerald-400" /><span className="text-[9px] font-bold text-emerald-400">Scribe</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {meetingActive && <button onClick={handleToggleRecording} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/30 text-red-400' : 'hover:bg-white/10 text-white/40'}`}>{isRecording ? <Square className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}</button>}
-            {joinUrl && <a href={joinUrl} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><ExternalLink className="w-3.5 h-3.5" /></a>}
-            <button onClick={handleToggleLock} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all">{locked ? <Lock className="w-3.5 h-3.5 text-cyan-400" /> : <Unlock className="w-3.5 h-3.5 text-white/40" />}</button>
-            <button onClick={handleReset} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all"><RefreshCw className="w-3.5 h-3.5" /></button>
-            <button onClick={handleToggleMinimize} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all">{minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}</button>
-            {onClose && <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-all" title="Close video panel"><X className="w-3.5 h-3.5" /></button>}
-          </div>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {meetingActive && (
+            <button onClick={handleToggleRecording} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isRecording ? 'bg-red-500/30 text-red-400' : 'hover:bg-white/10 text-white/40'}`}>
+              {isRecording ? <Square className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          {joinUrl && (
+            <a href={joinUrl} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all">
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+          <button onClick={handlePopOut} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all" title={isFloating ? 'Dock to grid' : 'Pop out'}>
+            {isFloating ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+          {isFloating && (
+            <>
+              <button onClick={handleToggleLock} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" title={locked ? 'Unlock' : 'Lock position'}>
+                {locked ? <Lock className="w-3.5 h-3.5 text-cyan-400" /> : <Unlock className="w-3.5 h-3.5 text-white/40" />}
+              </button>
+              <button onClick={handleToggleMinimize} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/40 transition-all">
+                <Minimize2 className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+          {onClose && (
+            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-white/40 hover:text-red-400 transition-all">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-        {/* ═══════ BODY ═══════ */}
-        {!minimized && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* ─── LEFT: VIDEO ─── */}
-            <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2 border-r border-white/10' : 'w-full'}`} style={{ transition: 'width 0.3s ease' }}>
+      </div>
+
+      {/* ═══════ BODY ═══════ */}
+      {!minimized && (
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* ─── LEFT: Video Area ─── */}
+          <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2 sm:w-[55%]' : 'w-full'} transition-all duration-300`}>
+            <div className="flex-1 min-h-0 relative bg-black/30">
               {meetingActive && joinUrl ? (
-                <div className="flex-1 relative min-h-0 bg-black">
-                  <DailyIframe roomUrl={joinUrl} />
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                    <button onClick={handleEndMeeting} className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-red-600/30 flex items-center gap-2 transition-all"><PhoneOff className="w-4 h-4" /> End</button>
-                  </div>
-                </div>
+                <DailyIframe roomUrl={joinUrl} />
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, rgba(6,38,54,0.5), rgba(10,15,30,0.5))' }}>
-                  <div className="w-14 h-14 rounded-full bg-cyan-500/10 border-2 border-cyan-500/30 flex items-center justify-center mb-3"><Video className="w-7 h-7 text-cyan-400" /></div>
-                  <h3 className="text-sm font-bold text-white mb-1">{appointment?.dailyco_meeting_url ? 'Ready to Start' : 'No Meeting'}</h3>
-                  <p className="text-[10px] text-white/40 mb-3 text-center truncate w-full">{appointment?.dailyco_room_name ? `Room: ${appointment.dailyco_room_name}` : ''}</p>
-                  {appointment?.dailyco_meeting_url && (
-                    <button onClick={handleStartMeeting} className="px-5 py-2.5 rounded-xl font-bold text-xs text-white shadow-lg transition-all hover:brightness-110 flex items-center gap-2" style={{ background: 'linear-gradient(135deg, #0891b2, #06b6d4)' }}><Video className="w-4 h-4" /> Start Video Call</button>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                    <Video className="w-7 h-7 sm:w-8 sm:h-8 text-cyan-400" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm sm:text-base font-bold text-white">Ready to Start</p>
+                    {appointment?.dailyco_room_name && (
+                      <p className="text-[10px] sm:text-xs text-white/30 mt-1">Room: {appointment.dailyco_room_name}</p>
+                    )}
+                  </div>
+                  {joinUrl && (
+                    <button onClick={handleStartMeeting}
+                      className="flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-sm font-bold rounded-xl hover:from-cyan-400 hover:to-blue-400 transition-all shadow-lg shadow-cyan-500/20 active:scale-95">
+                      <Video className="w-4 h-4" />Start Video Call
+                    </button>
+                  )}
+                  {!joinUrl && (
+                    <p className="text-xs text-white/30">No meeting URL configured</p>
                   )}
                 </div>
               )}
+              {/* In-call controls overlay */}
+              {meetingActive && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
+                  <button onClick={handleEndMeeting}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-full transition-all active:scale-95 shadow-lg">
+                    <PhoneOff className="w-4 h-4" />End
+                  </button>
+                </div>
+              )}
             </div>
+          </div>
 
-            {/* ─── RIGHT: SIDE PANEL CAROUSEL ─── */}
-            {hasOpenPanel && (
-              <div className="w-1/2 flex flex-col overflow-hidden" style={{ transition: 'width 0.3s ease' }}>
-                {/* Panel nav header */}
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/5 flex-shrink-0">
-                  {openPanels.length > 1 && <button onClick={navPrev} disabled={activePanelIdx === 0} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronLeft className="w-3.5 h-3.5" /></button>}
-                  <div className="flex gap-1 flex-1 justify-center">
-                    {openPanels.map((p, i) => (
-                      <button key={p} onClick={() => setActivePanelIdx(i)}
-                        className={`px-2 py-1 rounded text-[9px] font-bold transition-all ${i === activePanelIdx ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}>
-                        {panelLabel(p)}
-                      </button>
-                    ))}
-                  </div>
-                  {openPanels.length > 1 && <button onClick={navNext} disabled={activePanelIdx >= openPanels.length - 1} className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/30 disabled:opacity-20"><ChevronRight className="w-3.5 h-3.5" /></button>}
-                  <button onClick={() => closePanel(activePanel!)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-500/20 text-white/20 hover:text-red-400"><X className="w-3 h-3" /></button>
+          {/* ─── RIGHT: Side Panel (slide-over) ─── */}
+          {hasOpenPanel && (
+            <div className="w-1/2 sm:w-[45%] flex flex-col border-l border-white/10 bg-[#060e1a]/60 min-h-0">
+              {/* Panel header with nav */}
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/5 flex-shrink-0">
+                <div className="flex items-center gap-1">
+                  {openPanels.length > 1 && (
+                    <button onClick={navPrev} disabled={activePanelIdx === 0} className="w-5 h-5 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-20">
+                      <ChevronLeft className="w-3 h-3 text-white/60" />
+                    </button>
+                  )}
+                  <span className="text-[10px] sm:text-xs font-bold text-white/70">{activePanel ? panelLabel(activePanel) : ''}</span>
+                  {openPanels.length > 1 && (
+                    <button onClick={navNext} disabled={activePanelIdx >= openPanels.length - 1} className="w-5 h-5 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-20">
+                      <ChevronRight className="w-3 h-3 text-white/60" />
+                    </button>
+                  )}
+                  {openPanels.length > 1 && (
+                    <span className="text-[8px] text-white/20 ml-1">{activePanelIdx + 1}/{openPanels.length}</span>
+                  )}
                 </div>
-                {/* ─── CALL/SMS PANEL (uses CommunicationDialer — same as /doctor/communication page) ─── */}
-                {(activePanel === 'dialpad' || activePanel === 'sms') && (
-                  <CommunicationDialer
-                    initialPhone={patientPhone}
-                    patientName={patientName}
-                    patientId={appointment?.id}
-                    defaultTab={activePanel === 'sms' ? 'sms' : 'call'}
-                    compact
-                  />
-                )}
-                {/* ─── EMAIL PANEL ─── */}
-                {activePanel === 'email' && (
-                  <div className="flex-1 flex flex-col p-3 gap-2 overflow-y-auto">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">To</span>
-                      <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="patient@email.com"
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">From</span>
-                      <div className="flex-1 bg-white/5 border border-white/5 rounded-lg px-2 py-1.5 text-white/40 text-[11px]">{providerEmail || 'Provider'}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-white/40 uppercase font-bold w-10">Subj</span>
-                      <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="Subject..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
-                    </div>
-                    <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} placeholder="Compose..."
-                      className="flex-1 min-h-[120px] bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs resize-none focus:border-purple-500/50 focus:outline-none leading-relaxed"
-                      onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendEmail() }} />
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-white/25">⌘+Enter to send</span>
-                      <button onClick={handleSendEmail} disabled={emailSending || !emailTo.trim() || !emailSubject.trim() || !emailBody.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-500 disabled:opacity-40 transition-all">
-                        {emailSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}Send
-                      </button>
-                    </div>
-                    {emailSuccess && <div className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-green-300 text-[10px]">Email sent!</div>}
-                  </div>
-                )}
-                {/* ─── SCRIBE PANEL (always mounted, visible when active) ─── */}
-                <div className={activePanel === 'scribe' ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'}>
-                  <MedazonScribe
-                    appointmentId={appointment?.id}
-                    patientName={patientName}
-                    doctorName={_currentUser?.name || 'Doctor'}
-                    doctorId={_currentUser?.id || providerId}
-                    callActive={meetingActive || callStatus === 'connected'}
-                    onSoapGenerated={onSoapGenerated}
-                    visible={activePanel === 'scribe'}
-                  />
-                </div>
+                <button onClick={() => activePanel && closePanel(activePanel)} className="w-5 h-5 rounded flex items-center justify-center hover:bg-white/10">
+                  <X className="w-3 h-3 text-white/40" />
+                </button>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* ═══════ BOTTOM ACTION BAR — 6 Buttons (always visible) ═══════ */}
-        {!minimized && (
-          <div className="flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 border-t border-white/10 flex-shrink-0 bg-[#060e1a]/80">
-            {/* Copy */}
-            <button onClick={() => { if (patientPhone) copyText(normalizePhone(patientPhone)); else if (appointment?.dailyco_meeting_url) copyText(appointment.dailyco_meeting_url) }}
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white hover:border-white/40 active:scale-95">
-              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 rotate-[135deg]" />
-              <span className="hidden xs:inline">Copy</span>
-            </button>
+              {/* ─── DIALPAD PANEL ─── */}
+              {activePanel === 'dialpad' && (
+                <div className="flex-1 flex flex-col items-center p-2 sm:p-3 gap-2 sm:gap-3 overflow-y-auto">
+                  <div className="w-full flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                    <input value={formatPhoneDisplay(dialNumber)} onChange={e => setDialNumber(e.target.value.replace(/[^\d+() -]/g, ''))}
+                      placeholder="+1 (555) 000-0000" className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20" />
+                    {dialNumber && <button onClick={() => setDialNumber('')} className="text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <DialpadBtn digit="1" onClick={handleDialPress} />
+                    <DialpadBtn digit="2" sub="ABC" onClick={handleDialPress} />
+                    <DialpadBtn digit="3" sub="DEF" onClick={handleDialPress} />
+                    <DialpadBtn digit="4" sub="GHI" onClick={handleDialPress} />
+                    <DialpadBtn digit="5" sub="JKL" onClick={handleDialPress} />
+                    <DialpadBtn digit="6" sub="MNO" onClick={handleDialPress} />
+                    <DialpadBtn digit="7" sub="PQRS" onClick={handleDialPress} />
+                    <DialpadBtn digit="8" sub="TUV" onClick={handleDialPress} />
+                    <DialpadBtn digit="9" sub="WXYZ" onClick={handleDialPress} />
+                    <DialpadBtn digit="*" onClick={handleDialPress} />
+                    <DialpadBtn digit="0" onClick={handleDialPress} />
+                    <DialpadBtn digit="#" onClick={handleDialPress} />
+                  </div>
+                  <div className="pt-1">
+                    {callStatus === 'idle' || callStatus === 'failed' ? (
+                      <button onClick={handleStartCall} disabled={!dialNumber}
+                        className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-400 disabled:opacity-30 flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-green-500/30">
+                        <Phone className="w-6 h-6 text-white" />
+                      </button>
+                    ) : callStatus === 'connecting' ? (
+                      <button disabled className="w-14 h-14 rounded-full bg-yellow-500/50 flex items-center justify-center animate-pulse">
+                        <Loader2 className="w-6 h-6 text-white animate-spin" />
+                      </button>
+                    ) : (
+                      <button onClick={handleEndCall}
+                        className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95">
+                        <PhoneOff className="w-6 h-6 text-white" />
+                      </button>
+                    )}
+                  </div>
+                  {callStatus === 'connected' && (
+                    <div className="flex items-center gap-2 text-green-400 text-xs font-bold">
+                      <Phone className="w-3 h-3" />Connected — {fmt(callDuration)}
+                    </div>
+                  )}
+                  {callStatus === 'failed' && <p className="text-red-400 text-[10px]">Call failed. Try again.</p>}
+                </div>
+              )}
 
-            {/* Dial */}
-            <button onClick={() => togglePanel('dialpad')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('dialpad') ? 'bg-green-500/20 text-green-300 border-green-400' : 'bg-white/5 text-green-400 border-green-500/30 hover:bg-green-500/10 hover:border-green-400'}`}>
-              <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Dial</span>
-            </button>
+              {/* ─── SMS PANEL ─── */}
+              {activePanel === 'sms' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2">
+                    {smsLoading && <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-white/30" /></div>}
+                    {!smsLoading && smsMessages.length === 0 && <p className="text-center text-white/20 text-[10px] py-4">No messages yet</p>}
+                    {smsMessages.map(msg => (
+                      <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${msg.direction === 'outbound' ? 'bg-blue-500/20 text-blue-100 rounded-br-md' : 'bg-white/10 text-white/80 rounded-bl-md'}`}>
+                          {msg.body}
+                          <div className="text-[8px] text-white/20 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={smsEndRef} />
+                  </div>
+                  <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-t border-white/5 flex-shrink-0">
+                    <input value={smsText} onChange={e => setSmsText(e.target.value)} placeholder="Type a message..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500/50"
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendSms() } }} />
+                    <button onClick={handleSendSms} disabled={smsSending || !smsText.trim()}
+                      className="w-8 h-8 rounded-lg bg-blue-500 hover:bg-blue-400 disabled:opacity-30 flex items-center justify-center transition-all">
+                      {smsSending ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <Send className="w-3.5 h-3.5 text-white" />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            {/* SMS */}
-            <button onClick={() => togglePanel('sms')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('sms') ? 'bg-blue-500/20 text-blue-300 border-blue-400' : 'bg-white/5 text-blue-400 border-blue-500/30 hover:bg-blue-500/10 hover:border-blue-400'}`}>
-              <MessageSquare className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>SMS</span>
-            </button>
+              {/* ─── EMAIL PANEL ─── */}
+              {activePanel === 'email' && (
+                <div className="flex-1 flex flex-col p-2 sm:p-3 gap-2 overflow-y-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-white/40 uppercase font-bold w-10 flex-shrink-0">To</span>
+                    <input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="patient@email.com"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-white/40 uppercase font-bold w-10 flex-shrink-0">From</span>
+                    <div className="flex-1 bg-white/5 border border-white/5 rounded-lg px-2 py-1.5 text-white/40 text-[11px]">{providerEmail || 'Provider'}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-white/40 uppercase font-bold w-10 flex-shrink-0">Subj</span>
+                    <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="Subject..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white text-[11px] outline-none focus:border-purple-500/50" />
+                  </div>
+                  <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} placeholder="Compose..."
+                    className="flex-1 min-h-[100px] bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs resize-none focus:border-purple-500/50 focus:outline-none leading-relaxed"
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendEmail() }} />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] text-white/20">⌘+Enter to send</span>
+                    <button onClick={handleSendEmail} disabled={emailSending || !emailTo.trim() || !emailSubject.trim() || !emailBody.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-500 disabled:opacity-40 transition-all">
+                      {emailSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}Send
+                    </button>
+                  </div>
+                  {emailSuccess && <div className="px-2 py-1 bg-green-500/20 border border-green-500/30 rounded text-green-300 text-[10px]">Email sent!</div>}
+                </div>
+              )}
 
-            {/* Email */}
-            <button onClick={() => togglePanel('email')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('email') ? 'bg-purple-500/20 text-purple-300 border-purple-400' : 'bg-white/5 text-purple-400 border-purple-500/30 hover:bg-purple-500/10 hover:border-purple-400'}`}>
-              <Mail className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Email</span>
-            </button>
+              {/* ─── SCRIBE PANEL (always mounted when active) ─── */}
+              <div className={activePanel === 'scribe' ? 'flex-1 flex flex-col overflow-hidden min-h-0' : 'hidden'}>
+                <MedazonScribe
+                  appointmentId={appointment?.id}
+                  patientName={patientName}
+                  doctorName={currentUser?.name || 'Doctor'}
+                  doctorId={currentUser?.id || providerId}
+                  callActive={meetingActive || callStatus === 'connected'}
+                  onSoapGenerated={onSoapGenerated}
+                  visible={activePanel === 'scribe'}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-            {/* Scribe */}
-            <button onClick={() => togglePanel('scribe')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('scribe') ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400' : 'bg-white/5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-400'}`}>
-              <Stethoscope className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Scribe</span>
-            </button>
+      {/* ═══════ BOTTOM ACTION BAR — 6 Buttons ═══════ */}
+      {!minimized && (
+        <div className="flex items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-1.5 sm:py-2 border-t border-white/10 flex-shrink-0 bg-[#060e1a]/80">
+          {/* Copy */}
+          <button onClick={() => { if (patientPhone) copyText(normalizePhone(patientPhone)); else if (appointment?.dailyco_meeting_url) copyText(appointment.dailyco_meeting_url) }}
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white active:scale-95">
+            <ArrowLeft className="w-3 h-3 rotate-[135deg]" />
+            <span className="hidden xs:inline sm:inline">Copy</span>
+          </button>
+          {/* Dial */}
+          <button onClick={() => togglePanel('dialpad')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('dialpad') ? 'bg-green-500/20 text-green-300 border-green-400' : 'bg-white/5 text-green-400 border-green-500/30 hover:bg-green-500/10'}`}>
+            <Phone className="w-3 h-3" />
+            <span>Dial</span>
+          </button>
+          {/* SMS */}
+          <button onClick={() => togglePanel('sms')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('sms') ? 'bg-blue-500/20 text-blue-300 border-blue-400' : 'bg-white/5 text-blue-400 border-blue-500/30 hover:bg-blue-500/10'}`}>
+            <MessageSquare className="w-3 h-3" />
+            <span>SMS</span>
+          </button>
+          {/* Email */}
+          <button onClick={() => togglePanel('email')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('email') ? 'bg-purple-500/20 text-purple-300 border-purple-400' : 'bg-white/5 text-purple-400 border-purple-500/30 hover:bg-purple-500/10'}`}>
+            <Mail className="w-3 h-3" />
+            <span>Email</span>
+          </button>
+          {/* Scribe */}
+          <button onClick={() => togglePanel('scribe')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 ${openPanels.includes('scribe') ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400' : 'bg-white/5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'}`}>
+            <Stethoscope className="w-3 h-3" />
+            <span>Scribe</span>
+          </button>
+          {/* Hub */}
+          <button onClick={() => onOpenCommHub ? onOpenCommHub('call') : togglePanel('dialpad')}
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 bg-white/5 text-orange-400 border-orange-500/30 hover:bg-orange-500/10">
+            <PhoneCall className="w-3 h-3" />
+            <span>Hub</span>
+          </button>
+        </div>
+      )}
 
-            {/* Hub */}
-            <button onClick={() => onOpenCommHub ? onOpenCommHub('call') : togglePanel('dialpad')}
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 bg-white/5 text-orange-400 border-orange-500/30 hover:bg-orange-500/10 hover:border-orange-400">
-              <PhoneCall className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Hub</span>
-            </button>
-          </div>
-        )}
-
-        {/* Background scribe — runs when call active even if panel closed */}
-        {!openPanels.includes('scribe') && (meetingActive || callStatus === 'connected') && (
-          <MedazonScribe
-            appointmentId={appointment?.id}
-            patientName={patientName}
-            doctorName={_currentUser?.name || 'Doctor'}
-            doctorId={_currentUser?.id || providerId}
-            callActive={meetingActive || callStatus === 'connected'}
-            onSoapGenerated={onSoapGenerated}
-            visible={false}
-          />
-        )}
-      </div>
+      {/* Background scribe — runs when call active even if panel not visible */}
+      {!openPanels.includes('scribe') && (meetingActive || callStatus === 'connected') && (
+        <MedazonScribe
+          appointmentId={appointment?.id}
+          patientName={patientName}
+          doctorName={currentUser?.name || 'Doctor'}
+          doctorId={currentUser?.id || providerId}
+          callActive={meetingActive || callStatus === 'connected'}
+          onSoapGenerated={onSoapGenerated}
+          visible={false}
+        />
+      )}
     </div>
   )
+
+  // ═══════════════════════════════════════════════════════════════
+  // RENDER: INLINE MODE (fills parent container — for grid)
+  // ═══════════════════════════════════════════════════════════════
+  if (!isFloating) {
+    return (
+      <div className="w-full h-full flex flex-col overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, rgba(6,38,54,0.97), rgba(10,15,30,0.98))' }}>
+        {panelContent}
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // RENDER: FLOATING MODE (portal to body)
+  // ═══════════════════════════════════════════════════════════════
+  if (!portalTarget) return null
+
+  const floatingPanel = (
+    <div ref={panelRef}
+      className="fixed z-[9999] flex flex-col overflow-hidden rounded-2xl border border-cyan-500/30 shadow-2xl shadow-black/40"
+      style={{
+        left: position.x, top: position.y,
+        width: hasOpenPanel ? Math.max(size.width, 680) : size.width,
+        height: minimized ? 48 : size.height,
+        background: 'linear-gradient(135deg, rgba(6,38,54,0.97), rgba(10,15,30,0.98))',
+        backdropFilter: 'blur(16px)',
+        transition: 'width 0.3s ease, height 0.2s ease',
+      }}>
+      {/* All-edge resize handles */}
+      {!locked && !minimized && <ResizeHandles onStart={handleResizeStart} />}
+      {panelContent}
+    </div>
+  )
+
+  return createPortal(floatingPanel, portalTarget)
 }
