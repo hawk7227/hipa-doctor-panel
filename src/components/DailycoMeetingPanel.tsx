@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import MedazonScribe, { SoapNotes } from './MedazonScribe'
+import CommunicationDialer from './CommunicationDialer'
 import {
   Video, Phone, PhoneOff, PhoneCall, Mail, Stethoscope,
   Maximize2, Minimize2, X, ExternalLink, Clock, Copy,
@@ -87,9 +88,9 @@ const PREFS_KEY = 'video_panel_layout'
 function DialpadBtn({ digit, sub, onClick }: { digit: string; sub?: string; onClick: (d: string) => void }) {
   return (
     <button onClick={() => onClick(digit)}
-      className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
-      <span className="text-base sm:text-lg font-bold text-white leading-none">{digit}</span>
-      {sub && <span className="text-[7px] text-white/25 uppercase tracking-widest leading-none mt-0.5">{sub}</span>}
+      className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 flex flex-col items-center justify-center transition-all active:scale-95">
+      <span className="text-lg sm:text-xl font-bold text-white leading-none">{digit}</span>
+      {sub && <span className="text-[8px] text-white/25 uppercase tracking-widest leading-none mt-0.5">{sub}</span>}
     </button>
   )
 }
@@ -176,6 +177,7 @@ export default function DailyMeetingEmbed({
   const [dialNumber, setDialNumber] = useState(patientPhone ? normalizePhone(patientPhone) : '')
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [callDuration, setCallDuration] = useState(0)
+  const [callError, setCallError] = useState<string | null>(null)
   const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ─── SMS ───
@@ -191,6 +193,7 @@ export default function DailyMeetingEmbed({
   const [emailBody, setEmailBody] = useState('')
   const [emailSending, setEmailSending] = useState(false)
   const [emailSuccess, setEmailSuccess] = useState(false)
+  const [copiedFlag, setCopiedFlag] = useState(false)
 
   // ─── Countdown ───
   const [timeRemaining, setTimeRemaining] = useState<{ hours: number; minutes: number; seconds: number; isPast: boolean } | null>(null)
@@ -424,11 +427,30 @@ export default function DailyMeetingEmbed({
     if (!dialNumber) return
     setCallStatus('connecting')
     try {
-      const res = await fetch('/api/communication/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: normalizePhone(dialNumber) }) })
-      if (!res.ok) throw new Error('Failed')
+      const { data: { session } } = await supabase.auth.getSession()
+      const normalized = normalizePhone(dialNumber)
+      console.log('[VideoPanel] Starting call to:', normalized)
+      const res = await fetch('/api/communication/call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: session?.access_token ? `Bearer ${session.access_token}` : '',
+        },
+        body: JSON.stringify({ to: normalized }),
+      })
+      const json = await res.json()
+      console.log('[VideoPanel] Call response:', json)
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `Call failed (${res.status})`)
+      }
       setCallStatus('connected'); setCallDuration(0)
       callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
-    } catch { setCallStatus('failed'); setTimeout(() => setCallStatus('idle'), 3000) }
+    } catch (err: any) {
+      console.error('[VideoPanel] Call error:', err)
+      setCallStatus('failed')
+      setCallError(err.message || 'Call failed')
+      setTimeout(() => { setCallStatus('idle'); setCallError(null) }, 5000)
+    }
   }, [dialNumber])
   const handleEndCall = useCallback(() => {
     setCallStatus('ended')
@@ -595,7 +617,7 @@ export default function DailyMeetingEmbed({
       {!minimized && (
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* ─── LEFT: Video Area ─── */}
-          <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2 sm:w-[55%]' : 'w-full'} transition-all duration-300`}>
+          <div className={`flex flex-col ${hasOpenPanel ? 'w-1/2' : 'w-full'} transition-all duration-300`}>
             <div className="flex-1 min-h-0 relative bg-black/30">
               {meetingActive && joinUrl ? (
                 <DailyIframe roomUrl={joinUrl} />
@@ -635,7 +657,7 @@ export default function DailyMeetingEmbed({
 
           {/* ─── RIGHT: Side Panel (slide-over) ─── */}
           {hasOpenPanel && (
-            <div className="w-1/2 sm:w-[45%] flex flex-col border-l border-white/10 bg-[#060e1a]/60 min-h-0">
+            <div className="w-1/2 flex flex-col border-l border-white/10 bg-[#060e1a]/60 min-h-0">
               {/* Panel header with nav */}
               <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/5 flex-shrink-0">
                 <div className="flex items-center gap-1">
@@ -659,79 +681,23 @@ export default function DailyMeetingEmbed({
                 </button>
               </div>
 
-              {/* ─── DIALPAD PANEL ─── */}
-              {activePanel === 'dialpad' && (
-                <div className="flex-1 flex flex-col items-center p-2 sm:p-3 gap-2 sm:gap-3 overflow-y-auto">
-                  <div className="w-full flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-                    <input value={formatPhoneDisplay(dialNumber)} onChange={e => setDialNumber(e.target.value.replace(/[^\d+() -]/g, ''))}
-                      placeholder="+1 (555) 000-0000" className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20" />
-                    {dialNumber && <button onClick={() => setDialNumber('')} className="text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <DialpadBtn digit="1" onClick={handleDialPress} />
-                    <DialpadBtn digit="2" sub="ABC" onClick={handleDialPress} />
-                    <DialpadBtn digit="3" sub="DEF" onClick={handleDialPress} />
-                    <DialpadBtn digit="4" sub="GHI" onClick={handleDialPress} />
-                    <DialpadBtn digit="5" sub="JKL" onClick={handleDialPress} />
-                    <DialpadBtn digit="6" sub="MNO" onClick={handleDialPress} />
-                    <DialpadBtn digit="7" sub="PQRS" onClick={handleDialPress} />
-                    <DialpadBtn digit="8" sub="TUV" onClick={handleDialPress} />
-                    <DialpadBtn digit="9" sub="WXYZ" onClick={handleDialPress} />
-                    <DialpadBtn digit="*" onClick={handleDialPress} />
-                    <DialpadBtn digit="0" onClick={handleDialPress} />
-                    <DialpadBtn digit="#" onClick={handleDialPress} />
-                  </div>
-                  <div className="pt-1">
-                    {callStatus === 'idle' || callStatus === 'failed' ? (
-                      <button onClick={handleStartCall} disabled={!dialNumber}
-                        className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-400 disabled:opacity-30 flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-green-500/30">
-                        <Phone className="w-6 h-6 text-white" />
-                      </button>
-                    ) : callStatus === 'connecting' ? (
-                      <button disabled className="w-14 h-14 rounded-full bg-yellow-500/50 flex items-center justify-center animate-pulse">
-                        <Loader2 className="w-6 h-6 text-white animate-spin" />
-                      </button>
-                    ) : (
-                      <button onClick={handleEndCall}
-                        className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center transition-all active:scale-95">
-                        <PhoneOff className="w-6 h-6 text-white" />
-                      </button>
-                    )}
-                  </div>
-                  {callStatus === 'connected' && (
-                    <div className="flex items-center gap-2 text-green-400 text-xs font-bold">
-                      <Phone className="w-3 h-3" />Connected — {fmt(callDuration)}
-                    </div>
-                  )}
-                  {callStatus === 'failed' && <p className="text-red-400 text-[10px]">Call failed. Try again.</p>}
-                </div>
-              )}
-
-              {/* ─── SMS PANEL ─── */}
-              {activePanel === 'sms' && (
-                <div className="flex-1 flex flex-col min-h-0">
-                  <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2">
-                    {smsLoading && <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-white/30" /></div>}
-                    {!smsLoading && smsMessages.length === 0 && <p className="text-center text-white/20 text-[10px] py-4">No messages yet</p>}
-                    {smsMessages.map(msg => (
-                      <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${msg.direction === 'outbound' ? 'bg-blue-500/20 text-blue-100 rounded-br-md' : 'bg-white/10 text-white/80 rounded-bl-md'}`}>
-                          {msg.body}
-                          <div className="text-[8px] text-white/20 mt-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={smsEndRef} />
-                  </div>
-                  <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-t border-white/5 flex-shrink-0">
-                    <input value={smsText} onChange={e => setSmsText(e.target.value)} placeholder="Type a message..."
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500/50"
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendSms() } }} />
-                    <button onClick={handleSendSms} disabled={smsSending || !smsText.trim()}
-                      className="w-8 h-8 rounded-lg bg-blue-500 hover:bg-blue-400 disabled:opacity-30 flex items-center justify-center transition-all">
-                      {smsSending ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <Send className="w-3.5 h-3.5 text-white" />}
-                    </button>
-                  </div>
+              {/* ─── CALL/SMS PANEL — uses CommunicationDialer with Twilio Voice SDK ─── */}
+              {(activePanel === 'dialpad' || activePanel === 'sms') && (
+                <div className="flex-1 overflow-hidden min-h-0">
+                  <CommunicationDialer
+                    initialPhone={patientPhone ? normalizePhone(patientPhone) : ''}
+                    patientName={patientName}
+                    defaultTab={activePanel === 'sms' ? 'sms' : 'call'}
+                    compact
+                    showPatientSearch={false}
+                    onCallStatusChange={(status) => {
+                      if (status === 'connected') setCallStatus('connected')
+                      else if (status === 'ended') setCallStatus('idle')
+                      else if (status === 'connecting') setCallStatus('connecting')
+                      else setCallStatus('idle')
+                    }}
+                    onSmsSent={() => { console.log('[VideoPanel] SMS sent via CommunicationDialer') }}
+                  />
                 </div>
               )}
 
@@ -787,10 +753,15 @@ export default function DailyMeetingEmbed({
       {!minimized && (
         <div className="flex items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-1.5 sm:py-2 border-t border-white/10 flex-shrink-0 bg-[#060e1a]/80">
           {/* Copy */}
-          <button onClick={() => { if (patientPhone) copyText(normalizePhone(patientPhone)); else if (appointment?.dailyco_meeting_url) copyText(appointment.dailyco_meeting_url) }}
-            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white active:scale-95">
+          <button onClick={() => {
+            const link = appointment?.dailyco_meeting_url || ''
+            const phone = patientPhone ? normalizePhone(patientPhone) : ''
+            const text = link ? `Join: ${link}` : phone
+            if (text) { copyText(text); setCopiedFlag(true); setTimeout(() => setCopiedFlag(false), 1500) }
+          }}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[9px] sm:text-xs font-bold border transition-all active:scale-95 ${copiedFlag ? 'bg-green-500/20 text-green-300 border-green-400' : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10 hover:text-white'}`}>
             <ArrowLeft className="w-3 h-3 rotate-[135deg]" />
-            <span className="hidden xs:inline sm:inline">Copy</span>
+            <span className="hidden xs:inline sm:inline">{copiedFlag ? 'Copied!' : 'Copy'}</span>
           </button>
           {/* Dial */}
           <button onClick={() => togglePanel('dialpad')}
