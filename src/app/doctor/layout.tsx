@@ -5,7 +5,7 @@
 'use client'
 
 import { ReactNode, useState, useEffect, useCallback, Suspense } from 'react'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AuthWrapper from '@/components/AuthWrapper'
 import ErrorBoundary from '@/components/ErrorBoundary'
@@ -61,6 +61,7 @@ const ADMIN_ITEMS = [
 // ─── COMPONENT ───────────────────────────────────────────────
 function DoctorLayoutInner({ children }: { children: ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [doctorId, setDoctorId] = useState<string | null>(null)
@@ -330,7 +331,7 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
         {/* Global notification toast */}
         <NotificationToast />
         <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-        <PatientSearchBar onSelect={() => {}} />
+        <PatientSearchBar onSelect={(patient) => { router.push(`/doctor/schedule?patientId=${patient.id}&mode=chart`) }} />
       </div>
       <FloatingMessenger />
       <PageGuideSelector />

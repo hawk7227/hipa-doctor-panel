@@ -150,19 +150,19 @@ const MARGIN: [number, number] = [4, 4]
 // Default layout for the main panels
 const DEFAULT_LAYOUTS: ResponsiveLayouts = {
   lg: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 3, minH: 4 },
-    { i: 'soap-notes', x: 4, y: 0, w: 8, h: 16, minW: 4, minH: 8 },
-    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 3, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 2, minH: 2 },
+    { i: 'soap-notes', x: 4, y: 0, w: 8, h: 16, minW: 2, minH: 3 },
+    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 2, minH: 2 },
   ],
   md: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 3, minH: 4 },
-    { i: 'soap-notes', x: 4, y: 0, w: 4, h: 16, minW: 4, minH: 8 },
-    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 3, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 6, minW: 2, minH: 2 },
+    { i: 'soap-notes', x: 4, y: 0, w: 4, h: 16, minW: 2, minH: 3 },
+    { i: 'video-panel', x: 0, y: 6, w: 4, h: 8, minW: 2, minH: 2 },
   ],
   sm: [
-    { i: 'patient-info', x: 0, y: 0, w: 4, h: 5, minW: 2, minH: 3 },
-    { i: 'soap-notes', x: 0, y: 5, w: 4, h: 14, minW: 2, minH: 8 },
-    { i: 'video-panel', x: 0, y: 19, w: 4, h: 8, minW: 2, minH: 4 },
+    { i: 'patient-info', x: 0, y: 0, w: 4, h: 5, minW: 1, minH: 2 },
+    { i: 'soap-notes', x: 0, y: 5, w: 4, h: 14, minW: 1, minH: 3 },
+    { i: 'video-panel', x: 0, y: 19, w: 4, h: 8, minW: 1, minH: 2 },
   ],
   xs: [
     { i: 'patient-info', x: 0, y: 0, w: 2, h: 6 },
@@ -268,6 +268,14 @@ export default function WorkspaceCanvas({
 
   // ── Open EHR panels (rendered as grid items) ──
   const [openPanels, setOpenPanels] = useState<string[]>([])
+  const [lockedPanels, setLockedPanels] = useState<Set<string>>(new Set())
+  const toggleLockPanel = useCallback((id: string) => {
+    setLockedPanels(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
   const togglePanel = useCallback((id: string) => {
     setOpenPanels(prev => {
       if (prev.includes(id)) return prev.filter(p => p !== id)
@@ -352,14 +360,20 @@ export default function WorkspaceCanvas({
             y: row * 8,
             w,
             h: 8,
-            minW: bp === 'xxs' ? 1 : 2,
-            minH: 4,
+            minW: 1,
+            minH: 2,
+            static: lockedPanels.has(pid),
           } as LayoutItem
         })
-      merged[bp] = [...shiftedBase, ...panelItems]
+      // Also mark locked base items as static
+      const finalBase = shiftedBase.map(item => ({
+        ...item,
+        static: lockedPanels.has(item.i),
+      }))
+      merged[bp] = [...finalBase, ...panelItems]
     }
     return merged as unknown as ResponsiveLayouts
-  }, [baseLayouts, openPanels])
+  }, [baseLayouts, openPanels, lockedPanels])
 
   // ── Sync chart from appointment ──
   useEffect(() => {
@@ -841,29 +855,7 @@ export default function WorkspaceCanvas({
               </div>
             </div>
 
-            {/* ── VIDEO PANEL (conditional) ── */}
-            {showVideo && (
-              <div key="video-panel" className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden flex flex-col">
-                <div className="grid-drag-handle flex items-center justify-between px-3 py-2 border-b border-[#1a3d3d] cursor-grab"
-                  style={{ borderTop: '2px solid #06b6d4' }}>
-                  <span className="text-sm font-semibold text-white">Video Consultation</span>
-                  <button onClick={() => setShowVideo(false)} className="p-1 text-gray-400 hover:text-white"><X className="h-4 w-4" /></button>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  {(appointment as any)?.dailyco_meeting_url ? (
-                    <DailyMeetingEmbed
-                      appointment={appointment as any}
-                      currentUser={currentUser as any}
-                      patientName={patientName}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                      No video meeting configured.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* ── VIDEO PANEL (conditional) — renders as floating portal ── */}
 
             {/* ── DYNAMIC EHR PANELS (from toolbar) ── */}
             {openPanels.map(panelId => {
@@ -915,24 +907,35 @@ export default function WorkspaceCanvas({
                 <div key={panelId} className="bg-[#0d2626] border border-[#1a3d3d] rounded-xl overflow-hidden flex flex-col">
                   {/* Drag handle with panel color */}
                   <div
-                    className="grid-drag-handle flex items-center justify-between px-3 py-1.5 border-b border-[#1a3d3d] cursor-grab active:cursor-grabbing select-none flex-shrink-0"
+                    className={`grid-drag-handle flex items-center justify-between px-3 py-1.5 border-b border-[#1a3d3d] select-none flex-shrink-0 ${lockedPanels.has(panelId) ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
                     style={{ borderTop: `2px solid ${color}` }}
                   >
                     <div className="flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
-                        <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
-                        <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
-                      </svg>
+                      {!lockedPanels.has(panelId) && (
+                        <svg className="w-3.5 h-3.5 text-gray-600" viewBox="0 0 16 16" fill="currentColor">
+                          <circle cx="4" cy="3" r="1.5"/><circle cx="12" cy="3" r="1.5"/>
+                          <circle cx="4" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/>
+                          <circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="13" r="1.5"/>
+                        </svg>
+                      )}
                       <Icon className="h-3.5 w-3.5" style={{ color }} />
                       <span className="text-xs font-semibold text-white">{label}</span>
                     </div>
-                    <button
-                      onClick={close}
-                      className="p-0.5 text-gray-500 hover:text-white rounded transition-colors"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => toggleLockPanel(panelId)}
+                        className="p-0.5 text-gray-500 hover:text-cyan-400 rounded transition-colors"
+                        title={lockedPanels.has(panelId) ? 'Unlock panel' : 'Lock panel'}
+                      >
+                        <Lock className={`h-3 w-3 ${lockedPanels.has(panelId) ? 'text-cyan-400' : ''}`} />
+                      </button>
+                      <button
+                        onClick={close}
+                        className="p-0.5 text-gray-500 hover:text-white rounded transition-colors"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   {/* Panel content */}
                   <div className="flex-1 overflow-auto">
@@ -943,6 +946,19 @@ export default function WorkspaceCanvas({
             })}
           </RGL>
           </div>
+        )}
+
+        {/* ── FLOATING VIDEO PANEL (portal — renders on top of everything) ── */}
+        {showVideo && (
+          <DailyMeetingEmbed
+            appointment={appointment as any}
+            currentUser={currentUser as any}
+            patientName={patientName}
+            patientPhone={patientPhone !== 'N/A' ? patientPhone : ''}
+            patientEmail={patientEmail !== 'N/A' ? patientEmail : ''}
+            mode="floating"
+            onClose={() => setShowVideo(false)}
+          />
         )}
       </div>
 

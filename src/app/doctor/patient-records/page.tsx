@@ -155,6 +155,15 @@ export default function PatientRecordsPage() {
         const res = await fetch('/data/patient-medications.json')
         if (!res.ok) throw new Error(`Failed to load: ${res.status}`)
         const json = await res.json()
+        // Also get total patient count from Supabase (may be more than JSON)
+        try {
+          const { supabase } = await import('@/lib/supabase')
+          const { count } = await supabase.from('patients').select('*', { count: 'exact', head: true })
+          if (count && count > (json.patients?.length || 0)) {
+            json.summary = { ...json.summary, total_patients: count }
+            console.log(`[PatientRecords] Supabase total: ${count} (JSON has ${json.patients.length})`)
+          }
+        } catch { /* fallback to JSON count */ }
         setData(json)
         console.log(`[PatientRecords] Loaded ${json.patients.length} patients`)
       } catch (err: any) {
