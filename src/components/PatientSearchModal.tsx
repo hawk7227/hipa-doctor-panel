@@ -21,7 +21,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, FileText, Calendar, Search } from 'lucide-react'
-import PatientSearchBar, { PatientSearchResult } from '@/components/PatientSearchBar'
+import PatientSearchBar from '@/components/PatientSearchBar'
+
+// Local type — mirrors PatientSearchBar's PatientSearchResult
+interface PatientSearchResult {
+  id: string
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
+  date_of_birth: string
+  location?: string
+  created_at?: string
+}
 
 export default function PatientSearchModal() {
   const router = useRouter()
@@ -221,3 +233,4 @@ export default function PatientSearchModal() {
     </div>
   )
 }
+
