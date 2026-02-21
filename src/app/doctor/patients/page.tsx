@@ -4,7 +4,7 @@
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
@@ -120,29 +120,43 @@ export default function DoctorPatients() {
   const [newMedHistory, setNewMedHistory] = useState({medication: '', provider: '', date: ''})
   const [newPrescriptionLog, setNewPrescriptionLog] = useState({medication: '', quantity: '', pharmacy: '', date: ''})
   const [savingProblems, setSavingProblems] = useState(false)
-  const openChartIdRef = useRef<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const PATIENTS_PER_PAGE = 25
 
   useEffect(() => {
-    // Capture openChart param on mount
-    const params = new URLSearchParams(window.location.search)
-    openChartIdRef.current = params.get('openChart')
     fetchCurrentDoctor()
     fetchPatients()
   }, [])
 
-  // Auto-open patient chart when navigated with ?openChart=<id>
-  useEffect(() => {
-    const openChartId = openChartIdRef.current
-    if (openChartId && patients.length > 0 && !showPatientModal) {
-      const patient = patients.find(p => p.id === openChartId)
-      if (patient) {
-        openChartIdRef.current = null // clear so it doesn't re-trigger
-        handleViewPatient(patient)
-        // Clean up URL
-        window.history.replaceState({}, '', window.location.pathname)
-      }
+  // Auto-open patient chart from sessionStorage (cross-page) or custom event (same-page)
+  const openPatientChartById = useCallback((patientId: string) => {
+    const patient = patients.find(p => p.id === patientId)
+    if (patient) {
+      handleViewPatient(patient)
     }
   }, [patients])
+
+  useEffect(() => {
+    // Check sessionStorage on patients load (for cross-page navigation)
+    const storedId = sessionStorage.getItem('openPatientChart')
+    if (storedId && patients.length > 0) {
+      sessionStorage.removeItem('openPatientChart')
+      openPatientChartById(storedId)
+    }
+  }, [patients, openPatientChartById])
+
+  useEffect(() => {
+    // Listen for custom event (for same-page navigation, e.g. already on /doctor/patients)
+    const handler = (e: Event) => {
+      const patientId = (e as CustomEvent).detail?.patientId
+      if (patientId && patients.length > 0) {
+        sessionStorage.removeItem('openPatientChart')
+        openPatientChartById(patientId)
+      }
+    }
+    window.addEventListener('openPatientChart', handler)
+    return () => window.removeEventListener('openPatientChart', handler)
+  }, [patients, openPatientChartById])
 
   useEffect(() => {
     if (currentDoctor) {
@@ -1667,10 +1681,10 @@ const handleSuggestionClick = (patient: Patient) => {
                     </td>
                   </tr>
                 ) : (
-                  filteredPatients.map((patient) => (
-                    <tr 
+                  filteredPatients.slice((currentPage - 1) * PATIENTS_PER_PAGE, currentPage * PATIENTS_PER_PAGE).map((patient) => (
+                    <tr
                       id={`patient-${patient.id}`}
-                      key={patient.id} 
+                      key={patient.id}
                       className="hover:bg-[#164e4e] transition-colors"
                     >
                       <td className="px-4 sm:px-6 py-4">
@@ -1726,7 +1740,7 @@ const handleSuggestionClick = (patient: Patient) => {
                         })()}
                       </td>
                       <td className="px-4 sm:px-6 py-4">
-                        <button 
+                        <button
                           onClick={() => handleViewPatient(patient)}
                           className="flex items-center gap-1 text-white hover:text-cyan-400 text-xs sm:text-sm whitespace-nowrap px-2 py-1 rounded hover:bg-cyan-500/20 transition-colors"
                           title="View Patient Details"
@@ -1741,6 +1755,33 @@ const handleSuggestionClick = (patient: Patient) => {
               </tbody>
             </table>
           </div>
+          {/* Pagination */}
+          {filteredPatients.length > PATIENTS_PER_PAGE && (
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-t border-[#1a3d3d]">
+              <div className="text-sm text-gray-400">
+                Showing {((currentPage - 1) * PATIENTS_PER_PAGE) + 1}–{Math.min(currentPage * PATIENTS_PER_PAGE, filteredPatients.length)} of {filteredPatients.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 text-sm rounded bg-[#164e4e] text-white hover:bg-[#1a5a5a] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-400">
+                  Page {currentPage} of {Math.ceil(filteredPatients.length / PATIENTS_PER_PAGE)}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredPatients.length / PATIENTS_PER_PAGE), p + 1))}
+                  disabled={currentPage >= Math.ceil(filteredPatients.length / PATIENTS_PER_PAGE)}
+                  className="px-3 py-1 text-sm rounded bg-[#164e4e] text-white hover:bg-[#1a5a5a] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

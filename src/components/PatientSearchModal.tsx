@@ -87,8 +87,12 @@ export default function PatientSearchModal() {
     if (!selectedPatient) return
     console.log('[PatientSearchModal] Navigating to chart for patient:', selectedPatient.id)
     handleClose()
-    // Navigate to patients page with openChart param to auto-open the chart modal
-    router.push(`/doctor/patients?openChart=${selectedPatient.id}`)
+    // Store patient ID for the patients page to pick up
+    sessionStorage.setItem('openPatientChart', selectedPatient.id)
+    // Dispatch event for same-page navigation (if already on /doctor/patients)
+    window.dispatchEvent(new CustomEvent('openPatientChart', { detail: { patientId: selectedPatient.id } }))
+    // Navigate to patients page
+    router.push('/doctor/patients')
   }, [selectedPatient, router, handleClose])
 
   const handleBookAppointment = useCallback(() => {
