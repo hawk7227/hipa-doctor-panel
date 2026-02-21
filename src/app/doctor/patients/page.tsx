@@ -5,7 +5,6 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
@@ -121,23 +120,29 @@ export default function DoctorPatients() {
   const [newMedHistory, setNewMedHistory] = useState({medication: '', provider: '', date: ''})
   const [newPrescriptionLog, setNewPrescriptionLog] = useState({medication: '', quantity: '', pharmacy: '', date: ''})
   const [savingProblems, setSavingProblems] = useState(false)
-  const searchParams = useSearchParams()
+  const openChartIdRef = useRef<string | null>(null)
 
   useEffect(() => {
+    // Capture openChart param on mount
+    const params = new URLSearchParams(window.location.search)
+    openChartIdRef.current = params.get('openChart')
     fetchCurrentDoctor()
     fetchPatients()
   }, [])
 
   // Auto-open patient chart when navigated with ?openChart=<id>
   useEffect(() => {
-    const openChartId = searchParams.get('openChart')
+    const openChartId = openChartIdRef.current
     if (openChartId && patients.length > 0 && !showPatientModal) {
       const patient = patients.find(p => p.id === openChartId)
       if (patient) {
+        openChartIdRef.current = null // clear so it doesn't re-trigger
         handleViewPatient(patient)
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname)
       }
     }
-  }, [searchParams, patients])
+  }, [patients])
 
   useEffect(() => {
     if (currentDoctor) {
@@ -1601,22 +1606,27 @@ const handleSuggestionClick = (patient: Patient) => {
         )}
 
         {/* Patients List Card */}
-        {showAllRecords && (
-          <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d]">
+        <div className="bg-[#0d2626] rounded-lg border border-[#1a3d3d]">
             <div className="p-4 sm:p-6 border-b border-[#1a3d3d]">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <h2 className="text-lg font-semibold text-white">
-                  {recordFilter === 'all' && 'All Medical Records'}
-                  {recordFilter === 'prescription' && 'Prescriptions'}
-                  {recordFilter === 'lab_result' && 'Lab Records'}
-                  {recordFilter === 'visit_summary' && 'Visit Summaries'}
+                  {showAllRecords ? (
+                    <>
+                      {recordFilter === 'all' && 'All Medical Records'}
+                      {recordFilter === 'prescription' && 'Prescriptions'}
+                      {recordFilter === 'lab_result' && 'Lab Records'}
+                      {recordFilter === 'visit_summary' && 'Visit Summaries'}
+                    </>
+                  ) : (
+                    'All Patients'
+                  )}
                   {' '}({filteredPatients.length} {filteredPatients.length === 1 ? 'patient' : 'patients'})
                 </h2>
                 <div className="text-sm text-gray-400">
-                  {recordFilter === 'all' && `Total Records: ${recordCounts.all}`}
-                  {recordFilter === 'prescription' && `Total Prescriptions: ${recordCounts.prescription}`}
-                  {recordFilter === 'lab_result' && `Total Lab Results: ${recordCounts.lab_result}`}
-                  {recordFilter === 'visit_summary' && `Total Visit Summaries: ${recordCounts.visit_summary}`}
+                  {showAllRecords && recordFilter === 'all' && `Total Records: ${recordCounts.all}`}
+                  {showAllRecords && recordFilter === 'prescription' && `Total Prescriptions: ${recordCounts.prescription}`}
+                  {showAllRecords && recordFilter === 'lab_result' && `Total Lab Results: ${recordCounts.lab_result}`}
+                  {showAllRecords && recordFilter === 'visit_summary' && `Total Visit Summaries: ${recordCounts.visit_summary}`}
                 </div>
               </div>
             </div>
@@ -1732,7 +1742,6 @@ const handleSuggestionClick = (patient: Patient) => {
             </table>
           </div>
         </div>
-        )}
       </div>
 
       {/* Patient Detail Modal */}
