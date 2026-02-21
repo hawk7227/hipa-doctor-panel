@@ -5,6 +5,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
@@ -120,11 +121,23 @@ export default function DoctorPatients() {
   const [newMedHistory, setNewMedHistory] = useState({medication: '', provider: '', date: ''})
   const [newPrescriptionLog, setNewPrescriptionLog] = useState({medication: '', quantity: '', pharmacy: '', date: ''})
   const [savingProblems, setSavingProblems] = useState(false)
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     fetchCurrentDoctor()
     fetchPatients()
   }, [])
+
+  // Auto-open patient chart when navigated with ?openChart=<id>
+  useEffect(() => {
+    const openChartId = searchParams.get('openChart')
+    if (openChartId && patients.length > 0 && !showPatientModal) {
+      const patient = patients.find(p => p.id === openChartId)
+      if (patient) {
+        handleViewPatient(patient)
+      }
+    }
+  }, [searchParams, patients])
 
   useEffect(() => {
     if (currentDoctor) {

@@ -177,8 +177,10 @@ export default function PatientRecordsPage() {
   }, [])
 
   // ── Search results (limited to 50 for performance) ──
+  // When no search query, show first 50 patients as default list
   const results = useMemo(() => {
-    if (!data || search.length < 2) return []
+    if (!data) return []
+    if (search.length < 2) return data.patients.slice(0, 50)
     const matches: Patient[] = []
     for (const p of data.patients) {
       if (matchesSearch(p, search)) {
@@ -585,10 +587,10 @@ export default function PatientRecordsPage() {
 
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
-        {search.length < 2 ? (
+        {results.length === 0 && search.length < 2 ? (
           <div className="text-center text-gray-600 py-20">
             <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Type at least 2 characters to search</p>
+            <p className="text-sm">No patients loaded</p>
             <p className="text-xs mt-1 text-gray-700">Search by first name, last name, email, phone, DOB, address, or chart #</p>
           </div>
         ) : results.length === 0 ? (

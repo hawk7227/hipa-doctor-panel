@@ -138,7 +138,7 @@ export default function PatientSearchModal() {
     >
       <div
         ref={modalRef}
-        className="w-full max-w-xl mx-4 bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl overflow-hidden"
+        className="w-full max-w-xl mx-4 bg-[#0d2626] border border-[#1a3d3d] rounded-xl shadow-2xl overflow-visible"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a3d3d]">
