@@ -44,3 +44,8 @@ next-env.d.ts
 # Environment variables
 .env.local
 .env*.local
+
+# playwright
+e2e/.auth/
+playwright-report/
+test-results/
