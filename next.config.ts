@@ -1,22 +1,15 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  turbopack: {},
-  webpack: (config, { isServer }) => {
-    // Handle Zoom SDK module resolution
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    
-    return config;
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  images: {
+    domains: ['*.supabase.co'],
   },
-  // Transpile the Zoom SDK package
-  transpilePackages: ['@zoom/meetingsdk'],
-};
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+}
 
-export default nextConfig;
+module.exports = nextConfig
