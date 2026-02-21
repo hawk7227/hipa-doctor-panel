@@ -1456,8 +1456,8 @@ export default function AppointmentDetailModal({
                   return (
                     <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
                       className="flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white px-2 py-1.5 text-[11px] border-white/10 hover:border-white/30 text-slate-300"
-                      style={isErx ? {} : { background: 'rgba(255,255,255,0.05)' }}>
-                      <Icon className={isErx ? 'h-5 w-5' : 'h-3.5 w-3.5'} style={{ color: panel.color }} />{panel.label}
+                      style={{ background: 'rgba(255,255,255,0.05)' }}>
+                      <Icon className="h-3.5 w-3.5" style={{ color: panel.color }} />{panel.label}
                     </button>
                   )
                 })}
