@@ -171,7 +171,7 @@ export function useMedications(patientId: string | null): UseMedicationsReturn {
   const update = useCallback(async (id: string, updates: Partial<MedicationRecord>) => {
     try {
       const db = getLocalDB()
-      await db.medications.update(id, { ...updates, _synced: 0, updated_at: nowISO() })
+      await db.medications.update(id, { ...updates, _synced: 0 } as any)
 
       try {
         const res = await fetch(`/api/medications/${id}`, {
