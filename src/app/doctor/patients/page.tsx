@@ -4,7 +4,8 @@
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { User, Phone, Mail, Calendar, Eye, Edit, Trash2, X, Activity, Plus, Pill, Search } from 'lucide-react'
 import WorkspaceCanvas from '@/components/workspace/WorkspaceCanvas'
@@ -50,7 +51,15 @@ interface Patient {
   prescription_logs?: any[] | null
 }
 
-export default function DoctorPatients() {
+export default function DoctorPatientsPage() {
+  return (
+    <Suspense>
+      <DoctorPatients />
+    </Suspense>
+  )
+}
+
+function DoctorPatients() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -122,41 +131,25 @@ export default function DoctorPatients() {
   const [savingProblems, setSavingProblems] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const PATIENTS_PER_PAGE = 25
+  const searchParams = useSearchParams()
+  const openChartHandled = useRef(false)
 
   useEffect(() => {
     fetchCurrentDoctor()
     fetchPatients()
   }, [])
 
-  // Auto-open patient chart from sessionStorage (cross-page) or custom event (same-page)
-  const openPatientChartById = useCallback((patientId: string) => {
-    const patient = patients.find(p => p.id === patientId)
-    if (patient) {
-      handleViewPatient(patient)
-    }
-  }, [patients])
-
+  // Auto-open patient chart when navigated with ?openChart=<id>
   useEffect(() => {
-    // Check sessionStorage on patients load (for cross-page navigation)
-    const storedId = sessionStorage.getItem('openPatientChart')
-    if (storedId && patients.length > 0) {
-      sessionStorage.removeItem('openPatientChart')
-      openPatientChartById(storedId)
-    }
-  }, [patients, openPatientChartById])
-
-  useEffect(() => {
-    // Listen for custom event (for same-page navigation, e.g. already on /doctor/patients)
-    const handler = (e: Event) => {
-      const patientId = (e as CustomEvent).detail?.patientId
-      if (patientId && patients.length > 0) {
-        sessionStorage.removeItem('openPatientChart')
-        openPatientChartById(patientId)
+    const openChartId = searchParams.get('openChart')
+    if (openChartId && patients.length > 0 && !openChartHandled.current) {
+      const patient = patients.find(p => p.id === openChartId)
+      if (patient) {
+        openChartHandled.current = true
+        handleViewPatient(patient)
       }
     }
-    window.addEventListener('openPatientChart', handler)
-    return () => window.removeEventListener('openPatientChart', handler)
-  }, [patients, openPatientChartById])
+  }, [searchParams, patients])
 
   useEffect(() => {
     if (currentDoctor) {

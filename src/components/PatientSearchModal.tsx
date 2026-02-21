@@ -87,13 +87,10 @@ export default function PatientSearchModal() {
     if (!selectedPatient) return
     console.log('[PatientSearchModal] Navigating to chart for patient:', selectedPatient.id)
     handleClose()
-    // Store patient ID for the patients page to pick up
-    sessionStorage.setItem('openPatientChart', selectedPatient.id)
-    // Dispatch event for same-page navigation (if already on /doctor/patients)
-    window.dispatchEvent(new CustomEvent('openPatientChart', { detail: { patientId: selectedPatient.id } }))
-    // Navigate to patients page
-    router.push('/doctor/patients')
-  }, [selectedPatient, router, handleClose])
+    // Navigate to patients page with openChart query param
+    // Using window.location for reliable full navigation (works same-page and cross-page)
+    window.location.href = `/doctor/patients?openChart=${selectedPatient.id}`
+  }, [selectedPatient, handleClose])
 
   const handleBookAppointment = useCallback(() => {
     if (!selectedPatient) return
