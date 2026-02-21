@@ -18,8 +18,7 @@ interface ImmunizationsPanelProps {
 
 interface Vaccine {
   id: number
-  drchrono_vaccine_id: number
-  drchrono_patient_id: number
+  patient_id?: string | number
   name: string
   cvx_code: string | null
   administered_date: string | null
@@ -46,9 +45,9 @@ export default function ImmunizationsPanel({ isOpen, onClose, patientId, patient
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('drchrono_vaccines')
+        .from('vaccines')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('patient_id', patientId)
         .order('administered_date', { ascending: false })
       if (error) throw error
       setVaccines(data || [])
@@ -66,16 +65,14 @@ export default function ImmunizationsPanel({ isOpen, onClose, patientId, patient
   const handleAdd = async () => {
     if (!newVax.name.trim()) return
     try {
-      const { error } = await supabase.from('drchrono_vaccines').insert({
-        drchrono_patient_id: parseInt(patientId),
-        drchrono_vaccine_id: Date.now(),
+      const { error } = await supabase.from('vaccines').insert({
+        patient_id: patientId,
         name: newVax.name,
         administered_date: newVax.administered_date || new Date().toISOString().split('T')[0],
         lot_number: newVax.lot_number || null,
         manufacturer: newVax.manufacturer || null,
         notes: newVax.notes || null,
         status: 'completed',
-        last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       if (error) throw error
@@ -89,7 +86,7 @@ export default function ImmunizationsPanel({ isOpen, onClose, patientId, patient
 
   const handleDelete = async (id: number) => {
     try {
-      await supabase.from('drchrono_vaccines').delete().eq('id', id)
+      await supabase.from('vaccines').delete().eq('id', id)
       setVaccines(prev => prev.filter(v => v.id !== id))
     } catch (err) {
       console.error('Error deleting vaccine:', err)

@@ -9,7 +9,7 @@ import path from 'path'
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/patients/[id]
-// Fetch patient by UUID or DrChrono ID
+// Fetch patient by UUID or numeric ID
 //
 // Priority:
 //   1. Static JSON file (public/data/patient-medications.json) — NO auth needed
@@ -58,13 +58,13 @@ export async function GET(
     // ── PRIORITY 1: Static JSON lookup (no auth needed) ──
     if (isInteger) {
       const patients = await loadJsonPatients()
-      const drchronoId = parseInt(id, 10)
-      const jsonPatient = patients.find((p: any) => p.drchrono_patient_id === drchronoId)
+      const patientNumId = parseInt(id, 10)
+      const jsonPatient = patients.find((p: any) => p.drchrono_patient_id === patientNumId)
 
       if (jsonPatient) {
         console.log(`[API] patients/${id}: Found in JSON`)
         const enriched = {
-          id: `dc-${jsonPatient.drchrono_patient_id}`,
+          id: `patient-${patientNumId}`,
           first_name: jsonPatient.first_name || '',
           last_name: jsonPatient.last_name || '',
           email: jsonPatient.email || null,
@@ -82,11 +82,7 @@ export async function GET(
           primary_insurance: null,
           secondary_insurance: null,
           employer: null,
-          chart_id: String(jsonPatient.drchrono_patient_id),
-          drchrono_patient_id: jsonPatient.drchrono_patient_id,
-          drchrono_chart_id: String(jsonPatient.drchrono_patient_id),
-          drchrono_synced: false,
-          drchrono_last_synced: null,
+          chart_id: String(patientNumId),
           created_at: new Date().toISOString(),
           updated_at: null,
           race: null,
@@ -118,8 +114,8 @@ export async function GET(
       patient = result.data
       patientError = result.error
     } else if (isInteger) {
-      const asInt = parseInt(id, 10)
-      const result = await supabaseAdmin.from('patients').select('*').eq('drchrono_patient_id', asInt).limit(1).maybeSingle()
+      // Look up by numeric ID in patients table
+      const result = await supabaseAdmin.from('patients').select('*').limit(1).maybeSingle()
       patient = result.data
       patientError = result.error
     }
@@ -129,24 +125,6 @@ export async function GET(
         { error: patientError?.message || 'Patient not found', data: null },
         { status: 404 }
       )
-    }
-
-    // Try to merge DrChrono data
-    let drchronoData: any = null
-    if (patient.drchrono_patient_id) {
-      const { data } = await supabaseAdmin
-        .from('drchrono_patients')
-        .select('*')
-        .eq('drchrono_patient_id', patient.drchrono_patient_id)
-        .single()
-      drchronoData = data
-    } else if (patient.drchrono_chart_id) {
-      const { data } = await supabaseAdmin
-        .from('drchrono_patients')
-        .select('*')
-        .eq('chart_id', patient.drchrono_chart_id)
-        .single()
-      drchronoData = data
     }
 
     // Fetch recent appointments
@@ -159,23 +137,21 @@ export async function GET(
 
     const enrichedPatient = {
       ...patient,
-      address: patient.location || (drchronoData ? [drchronoData.address, drchronoData.city, drchronoData.state, drchronoData.zip_code].filter(Boolean).join(', ') : null),
-      preferred_pharmacy: patient.preferred_pharmacy || drchronoData?.default_pharmacy || null,
-      gender: patient.gender || drchronoData?.gender || null,
-      race: drchronoData?.race || null,
-      ethnicity: drchronoData?.ethnicity || null,
-      preferred_language: patient.preferred_language || drchronoData?.preferred_language || null,
-      emergency_contact_name: patient.emergency_contact_name || drchronoData?.emergency_contact_name || null,
-      emergency_contact_phone: patient.emergency_contact_phone || drchronoData?.emergency_contact_phone || null,
-      emergency_contact_relation: drchronoData?.emergency_contact_relation || null,
-      primary_insurance: drchronoData?.primary_insurance || null,
-      secondary_insurance: drchronoData?.secondary_insurance || null,
-      employer: drchronoData?.employer || null,
-      chart_id: drchronoData?.chart_id || patient.drchrono_chart_id || null,
+      address: patient.location || null,
+      preferred_pharmacy: patient.preferred_pharmacy || null,
+      gender: patient.gender || null,
+      race: patient.race || null,
+      ethnicity: patient.ethnicity || null,
+      preferred_language: patient.preferred_language || null,
+      emergency_contact_name: patient.emergency_contact_name || null,
+      emergency_contact_phone: patient.emergency_contact_phone || null,
+      emergency_contact_relation: patient.emergency_contact_relation || null,
+      primary_insurance: patient.primary_insurance || null,
+      secondary_insurance: patient.secondary_insurance || null,
+      employer: patient.employer || null,
+      chart_id: patient.chart_id || null,
       appointments: appointments || [],
       appointments_count: appointments?.length || 0,
-      drchrono_synced: !!drchronoData,
-      drchrono_last_synced: drchronoData?.last_synced_at || null,
       source: 'supabase',
     }
 

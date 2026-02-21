@@ -18,7 +18,7 @@ interface BillingPanelProps {
 
 interface LineItem {
   id: number
-  drchrono_patient_id: number
+  patient_id: string
   procedure_code: string | null
   description: string | null
   diagnosis_pointers: string[] | null
@@ -43,12 +43,12 @@ export default function BillingPanel({ isOpen, onClose, patientId, patientName }
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('drchrono_line_items')
+        .from('billing_claims')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('patient_id', patientId)
         .order('service_date', { ascending: false })
       if (error) {
-        console.log('drchrono_line_items query:', error.message)
+        console.log('billing_claims query:', error.message)
         setItems([])
       } else {
         setItems(data || [])

@@ -3,7 +3,7 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
+import { db, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -11,14 +11,9 @@ export async function GET(req: NextRequest) {
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
+    const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
     const { data: patient } = await db.from('patients').select('*').eq('id', resolvedUuid || patient_id).single()
-    let dcPatient: any = null
-    if (dcId) {
-      const { data } = await db.from('drchrono_patients').select('*').eq('drchrono_patient_id', dcId).single()
-      dcPatient = data
-    }
-    return NextResponse.json({ data: patient ? [{ ...patient, _drchrono: dcPatient }] : [], drchrono_data: dcPatient ? [dcPatient] : [] })
+    return NextResponse.json({ data: patient ? [patient] : [] })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
@@ -36,11 +31,9 @@ export async function PUT(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for demographics
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key + resolvePatientIds
+// Updated: 2026-02-20 | Removed DrChrono integration (drchrono_patients queries, getDrchronoPatientId)
 //
 // WIRING: Called by usePanelData hook from demographics panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

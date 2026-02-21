@@ -27,39 +27,39 @@ async function fetchAll(table: string, select: string, orderBy: string = "id") {
   return allRows;
 }
 
-function buildMap(rows: any[], key: string): Map<number, any[]> {
-  const map = new Map<number, any[]>();
-  for (const r of rows) { if (!map.has(r[key])) map.set(r[key], []); map.get(r[key])!.push(r); }
+function buildMap(rows: any[], key: string): Map<string, any[]> {
+  const map = new Map<string, any[]>();
+  for (const r of rows) { const k = r[key]; if (!map.has(k)) map.set(k, []); map.get(k)!.push(r); }
   return map;
 }
 
 export async function GET(req: NextRequest) {
   const startTime = Date.now();
   try {
-    const dcPatients = await fetchAll("drchrono_patients", "drchrono_patient_id, first_name, last_name, email, cell_phone, date_of_birth, address, city, state, zip_code, default_pharmacy", "drchrono_patient_id");
-    const allMeds = await fetchAll("drchrono_medications", "drchrono_patient_id, name, dosage_quantity, dosage_unit, sig, frequency, status, date_prescribed, date_stopped_taking", "id");
-    const allAllergies = await fetchAll("drchrono_allergies", "drchrono_patient_id, reaction, status, notes, severity, onset_date", "id");
-    const allProblems = await fetchAll("drchrono_problems", "drchrono_patient_id, name, icd_code, status, date_diagnosis, date_changed", "id");
-    const allAppts = await fetchAll("drchrono_appointments", "drchrono_patient_id, scheduled_time, duration, status, reason, office, doctor, notes", "id");
+    const allPatients = await fetchAll("patients", "id, first_name, last_name, email, phone, date_of_birth, location, preferred_pharmacy", "id");
+    const allMeds = await fetchAll("patient_medications", "patient_id, medication_name, dosage, frequency, status, created_at", "id");
+    const allAllergies = await fetchAll("patient_allergies", "patient_id, allergen, reaction, severity, status, created_at", "id");
+    const allProblems = await fetchAll("patient_problems", "patient_id, problem_name, icd_code, status, onset_date, created_at", "id");
+    const allAppts = await fetchAll("appointments", "patient_id, requested_date_time, status, visit_type, chief_complaint, doctor_id, notes", "id");
 
-    const medsMap = buildMap(allMeds, "drchrono_patient_id");
-    const allergiesMap = buildMap(allAllergies, "drchrono_patient_id");
-    const problemsMap = buildMap(allProblems, "drchrono_patient_id");
-    const apptsMap = buildMap(allAppts, "drchrono_patient_id");
+    const medsMap = buildMap(allMeds, "patient_id");
+    const allergiesMap = buildMap(allAllergies, "patient_id");
+    const problemsMap = buildMap(allProblems, "patient_id");
+    const apptsMap = buildMap(allAppts, "patient_id");
 
-    const patients = dcPatients.map((p: any) => {
-      const dcId = p.drchrono_patient_id;
+    const patients = allPatients.map((p: any) => {
+      const pId = p.id;
       return {
-        drchrono_patient_id: dcId,
+        patient_id: pId,
         first_name: p.first_name || "", last_name: p.last_name || "",
-        email: (p.email || "").toLowerCase(), phone: p.cell_phone || "",
+        email: (p.email || "").toLowerCase(), phone: p.phone || "",
         date_of_birth: p.date_of_birth || "",
-        address: [p.address, p.city, p.state, p.zip_code].filter(Boolean).join(", "),
-        pharmacy: p.default_pharmacy || "",
-        medications: (medsMap.get(dcId) || []).map((m: any) => ({ name: m.name || "", dosage: [m.dosage_quantity, m.dosage_unit].filter(Boolean).join(" ") || "", sig: m.sig || m.frequency || "", status: m.status || "unknown", date_prescribed: m.date_prescribed || "", date_stopped: m.date_stopped_taking || null })),
-        allergies: (allergiesMap.get(dcId) || []).map((a: any) => ({ name: a.reaction || a.notes || "", severity: a.severity || "", status: a.status || "active", onset_date: a.onset_date || "" })),
-        problems: (problemsMap.get(dcId) || []).map((pr: any) => ({ name: pr.name || "", icd_code: pr.icd_code || "", status: pr.status || "active", date_diagnosis: pr.date_diagnosis || "" })),
-        appointments: (apptsMap.get(dcId) || []).map((ap: any) => ({ scheduled_time: ap.scheduled_time || "", duration: ap.duration || 0, status: ap.status || "", reason: ap.reason || "", doctor: ap.doctor || "", notes: ap.notes || "" })),
+        address: p.location || "",
+        pharmacy: p.preferred_pharmacy || "",
+        medications: (medsMap.get(pId) || []).map((m: any) => ({ name: m.medication_name || "", dosage: m.dosage || "", sig: m.frequency || "", status: m.status || "unknown", date_prescribed: m.created_at || "" })),
+        allergies: (allergiesMap.get(pId) || []).map((a: any) => ({ name: a.allergen || a.reaction || "", severity: a.severity || "", status: a.status || "active", onset_date: a.created_at || "" })),
+        problems: (problemsMap.get(pId) || []).map((pr: any) => ({ name: pr.problem_name || "", icd_code: pr.icd_code || "", status: pr.status || "active", date_diagnosis: pr.onset_date || "" })),
+        appointments: (apptsMap.get(pId) || []).map((ap: any) => ({ scheduled_time: ap.requested_date_time || "", status: ap.status || "", reason: ap.chief_complaint || "", visit_type: ap.visit_type || "", notes: ap.notes || "" })),
       };
     });
 

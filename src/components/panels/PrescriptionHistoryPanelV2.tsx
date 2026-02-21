@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId, patientName, appointmentId }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'prescriptions', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'prescriptions', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Active')
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -32,9 +32,8 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
   })
 
   const allItems = useMemo(() => {
-    const dc = (drchronoData || []).map((d: any) => ({ ...d, _source: 'drchrono', medication_name: d.name || d.medication_name || 'Unknown' }))
-    return [...(data || []), ...dc].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [data, drchronoData])
+    return [...(data || [])].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }, [data])
 
   const filtered = useMemo(() => {
     if (tab === 'Active') return allItems.filter((r: any) => ['active', 'sent', 'filled', 'pending'].includes(r.status))
@@ -65,7 +64,6 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
       error={error} hasData={allItems.length > 0 || showAdd} emptyMessage="No prescriptions"
       onRetry={refetch} onClose={onClose} draggable={false}
       badge={refillsDue > 0 ? `${refillsDue} refills due` : allItems.length || undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => { resetForm(); setShowAdd(true) }} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -114,7 +112,6 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
                   <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[rx.status] || STATUS_COLORS.pending}`}>{(rx.status || 'pending').toUpperCase()}</span>
                   {rx.dea_schedule && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-red-500/20 text-red-400 border border-red-500/30">C-{rx.dea_schedule}</span>}
                   {rx.prior_auth_required && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-500/20 text-amber-400">PA REQ</span>}
-                  {rx._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   {rx.dosage && <span>{rx.dosage}</span>}
@@ -125,13 +122,11 @@ export default function PrescriptionHistoryPanelV2({ isOpen, onClose, patientId,
                 {rx.sig && <p className="text-xs text-gray-400 mt-0.5 italic">{rx.sig}</p>}
                 {rx.pharmacy && <div className="text-[10px] text-gray-600 mt-0.5 flex items-center gap-1"><Building2 className="w-3 h-3" />{rx.pharmacy}</div>}
               </div>
-              {!rx._source && (
-                <div className="flex gap-1 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                   <button onClick={() => { setEditId(rx.id); setForm({ medication_name: rx.medication_name, dosage: rx.dosage || '', frequency: rx.frequency || '', quantity: rx.quantity?.toString() || '', refills: rx.refills?.toString() || '0', dea_schedule: rx.dea_schedule || '', pharmacy: rx.pharmacy || '', sig: rx.sig || '', dispense_as_written: rx.dispense_as_written || false, prior_auth_required: rx.prior_auth_required || false, notes: rx.notes || '', status: rx.status || 'pending' }); setShowAdd(true) }}
                     className="p-1 text-gray-500 hover:text-teal-400"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => remove(rx.id)} className="p-1 text-gray-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              )}
+              </div>
             </div>
           ))}
         </div>

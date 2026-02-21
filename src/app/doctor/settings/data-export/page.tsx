@@ -98,7 +98,7 @@ export default function DataExportPage() {
       <h1 className="text-2xl font-bold text-white mb-2">📦 Patient Data Export</h1>
       <p className="text-gray-400 mb-6">
         Export all patient records with medications, allergies, and problems to a JSON file.
-        This creates a local backup independent of DrChrono.
+        This creates a local backup of all patient data.
       </p>
 
       {/* Action buttons */}
@@ -180,8 +180,8 @@ export default function DataExportPage() {
         </ul>
         <div className="mt-4 p-3 bg-teal-900/20 border border-teal-500/30 rounded-lg">
           <p className="text-xs text-teal-300">
-            🛡️ This export works independently of DrChrono. Once saved, you can access patient data
-            even if the DrChrono API is down or unavailable. Run this export regularly to keep your backup current.
+            🛡️ Once saved, you can access patient data even if the server is unreachable.
+            Run this export regularly to keep your backup current.
           </p>
         </div>
       </div>

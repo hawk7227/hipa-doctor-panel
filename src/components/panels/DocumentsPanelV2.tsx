@@ -30,7 +30,7 @@ interface DocItem {
   created_at?: string
   uploaded_at?: string
   tags?: string[]
-  _source?: 'drchrono' | 'local'
+  _source?: 'local'
   mime_type?: string
   file_size?: number
   uploaded_by?: string
@@ -381,7 +381,7 @@ export default function DocumentsPanelV2({ isOpen, onClose, patientId, patientNa
             </p>
           </div>
         ) : activeTab === 'uploaded' || activeTab === 'consent-forms' || activeTab === 'lab-results' ? (
-          /* ── TABLE LAYOUT (matches DrChrono) ── */
+          /* ── TABLE LAYOUT ── */
           <table className="w-full text-xs mt-1">
             <thead>
               <tr className="text-left text-[10px] text-gray-500 border-b border-[#1a3d3d]">
@@ -401,9 +401,7 @@ export default function DocumentsPanelV2({ isOpen, onClose, patientId, patientNa
                 return (
                   <tr key={doc.id || i} className="border-b border-[#1a3d3d]/30 hover:bg-white/[0.02] group">
                     <td className="py-2 px-2">
-                      {doc._source === 'drchrono' ? (
-                        <span className="w-5 h-5 rounded bg-green-500/10 text-green-500 text-[8px] font-bold flex items-center justify-center" title="DrChrono">dc</span>
-                      ) : isImg ? <FileImage className="h-4 w-4 text-purple-400" /> :
+                      {isImg ? <FileImage className="h-4 w-4 text-purple-400" /> :
                         isPdf ? <FileBadge className="h-4 w-4 text-red-400" /> :
                         <FileText className="h-4 w-4 text-amber-400" />}
                     </td>

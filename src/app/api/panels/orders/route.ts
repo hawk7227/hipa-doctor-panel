@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       .limit(50)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ data: data || [], drchrono_data: [] })
+    return NextResponse.json({ data: data || [] })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
@@ -74,11 +74,9 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for orders
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key
+// Updated: 2026-02-20 | Removed DrChrono references (drchrono_data from response)
 //
 // WIRING: Called by usePanelData hook from orders panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for authenticateDoctor()
 // ═══════════════════════════════════════════════════════════════

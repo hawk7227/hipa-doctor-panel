@@ -220,8 +220,8 @@ export default function SystemHealthPage() {
         <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
           <ArchCard icon={Server} label="Pages" count={8} color="text-blue-400" items={['Dashboard', 'Appointments', 'Patients', 'Data Export', 'System Health', 'Availability', 'Staff Hub', 'Chart Mgmt']} />
           <ArchCard icon={Database} label="EHR Panels" count={28} color="text-teal-400" items={['Meds', 'Allergies', 'Problems', 'Vitals', 'Labs', 'Notes', 'Demographics', 'Immunizations', 'Documents', 'History', 'Pharmacy', 'Care Plans', 'Billing', 'Insurance', 'Alerts', 'AI', 'Quality', 'Cohorts', 'Orders', 'Rx Hx', 'Med Hx', 'Comms', 'Prior Auth', 'Chart Mgmt', 'eRx', 'Lab Orders', 'Referrals', 'Appts']} />
-          <ArchCard icon={Zap} label="API Routes" count={50} color="text-amber-400" items={['26 panel APIs', 'Dashboard stats', 'Patient CRUD', 'DrChrono sync', 'Cron export', 'Stripe payments', 'Twilio SMS', 'Email', 'Zoom', 'Prescriptions']} />
-          <ArchCard icon={FileText} label="Data Sources" count={3} color="text-purple-400" items={['Tier 1: Live DrChrono', 'Tier 2: Supabase backup', 'Tier 3: Static JSON (4.3MB)']} />
+          <ArchCard icon={Zap} label="API Routes" count={50} color="text-amber-400" items={['26 panel APIs', 'Dashboard stats', 'Patient CRUD', 'Data sync', 'Cron export', 'Stripe payments', 'Twilio SMS', 'Email', 'Zoom', 'Prescriptions']} />
+          <ArchCard icon={FileText} label="Data Sources" count={2} color="text-purple-400" items={['Tier 1: Supabase (primary)', 'Tier 2: Static JSON fallback']} />
         </div>
       </div>
 

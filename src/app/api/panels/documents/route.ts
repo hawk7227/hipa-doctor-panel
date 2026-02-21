@@ -3,7 +3,7 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
+import { db, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -11,14 +11,7 @@ export async function GET(req: NextRequest) {
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
-
-    // DrChrono documents
-    let drchronoDocs: any[] = []
-    if (dcId) {
-      const { data } = await db.from('drchrono_documents').select('*').eq('drchrono_patient_id', dcId).order('date', { ascending: false }).limit(100)
-      drchronoDocs = (data || []).map((d: any) => ({ ...d, _source: 'drchrono' }))
-    }
+    const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
 
     // Local uploaded documents
     let localDocs: any[] = []
@@ -32,10 +25,6 @@ export async function GET(req: NextRequest) {
     try {
       const { data: local } = await db.from('clinical_notes').select('*').eq('patient_id', resolvedUuid || patient_id).order('created_at', { ascending: false }).limit(50)
       clinicalNotes = local || []
-      if (dcId) {
-        const { data: dc } = await db.from('drchrono_clinical_notes').select('*').eq('drchrono_patient_id', dcId).order('created_at', { ascending: false }).limit(50)
-        if (dc) clinicalNotes.push(...dc)
-      }
     } catch { /* ok */ }
 
     // Referrals
@@ -60,7 +49,7 @@ export async function GET(req: NextRequest) {
     } catch { /* table may not exist */ }
 
     return NextResponse.json({
-      data: [...drchronoDocs, ...localDocs],
+      data: localDocs,
       clinical_notes: clinicalNotes,
       referrals,
       amendments,
@@ -199,11 +188,9 @@ export async function PATCH(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for documents
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key + resolvePatientIds
+// Updated: 2026-02-20 | Removed DrChrono integration (drchrono_documents, drchrono_clinical_notes queries, getDrchronoPatientId)
 //
 // WIRING: Called by usePanelData hook from documents panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

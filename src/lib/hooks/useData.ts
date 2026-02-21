@@ -121,7 +121,7 @@ export function useSupabaseQuery<T = any>({
   })
 }
 
-// ── Sync status for external APIs (DrChrono, etc.) ──
+// ── Sync status for external APIs ──
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error'
 
 interface UseSyncOptions {

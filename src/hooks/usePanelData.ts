@@ -73,15 +73,7 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
     'tasks': ['alerts'],
     'quality-measures': ['alerts'],
   }
-  const ENDPOINT_TO_DC: Record<string, string[]> = {
-    'medications': ['medications', 'drchrono'],
-    'medication-history': ['medications', 'drchrono'],
-    'allergies': ['allergies', 'drchrono'],
-    'problems': ['problems', 'drchrono'],
-    'clinical-notes': ['clinical_notes', 'drchrono'],
-    'documents': ['documents', 'drchrono'],
-    'lab-results': ['lab_results', 'drchrono'],
-  }
+  const ENDPOINT_TO_DC: Record<string, string[]> = {}
   const ENDPOINT_TO_TABLE: Record<string, string> = {
     'medications': 'patient_medications',
     'medication-history': 'patient_medications',
@@ -123,7 +115,7 @@ export function usePanelData<T = any>({ endpoint, patientId, autoFetch = true }:
         const localPath = ENDPOINT_TO_LOCAL[endpoint] || []
         const dcPath = ENDPOINT_TO_DC[endpoint] || []
         const localData = localPath.length > 0 ? getArr(json, localPath) : (json.data || [])
-        const dcData = dcPath.length > 0 ? getArr(json, dcPath) : (json.drchrono_data || [])
+        const dcData: T[] = []
         setData(localData as T[])
         setDrchronoData(dcData as T[])
       }

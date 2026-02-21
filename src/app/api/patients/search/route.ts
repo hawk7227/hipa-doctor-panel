@@ -5,11 +5,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDoctor } from '@/lib/api-auth'
 import { createClient } from '@supabase/supabase-js'
-import { drchronoFetch } from '@/lib/drchrono'
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/patients/search?q=<query>
-// Smart patient search: DrChrono first, Supabase fallback
+// Smart patient search: Supabase patients table
 //
 // Input detection:
 //   "Marcus"           → name search (first OR last)
@@ -67,44 +66,6 @@ function detectSearchType(query: string): { type: SearchType; parsed: any } {
   return { type: 'name', parsed: { name: q } }
 }
 
-// ─── DRCHRONO PATIENT SEARCH ──────────────────────────────────
-async function searchDrChrono(type: SearchType, parsed: any): Promise<any[]> {
-  try {
-    let results: any[] = []
-
-    if (type === 'name') {
-      // Search first_name and last_name separately, merge
-      const [byFirst, byLast] = await Promise.all([
-        drchronoFetch(`patients?first_name=${encodeURIComponent(parsed.name)}`),
-        drchronoFetch(`patients?last_name=${encodeURIComponent(parsed.name)}`),
-      ])
-      const firstResults = byFirst.ok ? (byFirst.data.results || []) : []
-      const lastResults = byLast.ok ? (byLast.data.results || []) : []
-      // Deduplicate by id
-      const seen = new Set<number>()
-      for (const p of [...firstResults, ...lastResults]) {
-        if (!seen.has(p.id)) {
-          seen.add(p.id)
-          results.push(p)
-        }
-      }
-    } else if (type === 'name_split') {
-      const res = await drchronoFetch(
-        `patients?first_name=${encodeURIComponent(parsed.first)}&last_name=${encodeURIComponent(parsed.last)}`
-      )
-      results = res.ok ? (res.data.results || []) : []
-    } else if (type === 'dob') {
-      const res = await drchronoFetch(`patients?date_of_birth=${parsed.dob}`)
-      results = res.ok ? (res.data.results || []) : []
-    }
-    // email and phone: DrChrono doesn't support — return empty
-    return results
-  } catch (err) {
-    console.error('[PatientSearch] DrChrono error:', err)
-    return []
-  }
-}
-
 // ─── SUPABASE LOCAL SEARCH ────────────────────────────────────
 async function searchLocal(type: SearchType, parsed: any): Promise<any[]> {
   try {
@@ -137,54 +98,22 @@ async function searchLocal(type: SearchType, parsed: any): Promise<any[]> {
   }
 }
 
-// ─── ALSO SEARCH drchrono_patients TABLE ──────────────────────
-async function searchDrChronoLocal(type: SearchType, parsed: any): Promise<any[]> {
-  try {
-    let query = supabaseAdmin
-      .from('drchrono_patients')
-      .select('drchrono_patient_id, first_name, last_name, email, cell_phone, home_phone, date_of_birth, address, city, state, zip_code, default_pharmacy, chart_id')
-      .limit(20)
-
-    if (type === 'name') {
-      query = query.or(`first_name.ilike.%${parsed.name}%,last_name.ilike.%${parsed.name}%`)
-    } else if (type === 'name_split') {
-      query = query.ilike('first_name', `%${parsed.first}%`).ilike('last_name', `%${parsed.last}%`)
-    } else if (type === 'dob') {
-      query = query.eq('date_of_birth', parsed.dob)
-    } else if (type === 'email') {
-      query = query.ilike('email', `%${parsed.email}%`)
-    } else if (type === 'phone') {
-      query = query.or(`cell_phone.ilike.%${parsed.phone}%,home_phone.ilike.%${parsed.phone}%`)
-    }
-
-    const { data, error } = await query
-    if (error) {
-      console.error('[PatientSearch] drchrono_patients error:', error.message)
-      return []
-    }
-    return (data || []).map(p => ({ ...p, source: 'drchrono_local' }))
-  } catch (err) {
-    return []
-  }
-}
-
 // ─── NORMALIZE RESULTS ────────────────────────────────────────
 function normalizeResult(p: any, source: string) {
   return {
     id: p.id || null,
-    drchrono_id: p.drchrono_patient_id || p.id || null,
     chart_id: p.chart_id || null,
     first_name: p.first_name || '',
     last_name: p.last_name || '',
     email: p.email || null,
-    phone: p.cell_phone || p.phone || p.home_phone || null,
+    phone: p.phone || null,
     date_of_birth: p.date_of_birth || null,
     address: p.address || p.location || null,
     city: p.city || null,
     state: p.state || null,
     zip_code: p.zip_code || null,
-    pharmacy: p.default_pharmacy || p.preferred_pharmacy || null,
-    source, // 'drchrono_api' | 'drchrono_local' | 'local'
+    pharmacy: p.preferred_pharmacy || null,
+    source, // 'local'
   }
 }
 
@@ -199,34 +128,12 @@ export async function GET(req: NextRequest) {
   const startTime = performance.now()
   const { type, parsed } = detectSearchType(q)
 
-  // Search all sources in parallel — DrChrono API first until full sync complete
-  const [drchronoResults, localResults, drchronoLocalResults] = await Promise.all([
-    searchDrChrono(type, parsed).catch(e => { console.error('[PatientSearch] DrChrono API failed:', e); return [] }),
-    searchLocal(type, parsed).catch(e => { console.error('[PatientSearch] Local search failed:', e); return [] }),
-    searchDrChronoLocal(type, parsed).catch(e => { console.error('[PatientSearch] DrChrono local failed:', e); return [] }),
-  ])
+  // Search local patients
+  const localResults = await searchLocal(type, parsed).catch(e => { console.error('[PatientSearch] Local search failed:', e); return [] })
 
   // Normalize all results
   const allResults: any[] = []
   const seen = new Set<string>()
-
-  // DrChrono API results first (source of truth)
-  for (const p of drchronoResults) {
-    const key = `dc-${p.id}`
-    if (!seen.has(key)) {
-      seen.add(key)
-      allResults.push(normalizeResult(p, 'drchrono_api'))
-    }
-  }
-
-  // DrChrono local (already synced)
-  for (const p of drchronoLocalResults) {
-    const key = `dc-${p.drchrono_patient_id}`
-    if (!seen.has(key)) {
-      seen.add(key)
-      allResults.push(normalizeResult(p, 'drchrono_local'))
-    }
-  }
 
   // Local patients (dedupe by email if possible)
   for (const p of localResults) {
@@ -246,8 +153,6 @@ export async function GET(req: NextRequest) {
     query: q,
     search_type: type,
     sources: {
-      drchrono_api: drchronoResults.length,
-      drchrono_local: drchronoLocalResults.length,
       local: localResults.length,
     },
     elapsed_ms: elapsed,

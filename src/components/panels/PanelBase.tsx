@@ -53,7 +53,7 @@ export interface PanelBaseProps {
   defaultCollapsed?: boolean
   /** Badge text/count */
   badge?: string | number
-  /** DrChrono sync status */
+  /** Sync status indicator */
   syncStatus?: 'synced' | 'syncing' | 'error' | null
   /** Show drag handle? (for grid layout) */
   draggable?: boolean

@@ -69,7 +69,7 @@ export default function DataExportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Database className="w-6 h-6 text-emerald-400" /> Patient Data Export</h1>
-          <p className="text-sm text-gray-400 mt-1">Full backup of all patient records — works without DrChrono or internet</p>
+          <p className="text-sm text-gray-400 mt-1">Full backup of all patient records — works offline</p>
         </div>
         <div className="flex items-center gap-2">
           {!isStale ? (
@@ -125,7 +125,7 @@ export default function DataExportPage() {
           <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-400" /> 3-tier fallback (live → database → static file)</div>
         </div>
         <div className="mt-4 p-3 bg-teal-900/20 border border-teal-500/30 rounded-lg">
-          <p className="text-xs text-teal-300">🛡️ All data is accessible even if DrChrono goes down, Supabase is unreachable, or you have no internet. The static JSON file is baked into both the patient and doctor apps.</p>
+          <p className="text-xs text-teal-300">🛡️ All data is accessible even if Supabase is unreachable or you have no internet. The static JSON file is baked into both the patient and doctor apps.</p>
         </div>
       </div>
     </div>

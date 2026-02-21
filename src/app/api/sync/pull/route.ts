@@ -23,12 +23,12 @@ const db = createClient(
 const TABLE_CONFIG: Record<string, { table: string; select: string; pageSize: number }> = {
   patients: {
     table: 'patients',
-    select: 'id, user_id, first_name, last_name, email, phone, date_of_birth, location, timezone, preferred_pharmacy, allergies, current_medications, active_problems, chief_complaint, ros_general, vitals_bp, vitals_hr, vitals_temp, has_drug_allergies, has_recent_surgeries, recent_surgeries_details, has_ongoing_medical_issues, ongoing_medical_issues_details, sms_enabled, email_enabled, call_enabled, drchrono_patient_id, created_at, updated_at',
+    select: 'id, user_id, first_name, last_name, email, phone, date_of_birth, location, timezone, preferred_pharmacy, allergies, current_medications, active_problems, chief_complaint, ros_general, vitals_bp, vitals_hr, vitals_temp, has_drug_allergies, has_recent_surgeries, recent_surgeries_details, has_ongoing_medical_issues, ongoing_medical_issues_details, sms_enabled, email_enabled, call_enabled, created_at, updated_at',
     pageSize: 500,
   },
   appointments: {
     table: 'appointments',
-    select: 'id, doctor_id, patient_id, service_type, status, visit_type, requested_date_time, payment_intent_id, payment_status, patient_first_name, patient_last_name, patient_email, patient_phone, symptoms, chief_complaint, preferred_pharmacy, pharmacy_address, daily_room_name, daily_room_url, chart_locked, consent_accepted, notes, drchrono_appointment_id, created_at, updated_at',
+    select: 'id, doctor_id, patient_id, service_type, status, visit_type, requested_date_time, payment_intent_id, payment_status, patient_first_name, patient_last_name, patient_email, patient_phone, symptoms, chief_complaint, preferred_pharmacy, pharmacy_address, daily_room_name, daily_room_url, chart_locked, consent_accepted, notes, created_at, updated_at',
     pageSize: 200,
   },
   clinicalNotes: {

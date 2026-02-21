@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       if (!table) return NextResponse.json({ error: 'Invalid history type. Use: family, social, surgical' }, { status: 400 })
       const { data, error } = await db.from(table).select('*').eq('patient_id', patient_id).order('created_at', { ascending: false })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ data: data || [], drchrono_data: [] })
+      return NextResponse.json({ data: data || [] })
     }
     // Return all three types
     const [fam, soc, sur] = await Promise.all([
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       db.from('patient_social_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }),
       db.from('patient_surgical_history').select('*').eq('patient_id', patient_id).order('created_at', { ascending: false }),
     ])
-    return NextResponse.json({ data: { family: fam.data || [], social: soc.data || [], surgical: sur.data || [] }, drchrono_data: [] })
+    return NextResponse.json({ data: { family: fam.data || [], social: soc.data || [], surgical: sur.data || [] } })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
@@ -78,11 +78,9 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for history
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key
+// Updated: 2026-02-20 | Removed DrChrono references (drchrono_data from response)
 //
 // WIRING: Called by usePanelData hook from history panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for authenticateDoctor()
 // ═══════════════════════════════════════════════════════════════

@@ -2,7 +2,6 @@
 // @see CONTRIBUTING.md for mandatory development rules.
 import { NextRequest, NextResponse } from 'next/server'
 import { db, resolvePatientIds, authenticateDoctor } from '../_shared'
-import { getExportMedications } from '@/lib/export-fallback'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,20 +10,12 @@ export async function GET(req: NextRequest) {
   const raw_id = req.nextUrl.searchParams.get('patient_id')
   if (!raw_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    const { uuid, dcId } = await resolvePatientIds(raw_id)
+    const { uuid } = await resolvePatientIds(raw_id)
     const { data: local } = uuid
       ? await db.from('patient_medications').select('*').eq('patient_id', uuid).order('created_at', { ascending: false })
       : { data: [] }
-    let drchrono: any[] = []
-    if (dcId) {
-      const { data } = await db.from('drchrono_medications').select('*').eq('drchrono_patient_id', dcId).order('date_prescribed', { ascending: false })
-      drchrono = data || []
-    }
-    if (drchrono.length === 0) {
-      drchrono = await getExportMedications(db, dcId, uuid || raw_id)
-    }
-    console.log(`[medications] raw=${raw_id} uuid=${uuid} dcId=${dcId} local=${local?.length||0} dc=${drchrono.length}`)
-    return NextResponse.json({ data: local || [], drchrono_data: drchrono })
+    console.log(`[medications] raw=${raw_id} uuid=${uuid} local=${local?.length||0}`)
+    return NextResponse.json({ data: local || [] })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 

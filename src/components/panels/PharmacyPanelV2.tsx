@@ -11,7 +11,7 @@ import { usePanelData } from '@/hooks/usePanelData'
 interface Props { isOpen: boolean; onClose: () => void; patientId: string; patientName: string }
 
 export default function PharmacyPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'pharmacy', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'pharmacy', patientId })
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({ pharmacy_name: '', phone: '', fax: '', address: '', city: '', state: '', zip: '', is_preferred: false, pharmacy_type: 'retail', notes: '' })
 

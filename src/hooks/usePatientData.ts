@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react'
 // usePatientData — Patient-only data hook
 //
 // Fetches patient via API route (not direct Supabase)
-// Returns enriched patient with DrChrono merge + appointments
+// Returns enriched patient with appointments
 // Interface names match DB columns exactly
 // ═══════════════════════════════════════════════════════════════
 
@@ -40,17 +40,13 @@ export interface PatientData {
   emergency_contact_phone: string | null
   created_at: string
   updated_at: string | null
-  // DrChrono enrichment
+  // Extended fields
   address: string | null
   emergency_contact_relation: string | null
   primary_insurance: any | null
   secondary_insurance: any | null
   employer: string | null
   chart_id: string | null
-  drchrono_patient_id: number | null
-  drchrono_chart_id: string | null
-  drchrono_synced: boolean
-  drchrono_last_synced: string | null
   race: string | null
   ethnicity: string | null
   // Appointments

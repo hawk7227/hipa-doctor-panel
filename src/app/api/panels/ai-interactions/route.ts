@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     if (patient_id) query = query.eq('patient_id', patient_id)
     if (doctor_id) query = query.eq('doctor_id', doctor_id)
     const { data } = await query
-    return NextResponse.json({ data: data || [], drchrono_data: [] })
+    return NextResponse.json({ data: data || [] })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
@@ -50,11 +50,9 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for ai-interactions
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key
+// Updated: 2026-02-20 | Removed DrChrono references (drchrono_data from response)
 //
 // WIRING: Called by usePanelData hook from ai-interactions panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for authenticateDoctor()
 // ═══════════════════════════════════════════════════════════════

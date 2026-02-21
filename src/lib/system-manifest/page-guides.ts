@@ -33,7 +33,7 @@ export const GUIDE_DASHBOARD: PageGuideConfig = {
     { id: 'FIX-004', title: 'Data export "unexpected token" error saving to database', status: 'fixed' },
   ],
   tips: [
-    'If data stats show 0, click "Sync Now" to populate from DrChrono tables',
+    'If data stats show 0, click "Sync Now" to populate from Supabase tables',
     'The backup auto-runs daily at 6AM UTC via Vercel Cron — no manual sync needed',
     'Download Backup creates a local JSON file as a safety net if Supabase is down',
   ],
@@ -57,7 +57,7 @@ export const GUIDE_APPOINTMENTS: PageGuideConfig = {
     { label: 'Chart Management API', type: 'api', path: '/api/chart' },
     { label: 'Appointments Table', type: 'table', path: 'appointments' },
     { label: 'Patients Table', type: 'table', path: 'patients' },
-    { label: 'All DrChrono Tables', type: 'table', path: 'drchrono_*' },
+    { label: 'Clinical Data Tables', type: 'table', path: 'patient_*' },
   ],
   knownFixes: [
     { id: 'FIX-005', title: 'EHR panels not opening (wrong grid prop + missing panel entries)', status: 'fixed' },
@@ -65,7 +65,7 @@ export const GUIDE_APPOINTMENTS: PageGuideConfig = {
   ],
   tips: [
     'All 28 EHR panels fetch data from /api/panels/{name} with patient_id',
-    'Panels use 3-tier fallback: Live DrChrono → Supabase backup → Static JSON',
+    'Panels use 2-tier fallback: Supabase backup → Static JSON',
     'The grid layout is react-grid-layout — drag panels by their header bar',
   ],
 }
@@ -84,11 +84,11 @@ export const GUIDE_PATIENTS: PageGuideConfig = {
     { label: 'Patient Search API', type: 'api', path: '/api/patients/search' },
     { label: 'WorkspaceCanvas', type: 'service', path: '/components/workspace/WorkspaceCanvas.tsx' },
     { label: 'Patients Table', type: 'table', path: 'patients' },
-    { label: 'DrChrono Patients', type: 'table', path: 'drchrono_patients' },
+    { label: 'Patients Table', type: 'table', path: 'patients' },
   ],
   knownFixes: [
     { id: 'FIX-005', title: 'Patients page was using old 7109-line modal instead of WorkspaceCanvas', status: 'fixed' },
-    { id: 'FIX-008', title: 'DrChrono patient ID often NULL — uses email fallback', status: 'fixed' },
+    { id: 'FIX-008', title: 'Patient ID lookup fallback — uses email fallback', status: 'fixed' },
   ],
 }
 
@@ -163,9 +163,9 @@ export const GUIDE_DATA_EXPORT: PageGuideConfig = {
   pageTitle: 'Data Export',
   pageDescription: 'Full backup system with 3-tier fallback. Export all patient data including medications, allergies, problems, and appointments.',
   features: [
-    { name: 'Sync & Save', description: 'Triggers server-side export of all 5 data types and saves to Supabase patient_data_exports table.', steps: ['Click "Sync & Save to Database"', 'Server fetches all data from DrChrono tables', 'Builds full patient objects with nested arrays', 'Saves to patient_data_exports (UUID: 00000000-0000-0000-0000-000000000001)'] },
+    { name: 'Sync & Save', description: 'Triggers server-side export of all 5 data types and saves to Supabase patient_data_exports table.', steps: ['Click "Sync & Save to Database"', 'Server fetches all data from Supabase tables', 'Builds full patient objects with nested arrays', 'Saves to patient_data_exports (UUID: 00000000-0000-0000-0000-000000000001)'] },
     { name: 'Download JSON', description: 'Downloads the full backup as a JSON file to your computer (~7MB).' },
-    { name: '3-Tier Fallback', description: 'Tier 1: Live DrChrono query. Tier 2: Supabase patient_data_exports table. Tier 3: Static JSON file baked into the app at /public/data/patient-medications.json.' },
+    { name: '2-Tier Fallback', description: 'Tier 1: Supabase patient_data_exports table. Tier 2: Static JSON file baked into the app at /public/data/patient-medications.json.' },
     { name: 'Auto-Sync Cron', description: 'Runs automatically at 6AM UTC daily via Vercel Cron. No manual intervention needed.' },
   ],
   systemWiring: [
@@ -198,17 +198,17 @@ export const GUIDE_ADMIN_BUGS: PageGuideConfig = {
 
 export const GUIDE_PRESCRIPTIONS: PageGuideConfig = {
   pageTitle: 'Prescriptions',
-  pageDescription: 'Manage and track all patient prescriptions. Integrates with DrChrono eRx system.',
+  pageDescription: 'Manage and track all patient prescriptions with eRx system.',
   features: [
     { name: 'Prescription List', description: 'View all prescriptions with medication name, dosage, patient, status, and date.' },
-    { name: 'eRx Integration', description: 'Send electronic prescriptions via DrChrono eRx. Includes controlled substance detection.' },
+    { name: 'eRx Integration', description: 'Send electronic prescriptions via eRx. Includes controlled substance detection.' },
     { name: 'Refill Management', description: 'Process refill requests with automatic controlled substance flagging.' },
   ],
   systemWiring: [
     { label: 'Prescriptions API', type: 'api', path: '/api/prescriptions' },
     { label: 'Fast Prescriptions API', type: 'api', path: '/api/prescriptions-fast' },
     { label: 'Panel: Prescriptions', type: 'api', path: '/api/panels/prescriptions' },
-    { label: 'DrChrono Medications', type: 'table', path: 'drchrono_medications' },
+    { label: 'Patient Medications', type: 'table', path: 'patient_medications' },
   ],
 }
 
@@ -221,8 +221,8 @@ export const GUIDE_LABS: PageGuideConfig = {
   ],
   systemWiring: [
     { label: 'Lab Results Panel API', type: 'api', path: '/api/panels/lab-results' },
-    { label: 'DrChrono Lab Orders', type: 'table', path: 'drchrono_lab_orders' },
-    { label: 'DrChrono Lab Results', type: 'table', path: 'drchrono_lab_results' },
+    { label: 'Lab Orders', type: 'table', path: 'lab_orders' },
+    { label: 'Lab Results', type: 'table', path: 'lab_results' },
   ],
 }
 
@@ -262,13 +262,11 @@ export const GUIDE_SETTINGS: PageGuideConfig = {
   pageTitle: 'Settings',
   pageDescription: 'System configuration, integrations, and admin tools.',
   features: [
-    { name: 'DrChrono Integration', description: 'OAuth connection to DrChrono EHR. Syncs patients, medications, allergies, problems, and appointments.' },
+    { name: 'EHR Integration', description: 'Manage EHR data syncing for patients, medications, allergies, problems, and appointments.' },
     { name: 'Notification Settings', description: 'Configure email, SMS, and push notification preferences.' },
     { name: 'System Health', description: 'Access the full system health dashboard from the admin sidebar.' },
   ],
   systemWiring: [
-    { label: 'DrChrono OAuth', type: 'service', path: '/lib/drchrono.ts' },
-    { label: 'DrChrono Sync API', type: 'api', path: '/api/drchrono/cron-sync' },
     { label: 'Environment Check', type: 'api', path: '/api/env-check' },
   ],
 }

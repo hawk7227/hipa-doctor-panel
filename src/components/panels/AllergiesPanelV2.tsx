@@ -21,16 +21,15 @@ const SEVERITIES = ['life_threatening', 'severe', 'moderate', 'mild'] as const
 const TYPES = ['medication', 'food', 'environmental', 'biologic', 'other'] as const
 
 export default function AllergiesPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'allergies', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'allergies', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Active')
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ allergen_name: '', allergy_type: 'medication', severity: 'moderate', reaction: '', status: 'active', onset_date: '', notes: '' })
 
   const allItems = useMemo(() => {
-    const dc = (drchronoData || []).map((d: any) => ({ ...d, _source: 'drchrono', allergen_name: d.description || d.name || 'Unknown', status: d.status || 'active' }))
-    return [...(data || []), ...dc]
-  }, [data, drchronoData])
+    return data || []
+  }, [data])
 
   const filtered = useMemo(() => {
     if (tab === 'Active') return allItems.filter((a: any) => a.status === 'active' || a.status === 'confirmed')
@@ -55,7 +54,6 @@ export default function AllergiesPanelV2({ isOpen, onClose, patientId, patientNa
       error={error} hasData={allItems.length > 0 || showAdd} emptyMessage="No known allergies (NKA)"
       onRetry={refetch} onClose={onClose} draggable={false}
       badge={activeCount > 0 ? activeCount : 'NKA'}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => { resetForm(); setShowAdd(true) }} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -130,7 +128,6 @@ export default function AllergiesPanelV2({ isOpen, onClose, patientId, patientNa
                   <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.moderate}`}>
                     {(a.severity || 'moderate').replace('_', ' ').toUpperCase()}
                   </span>
-                  {a._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   {a.allergy_type && <span className="capitalize">{a.allergy_type}</span>}
@@ -139,13 +136,11 @@ export default function AllergiesPanelV2({ isOpen, onClose, patientId, patientNa
                 </div>
                 {a.notes && <p className="text-xs text-gray-500 mt-1">{a.notes}</p>}
               </div>
-              {!a._source && (
-                <div className="flex gap-1 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                   <button onClick={() => { setEditId(a.id); setForm({ allergen_name: a.allergen_name, allergy_type: a.allergy_type || 'medication', severity: a.severity || 'moderate', reaction: a.reaction || '', status: a.status || 'active', onset_date: a.onset_date || '', notes: a.notes || '' }); setShowAdd(true) }}
                     className="p-1 text-gray-500 hover:text-teal-400"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => remove(a.id)} className="p-1 text-gray-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              )}
+              </div>
             </div>
           ))}
         </div>

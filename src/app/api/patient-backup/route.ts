@@ -47,17 +47,8 @@ function decrypt(encryptedData: string, password: string, ivB64: string, tagB64:
 export async function GET(req: NextRequest) {
   const auth = await requireDoctor(req); if (auth instanceof NextResponse) return auth;
 
-  // Get the latest backup info from meta
-  const { data: meta } = await supabaseAdmin
-    .from('drchrono_sync_log')
-    .select('*')
-    .eq('sync_type', 'encrypted_backup')
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  // Get current record counts
-  const tables = ['drchrono_patients', 'drchrono_medications', 'drchrono_allergies', 'drchrono_problems', 'drchrono_appointments', 'drchrono_documents']
+  // Get current record counts from local tables
+  const tables = ['patients', 'patient_medications', 'patient_allergies', 'patient_problems', 'appointments', 'patient_documents']
   const counts: Record<string, number> = {}
   for (const t of tables) {
     const { count } = await supabaseAdmin.from(t).select('*', { count: 'exact', head: true })
@@ -65,8 +56,8 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    last_backup: meta?.started_at || null,
-    last_backup_records: meta?.records_synced || 0,
+    last_backup: null,
+    last_backup_records: 0,
     current_counts: counts,
     total_records: Object.values(counts).reduce((s, n) => s + n, 0),
   })
@@ -94,14 +85,14 @@ export async function POST(req: NextRequest) {
     let totalRecords = 0
 
     try {
-      // Fetch all patient data
+      // Fetch all patient data from local tables
       const [patients, medications, allergies, problems, appointments, documents] = await Promise.all([
-        supabaseAdmin.from('drchrono_patients').select('*'),
-        supabaseAdmin.from('drchrono_medications').select('*'),
-        supabaseAdmin.from('drchrono_allergies').select('*'),
-        supabaseAdmin.from('drchrono_problems').select('*'),
-        supabaseAdmin.from('drchrono_appointments').select('*'),
-        supabaseAdmin.from('drchrono_documents').select('drchrono_document_id, drchrono_patient_id, description, document_type, date, doctor, drchrono_updated_at'),
+        supabaseAdmin.from('patients').select('*'),
+        supabaseAdmin.from('patient_medications').select('*'),
+        supabaseAdmin.from('patient_allergies').select('*'),
+        supabaseAdmin.from('patient_problems').select('*'),
+        supabaseAdmin.from('appointments').select('*'),
+        supabaseAdmin.from('patient_documents').select('*'),
       ])
 
       const backupData = {
@@ -132,22 +123,8 @@ export async function POST(req: NextRequest) {
       const jsonStr = JSON.stringify(backupData)
       const { encrypted, iv, tag, salt } = encrypt(jsonStr, password)
 
-      // Store backup metadata in sync_log
-      try {
-        await supabaseAdmin.from('drchrono_sync_log').insert({
-          sync_type: 'encrypted_backup',
-          sync_mode: 'full',
-          status: 'completed',
-          records_synced: totalRecords,
-          started_at: new Date(start).toISOString(),
-          completed_at: new Date().toISOString(),
-          metadata: {
-            counts: backupData.counts,
-            size_bytes: encrypted.length,
-            doctor_email: doctorEmail,
-          },
-        })
-      } catch {}
+      // Log backup completion
+      console.log(`[patient-backup] Encrypted backup generated: ${totalRecords} records, ${encrypted.length} bytes`)
 
       return NextResponse.json({
         success: true,

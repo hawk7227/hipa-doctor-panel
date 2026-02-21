@@ -18,8 +18,6 @@ interface ProblemsPanelProps {
 
 interface Problem {
   id: number
-  drchrono_problem_id: number
-  drchrono_patient_id: number
   name: string
   icd_code: string | null
   snomed_ct_code: string | null
@@ -27,6 +25,7 @@ interface Problem {
   date_diagnosis: string | null
   date_changed: string | null
   notes: string | null
+  patient_id?: string | number
 }
 
 export default function ProblemsPanel({ isOpen, onClose, patientId, patientName }: ProblemsPanelProps) {
@@ -41,9 +40,9 @@ export default function ProblemsPanel({ isOpen, onClose, patientId, patientName 
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('drchrono_problems')
+        .from('problems')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('patient_id', patientId)
         .order('date_diagnosis', { ascending: false })
       if (error) throw error
       setProblems((data as unknown as Problem[]) || [])
@@ -61,15 +60,13 @@ export default function ProblemsPanel({ isOpen, onClose, patientId, patientName 
   const handleAdd = async () => {
     if (!newProblem.name.trim()) return
     try {
-      const { error } = await supabase.from('drchrono_problems').insert({
-        drchrono_patient_id: parseInt(patientId),
-        drchrono_problem_id: Date.now(),
+      const { error } = await supabase.from('problems').insert({
+        patient_id: patientId,
         name: newProblem.name,
         icd_code: newProblem.icd_code || null,
         status: newProblem.status,
         notes: newProblem.notes || null,
         date_diagnosis: new Date().toISOString().split('T')[0],
-        last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       if (error) throw error
@@ -85,7 +82,7 @@ export default function ProblemsPanel({ isOpen, onClose, patientId, patientName 
     const newStatus = problem.status === 'active' ? 'resolved' : 'active'
     try {
       const { error } = await supabase
-        .from('drchrono_problems')
+        .from('problems')
         .update({ status: newStatus, date_changed: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() })
         .eq('id', problem.id)
       if (error) throw error
@@ -97,7 +94,7 @@ export default function ProblemsPanel({ isOpen, onClose, patientId, patientName 
 
   const handleDelete = async (id: number) => {
     try {
-      const { error } = await supabase.from('drchrono_problems').delete().eq('id', id)
+      const { error } = await supabase.from('problems').delete().eq('id', id)
       if (error) throw error
       setProblems(prev => prev.filter(p => p.id !== id))
     } catch (err) {

@@ -18,8 +18,7 @@ interface DocumentsPanelProps {
 
 interface PatientDocument {
   id: number
-  drchrono_document_id: number
-  drchrono_patient_id: number
+  patient_id: string
   description: string | null
   document_type: string | null
   document_url: string | null
@@ -46,9 +45,9 @@ export default function DocumentsPanel({ isOpen, onClose, patientId, patientName
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('drchrono_documents')
+        .from('patient_documents')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('patient_id', patientId)
         .order('date', { ascending: false })
       if (error) throw error
       setDocs(data || [])

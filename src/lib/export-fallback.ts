@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════
 // EXPORT FALLBACK — Shared helper for all doctor panel APIs
 // Tries: 1) Supabase patient_data_exports  2) Static JSON file
+// 2-tier fallback: Supabase export -> Static JSON
 // ═══════════════════════════════════════════════════════════════
 
 import { existsSync, readFileSync } from "fs";
@@ -26,14 +27,12 @@ function loadStaticFile(): any[] | null {
   return null;
 }
 
-async function findPatient(db: any, patients: any[], dcId: number | null, patientId: string): Promise<any | null> {
-  let match = dcId ? patients.find((p: any) => p.drchrono_patient_id === dcId) : null;
-  if (!match) {
-    try {
-      const { data: pt } = await db.from("patients").select("email").eq("id", patientId).single();
-      if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase());
-    } catch {}
-  }
+async function findPatient(db: any, patients: any[], patientId: string): Promise<any | null> {
+  let match = null;
+  try {
+    const { data: pt } = await db.from("patients").select("email").eq("id", patientId).single();
+    if (pt?.email) match = patients.find((p: any) => p.email === pt.email.toLowerCase());
+  } catch {}
   return match;
 }
 
@@ -53,54 +52,54 @@ async function loadPatients(db: any): Promise<any[] | null> {
 }
 
 // ── Medications fallback ─────────────────────────────────────
-export async function getExportMedications(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+export async function getExportMedications(db: any, patientId: string): Promise<any[]> {
   const patients = await loadPatients(db);
   if (!patients) return [];
-  const match = await findPatient(db, patients, dcId, patientId);
+  const match = await findPatient(db, patients, patientId);
   if (!match?.medications?.length) return [];
   console.log(`[ExportFallback] meds: ${match.medications.length} for ${patientId}`);
   return match.medications.map((m: any, i: number) => ({
-    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    id: `export-${i}`,
     name: m.name, dosage_quantity: m.dosage?.split(" ")[0] || "", dosage_unit: m.dosage?.split(" ").slice(1).join(" ") || "",
     sig: m.sig || "", status: m.status || "active", date_prescribed: m.date_prescribed || "", date_stopped_taking: m.date_stopped || null, _source: "export",
   }));
 }
 
 // ── Allergies fallback ───────────────────────────────────────
-export async function getExportAllergies(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+export async function getExportAllergies(db: any, patientId: string): Promise<any[]> {
   const patients = await loadPatients(db);
   if (!patients) return [];
-  const match = await findPatient(db, patients, dcId, patientId);
+  const match = await findPatient(db, patients, patientId);
   if (!match?.allergies?.length) return [];
   console.log(`[ExportFallback] allergies: ${match.allergies.length} for ${patientId}`);
   return match.allergies.map((a: any, i: number) => ({
-    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    id: `export-${i}`,
     description: a.name, reaction: a.reaction || "", status: a.status || "active", onset_date: a.onset_date || "", _source: "export",
   }));
 }
 
 // ── Problems fallback ────────────────────────────────────────
-export async function getExportProblems(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+export async function getExportProblems(db: any, patientId: string): Promise<any[]> {
   const patients = await loadPatients(db);
   if (!patients) return [];
-  const match = await findPatient(db, patients, dcId, patientId);
+  const match = await findPatient(db, patients, patientId);
   if (!match?.problems?.length) return [];
   console.log(`[ExportFallback] problems: ${match.problems.length} for ${patientId}`);
   return match.problems.map((p: any, i: number) => ({
-    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    id: `export-${i}`,
     name: p.name, status: p.status || "active", date_onset: p.date_onset || "", date_diagnosis: p.date_onset || "", date_changed: p.date_changed || "", _source: "export",
   }));
 }
 
 // ── Appointments fallback ────────────────────────────────────
-export async function getExportAppointments(db: any, dcId: number | null, patientId: string): Promise<any[]> {
+export async function getExportAppointments(db: any, patientId: string): Promise<any[]> {
   const patients = await loadPatients(db);
   if (!patients) return [];
-  const match = await findPatient(db, patients, dcId, patientId);
+  const match = await findPatient(db, patients, patientId);
   if (!match?.appointments?.length) return [];
   console.log(`[ExportFallback] appointments: ${match.appointments.length} for ${patientId}`);
   return match.appointments.map((ap: any, i: number) => ({
-    id: `export-${i}`, drchrono_patient_id: match.drchrono_patient_id,
+    id: `export-${i}`,
     scheduled_time: ap.scheduled_time, duration: ap.duration, status: ap.status,
     reason: ap.reason || "", office: ap.office || "", doctor: ap.doctor || "", notes: ap.notes || "", _source: "export",
   }));
@@ -108,12 +107,11 @@ export async function getExportAppointments(db: any, dcId: number | null, patien
 
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
-// This file: 3-tier data fallback system
+// This file: 2-tier data fallback system
 // Built: 2026-02-17 | Used by all 6 panel APIs
 //
-// Tier 1: Live DrChrono query (handled by panel API itself)
-// Tier 2: Supabase patient_data_exports table (this file)
-// Tier 3: Static /public/data/patient-medications.json (this file)
+// Tier 1: Supabase patient_data_exports table (this file)
+// Tier 2: Static /public/data/patient-medications.json (this file)
 //
 // Functions: getExportMedications(), getExportAllergies(),
 //   getExportProblems(), getExportAppointments()

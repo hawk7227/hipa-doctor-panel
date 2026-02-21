@@ -11,16 +11,15 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 
 export interface UnifiedPatientData {
   patient: any
-  drchrono_patient_id: number | null
   demographics: any
-  medications: { local: any[]; drchrono: any[] }
-  allergies: { local: any[]; drchrono: any[] }
-  problems: { local: any[]; drchrono: any[] }
+  medications: { local: any[] }
+  allergies: { local: any[] }
+  problems: { local: any[] }
   vitals: any[]
   appointments: any[]
-  clinical_notes: { local: any[]; drchrono: any[] }
-  documents: { local: any[]; drchrono: any[] }
-  lab_results: { local: any[]; drchrono: any[] }
+  clinical_notes: { local: any[] }
+  documents: { local: any[] }
+  lab_results: { local: any[] }
   immunizations: any[]
   insurance: any[]
   history: { family: any[]; social: any[]; surgical: any[] }
@@ -272,26 +271,14 @@ export function usePanelFromUnified(panelType: string) {
     'patient-appointments': ['appointments'],
   }
 
-  const PANEL_TO_DC: Record<string, string[]> = {
-    'medications': ['medications', 'drchrono'],
-    'medication-history': ['medications', 'drchrono'],
-    'allergies': ['allergies', 'drchrono'],
-    'problems': ['problems', 'drchrono'],
-    'clinical-notes': ['clinical_notes', 'drchrono'],
-    'documents': ['documents', 'drchrono'],
-    'lab-results': ['lab_results', 'drchrono'],
-  }
-
   const tableName = PANEL_TO_TABLE[panelType] || panelType
   const localPath = PANEL_TO_LOCAL[panelType] || []
-  const dcPath = PANEL_TO_DC[panelType] || []
 
   const localData = ctx.data && localPath.length ? getArr(ctx.data, localPath) : []
-  const dcData = ctx.data && dcPath.length ? getArr(ctx.data, dcPath) : []
 
   return {
     data: localData,
-    drchronoData: dcData,
+    drchronoData: [] as any[],
     loading: ctx.loading,
     error: ctx.error,
     refetch: ctx.refetch,

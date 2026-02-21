@@ -10,7 +10,7 @@ import {
 // Patient Records — Offline-first patient chart viewer
 //
 // Reads from /data/patient-medications.json (static export)
-// Smart search: name, email, DOB, phone, address, drchrono ID
+// Smart search: name, email, DOB, phone, address, patient ID
 // Chart view: medications, allergies, problems, appointments
 // ═══════════════════════════════════════════════════════════════
 
@@ -46,7 +46,7 @@ interface Appointment {
 }
 
 interface Patient {
-  drchrono_patient_id: number
+  drchrono_patient_id: number // legacy field from static JSON
   first_name: string
   last_name: string
   email: string | null
@@ -110,10 +110,10 @@ function matchesSearch(patient: Patient, query: string): boolean {
   // Address
   if (patient.address?.toLowerCase().includes(q)) return true
 
-  // DrChrono ID
+  // Patient ID
   if (String(patient.drchrono_patient_id).includes(q)) return true
 
-  // Chart # / DrChrono ID with prefix
+  // Chart # / Patient ID with prefix
   if (q.startsWith('#') && String(patient.drchrono_patient_id).includes(q.slice(1))) return true
 
   return false
@@ -270,7 +270,7 @@ export default function PatientRecordsPage() {
                 <div className="flex items-center gap-3 text-xs text-gray-400">
                   <span>DOB: {formatDOB(p.date_of_birth)}</span>
                   <span>·</span>
-                  <span>Chart #{p.drchrono_patient_id}</span>
+                  <span>Chart #{p.drchrono_patient_id}</span>{/* legacy ID from static data */}
                 </div>
               </div>
             </div>
@@ -654,7 +654,7 @@ export default function PatientRecordsPage() {
 
                 {/* Chart ID */}
                 <div className="text-right flex-shrink-0">
-                  <div className="text-[10px] text-gray-600 font-mono">#{patient.drchrono_patient_id}</div>
+                  <div className="text-[10px] text-gray-600 font-mono">#{patient.drchrono_patient_id}</div>{/* legacy ID */}
                 </div>
               </button>
             ))}

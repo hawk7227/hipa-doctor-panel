@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
         const ok = c >= (check.minCount || 0)
         // Find related fix patterns
         const relatedFixes = FIX_HISTORY.filter(f =>
-          f.symptoms.some(s => s.toLowerCase().includes(check.table!.replace('drchrono_', '')))
+          f.symptoms.some(s => s.toLowerCase().includes(check.table!))
         ).map(f => f.id)
         results.push({
           id: check.id, name: check.name,

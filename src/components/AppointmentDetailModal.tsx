@@ -133,7 +133,6 @@ const EHR_PANELS = [
   { id: 'referrals-followup', label: 'Referrals', icon: ArrowRight, color: '#f97316', hoverBg: 'hover:bg-orange-700' },
   { id: 'prior-auth', label: 'Prior Auth', icon: ClipboardCheck, color: '#8b5cf6', hoverBg: 'hover:bg-violet-700' },
   { id: 'chart-management', label: 'Chart', icon: Shield, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
-  { id: 'drchrono-erx', label: 'eRx', icon: Stethoscope, color: '#22c55e', hoverBg: 'hover:bg-green-700' },
 ] as const
 
 export default function AppointmentDetailModal({ 
@@ -439,38 +438,6 @@ export default function AppointmentDetailModal({
       case 'referrals-followup': setShowReferralsPanel(v => !v); break
       case 'prior-auth': setShowPriorAuthPanel(v => !v); break
       case 'chart-management': setShowChartManagementPanel(v => !v); break
-      case 'drchrono-erx': {
-        // Open DrChrono eRx as a side-by-side popup — positioned to the LEFT of the dashboard
-        // so the doctor can see both at once without switching windows
-        const patientChartId = (appointment as any)?.patients?.chart_id || (appointment as any)?.chart_id || ''
-        const drchronoPatientId = (appointment as any)?.drchrono_patient_id || ''
-        const erxUrl = patientChartId
-          ? `https://app.drchrono.com/clinical/#/patient/${patientChartId}/erx`
-          : drchronoPatientId
-          ? `https://app.drchrono.com/clinical/#/patient/${drchronoPatientId}/erx`
-          : `https://app.drchrono.com/clinical/`
-
-        // Calculate positioning: left half of screen for eRx, right half for dashboard
-        const screenW = window.screen.availWidth || 1920
-        const screenH = window.screen.availHeight || 1080
-        const popupW = Math.floor(screenW / 2)
-        const popupH = screenH
-        const popupLeft = 0  // eRx on the left side
-        const popupTop = 0
-
-        // Also resize the current browser window to the right half
-        try {
-          window.resizeTo(popupW, screenH)
-          window.moveTo(popupW, 0)
-        } catch { /* some browsers block resizing — that's OK */ }
-
-        window.open(
-          erxUrl,
-          'DrChrono_eRx',
-          `width=${popupW},height=${popupH},left=${popupLeft},top=${popupTop},scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=yes,status=no`
-        )
-        break
-      }
     }
   }, [])
 
@@ -1486,14 +1453,9 @@ export default function AppointmentDetailModal({
                 {/* EHR Panel Buttons */}
                 {!layout.isCustomizeMode && appointment && EHR_PANELS.map(panel => {
                   const Icon = panel.icon
-                  const isErx = panel.id === 'drchrono-erx'
                   return (
                     <button key={panel.id} onClick={() => handleToolbarPanelClick(panel.id)}
-                      className={`flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white ${
-                        isErx
-                          ? 'px-4 py-2.5 text-sm border-green-500/60 bg-green-600/20 text-green-300 hover:bg-green-600/40 hover:border-green-400 shadow-lg shadow-green-900/30 animate-pulse-subtle'
-                          : 'px-2 py-1.5 text-[11px] border-white/10 hover:border-white/30 text-slate-300'
-                      }`}
+                      className="flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white px-2 py-1.5 text-[11px] border-white/10 hover:border-white/30 text-slate-300"
                       style={isErx ? {} : { background: 'rgba(255,255,255,0.05)' }}>
                       <Icon className={isErx ? 'h-5 w-5' : 'h-3.5 w-3.5'} style={{ color: panel.color }} />{panel.label}
                     </button>

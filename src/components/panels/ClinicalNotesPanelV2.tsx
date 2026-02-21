@@ -22,7 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'clinical-notes', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'clinical-notes', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Notes')
   const [editId, setEditId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -32,9 +32,8 @@ export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patie
   })
 
   const allNotes = useMemo(() => {
-    const dc = (drchronoData || []).map((d: any) => ({ ...d, _source: 'drchrono', note_type: 'progress' }))
-    return [...(data || []), ...dc].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [data, drchronoData])
+    return [...(data || [])].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }, [data])
 
   const resetForm = () => {
     setForm({ note_type: 'soap', subjective: '', objective: '', assessment: '', plan: '',
@@ -60,7 +59,6 @@ export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patie
     <PanelBase title={`Clinical Notes — ${patientName}`} icon={FileText} accentColor="#06b6d4" loading={loading}
       error={error} hasData={allNotes.length > 0 || tab === 'New Note'} emptyMessage="No clinical notes"
       onRetry={refetch} onClose={onClose} draggable={false} badge={allNotes.length || undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => { resetForm(); setTab('New Note') }} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -133,7 +131,6 @@ export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patie
                       <span className="text-sm font-semibold text-white capitalize">{(note.note_type || 'note').replace('_', ' ')}</span>
                       <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[note.status] || STATUS_COLORS.draft}`}>{(note.status || 'draft').toUpperCase()}</span>
                       {note.ai_generated && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-400 border border-purple-500/30"><Brain className="w-2.5 h-2.5 inline" /> AI</span>}
-                      {note._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-500">
                       <span>{new Date(note.created_at).toLocaleDateString()}</span>
@@ -141,7 +138,7 @@ export default function ClinicalNotesPanelV2({ isOpen, onClose, patientId, patie
                       {note.signed_by && <span>Signed by {note.signed_by}</span>}
                     </div>
                   </div>
-                  {!note._source && note.status !== 'signed' && note.status !== 'locked' && (
+                  {note.status !== 'signed' && note.status !== 'locked' && (
                     <div className="flex gap-1">
                       <button onClick={e => { e.stopPropagation(); handleSign(note.id) }} className="p-1 text-gray-500 hover:text-green-400" title="Sign"><Lock className="w-3 h-3" /></button>
                       <button onClick={e => { e.stopPropagation(); remove(note.id) }} className="p-1 text-gray-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>

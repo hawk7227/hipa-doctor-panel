@@ -212,7 +212,7 @@ export const PANEL_ID = {
   REFERRALS: 'referrals-followup',
   PRIOR_AUTH: 'prior-auth',
   CHART_MANAGEMENT: 'chart-management',
-  ERX: 'drchrono-erx',
+  ERX: 'erx',
   VIDEO: 'video-call',
   PATIENT_SNAPSHOT: 'patient-snapshot',
   SOAP: 'soap-notes',

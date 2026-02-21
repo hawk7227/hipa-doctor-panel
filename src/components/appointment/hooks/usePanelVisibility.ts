@@ -12,7 +12,7 @@ export type PanelId =
   | 'documents' | 'family-history' | 'social-history' | 'surgical-history'
   | 'pharmacy' | 'care-plans' | 'billing' | 'comm-hub'
   | 'lab-results-inline' | 'referrals-followup' | 'prior-auth'
-  | 'chart-management' | 'drchrono-erx' | 'video-panel'
+  | 'chart-management' | 'video-panel'
   | 'insurance' | 'alerts' | 'ai-interactions' | 'quality-measures' | 'cohorts'
 
 export function usePanelVisibility() {

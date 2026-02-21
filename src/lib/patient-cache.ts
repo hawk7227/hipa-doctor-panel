@@ -4,7 +4,7 @@
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 // ═══════════════════════════════════════════════════════════════
 // Patient Data Cache — IndexedDB Browser-side Storage
-// Provides offline fallback when Supabase/DrChrono are unavailable
+// Provides offline fallback when Supabase is unavailable
 // ═══════════════════════════════════════════════════════════════
 
 const DB_NAME = 'medazon_patient_cache'
@@ -36,43 +36,43 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
 
-      // Patients — indexed by drchrono_patient_id
+      // Patients — indexed by id
       if (!db.objectStoreNames.contains(STORES.patients)) {
-        const store = db.createObjectStore(STORES.patients, { keyPath: 'drchrono_patient_id' })
+        const store = db.createObjectStore(STORES.patients, { keyPath: 'id' })
         store.createIndex('last_name', 'last_name', { unique: false })
         store.createIndex('email', 'email', { unique: false })
         store.createIndex('name_search', ['last_name', 'first_name'], { unique: false })
       }
 
-      // Medications — indexed by drchrono_medication_id
+      // Medications — indexed by id
       if (!db.objectStoreNames.contains(STORES.medications)) {
-        const store = db.createObjectStore(STORES.medications, { keyPath: 'drchrono_medication_id' })
-        store.createIndex('patient', 'drchrono_patient_id', { unique: false })
+        const store = db.createObjectStore(STORES.medications, { keyPath: 'id' })
+        store.createIndex('patient', 'patient_id', { unique: false })
       }
 
       // Allergies
       if (!db.objectStoreNames.contains(STORES.allergies)) {
-        const store = db.createObjectStore(STORES.allergies, { keyPath: 'drchrono_allergy_id' })
-        store.createIndex('patient', 'drchrono_patient_id', { unique: false })
+        const store = db.createObjectStore(STORES.allergies, { keyPath: 'id' })
+        store.createIndex('patient', 'patient_id', { unique: false })
       }
 
       // Problems
       if (!db.objectStoreNames.contains(STORES.problems)) {
-        const store = db.createObjectStore(STORES.problems, { keyPath: 'drchrono_problem_id' })
-        store.createIndex('patient', 'drchrono_patient_id', { unique: false })
+        const store = db.createObjectStore(STORES.problems, { keyPath: 'id' })
+        store.createIndex('patient', 'patient_id', { unique: false })
       }
 
       // Appointments
       if (!db.objectStoreNames.contains(STORES.appointments)) {
-        const store = db.createObjectStore(STORES.appointments, { keyPath: 'drchrono_appointment_id' })
-        store.createIndex('patient', 'drchrono_patient_id', { unique: false })
+        const store = db.createObjectStore(STORES.appointments, { keyPath: 'id' })
+        store.createIndex('patient', 'patient_id', { unique: false })
         store.createIndex('scheduled_time', 'scheduled_time', { unique: false })
       }
 
       // Documents
       if (!db.objectStoreNames.contains(STORES.documents)) {
-        const store = db.createObjectStore(STORES.documents, { keyPath: 'drchrono_document_id' })
-        store.createIndex('patient', 'drchrono_patient_id', { unique: false })
+        const store = db.createObjectStore(STORES.documents, { keyPath: 'id' })
+        store.createIndex('patient', 'patient_id', { unique: false })
       }
 
       // Meta (cache timestamps, doctor info)
@@ -186,14 +186,14 @@ export const PatientCache = {
     const results = { patients: 0, medications: 0, allergies: 0, problems: 0, appointments: 0, documents: 0, elapsed_ms: 0 }
 
     try {
-      // Fetch all patient data from drchrono_* tables
+      // Fetch all patient data from Supabase tables
       const [pRes, mRes, aRes, prRes, apRes, dRes] = await Promise.all([
-        supabase.from('drchrono_patients').select('*').limit(10000),
-        supabase.from('drchrono_medications').select('*').limit(50000),
-        supabase.from('drchrono_allergies').select('*').limit(10000),
-        supabase.from('drchrono_problems').select('*').limit(10000),
-        supabase.from('drchrono_appointments').select('*').limit(50000),
-        supabase.from('drchrono_documents').select('*').limit(50000),
+        supabase.from('patients').select('*').limit(10000),
+        supabase.from('patient_medications').select('*').limit(50000),
+        supabase.from('patient_allergies').select('*').limit(10000),
+        supabase.from('patient_problems').select('*').limit(10000),
+        supabase.from('appointments').select('*').limit(50000),
+        supabase.from('patient_documents').select('*').limit(50000),
       ])
 
       if (pRes.data?.length) results.patients = await putMany(STORES.patients, pRes.data)
@@ -233,28 +233,28 @@ export const PatientCache = {
     ).slice(0, 50)
   },
 
-  async getPatient(drchronoPatientId: number): Promise<any | null> {
-    return getByKey(STORES.patients, drchronoPatientId)
+  async getPatient(patientId: string): Promise<any | null> {
+    return getByKey(STORES.patients, patientId)
   },
 
-  async getPatientMedications(drchronoPatientId: number): Promise<any[]> {
-    return getByIndex(STORES.medications, 'patient', drchronoPatientId)
+  async getPatientMedications(patientId: string): Promise<any[]> {
+    return getByIndex(STORES.medications, 'patient', patientId)
   },
 
-  async getPatientAllergies(drchronoPatientId: number): Promise<any[]> {
-    return getByIndex(STORES.allergies, 'patient', drchronoPatientId)
+  async getPatientAllergies(patientId: string): Promise<any[]> {
+    return getByIndex(STORES.allergies, 'patient', patientId)
   },
 
-  async getPatientProblems(drchronoPatientId: number): Promise<any[]> {
-    return getByIndex(STORES.problems, 'patient', drchronoPatientId)
+  async getPatientProblems(patientId: string): Promise<any[]> {
+    return getByIndex(STORES.problems, 'patient', patientId)
   },
 
-  async getPatientAppointments(drchronoPatientId: number): Promise<any[]> {
-    return getByIndex(STORES.appointments, 'patient', drchronoPatientId)
+  async getPatientAppointments(patientId: string): Promise<any[]> {
+    return getByIndex(STORES.appointments, 'patient', patientId)
   },
 
-  async getPatientDocuments(drchronoPatientId: number): Promise<any[]> {
-    return getByIndex(STORES.documents, 'patient', drchronoPatientId)
+  async getPatientDocuments(patientId: string): Promise<any[]> {
+    return getByIndex(STORES.documents, 'patient', patientId)
   },
 
   async getAllPatients(): Promise<any[]> {

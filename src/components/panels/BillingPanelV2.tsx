@@ -17,7 +17,7 @@ const CLAIM_STATUS_COLORS: Record<string, string> = {
 }
 
 export default function BillingPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data: claims, drchronoData, loading, error, refetch, create } = usePanelData({ endpoint: 'billing', patientId })
+  const { data: claims, loading, error, refetch, create } = usePanelData({ endpoint: 'billing', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Claims')
 
   const totalBilled = useMemo(() => (claims || []).reduce((s: number, c: any) => s + (c.billed_amount || 0), 0), [claims])
@@ -28,10 +28,9 @@ export default function BillingPanelV2({ isOpen, onClose, patientId, patientName
 
   return (
     <PanelBase title={`Billing — ${patientName}`} icon={DollarSign} accentColor="#f59e0b" loading={loading}
-      error={error} hasData={(claims || []).length > 0 || drchronoData.length > 0} emptyMessage="No billing records"
+      error={error} hasData={(claims || []).length > 0} emptyMessage="No billing records"
       onRetry={refetch} onClose={onClose} draggable={false}
-      badge={balance > 0 ? `$${balance.toFixed(2)} due` : undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}>
+      badge={balance > 0 ? `$${balance.toFixed(2)} due` : undefined}>
       <div className="flex flex-col h-full">
         {/* Summary bar */}
         <div className="grid grid-cols-3 gap-2 p-3 border-b border-[#1a3d3d]">
@@ -59,16 +58,6 @@ export default function BillingPanelV2({ isOpen, onClose, patientId, patientName
                 {c.submission_date && <span className="ml-2">Submitted: {new Date(c.submission_date).toLocaleDateString()}</span>}
               </div>
               {c.denial_reason && <p className="text-xs text-red-400 mt-1">{c.denial_reason}</p>}
-            </div>
-          ))}
-
-          {tab === 'Claims' && drchronoData.map((d: any, i: number) => (
-            <div key={`dc-${i}`} className="bg-[#0a1f1f] border border-[#1a3d3d] rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-white">{d.description || d.procedure_code || 'DrChrono Line Item'}</span>
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400">DrChrono</span>
-              </div>
-              {d.total && <div className="text-xs text-gray-400 mt-1">${parseFloat(d.total).toFixed(2)}</div>}
             </div>
           ))}
 

@@ -28,37 +28,22 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Resolve drchrono_patient_id for cross-referencing
     const { data: patient } = await db
       .from('patients')
-      .select('*, drchrono_patient_id, email')
+      .select('*')
       .eq('id', patientId)
       .single()
 
-    let dcId: number | null = patient?.drchrono_patient_id || null
-
-    // Fallback: find by email in drchrono_patients
-    if (!dcId && patient?.email) {
-      const { data: dcPatient } = await db
-        .from('drchrono_patients')
-        .select('drchrono_patient_id')
-        .eq('email', patient.email)
-        .limit(1)
-        .single()
-      dcId = dcPatient?.drchrono_patient_id || null
-    }
-
-    // Parallel fetch ALL data
+    // Parallel fetch ALL data from local tables
     const [
-      medications, dcMedications,
-      allergies, dcAllergies,
-      problems, dcProblems,
+      medications,
+      allergies,
+      problems,
       vitals,
-      demographics,
       appointments,
-      clinicalNotes, dcClinicalNotes,
-      documents, dcDocuments,
-      labResults, dcLabResults,
+      clinicalNotes,
+      documents,
+      labResults,
       immunizations,
       insurance,
       history,
@@ -69,30 +54,21 @@ export async function GET(req: NextRequest) {
       alerts,
       pharmacy,
     ] = await Promise.all([
-      // Local tables
       db.from('patient_medications').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_medications').select('*').eq('drchrono_patient_id', dcId).order('date_prescribed', { ascending: false }).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('patient_allergies').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_allergies').select('*').eq('drchrono_patient_id', dcId).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('patient_problems').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_problems').select('*').eq('drchrono_patient_id', dcId).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('patient_vitals').select('*').eq('patient_id', patientId).order('recorded_at', { ascending: false }).limit(20).then(r => r.data || []),
-
-      dcId ? db.from('drchrono_patients').select('*').eq('drchrono_patient_id', dcId).single().then(r => r.data || null) : Promise.resolve(null),
 
       db.from('appointments').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(20).then(r => r.data || []),
 
       db.from('clinical_notes').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_clinical_notes').select('*').eq('drchrono_patient_id', dcId).order('drchrono_created_at', { ascending: false }).limit(20).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('patient_documents').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_documents').select('*').eq('drchrono_patient_id', dcId).limit(20).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('lab_results').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
-      dcId ? db.from('drchrono_lab_results').select('*').eq('drchrono_patient_id', dcId).order('result_date', { ascending: false }).limit(20).then(r => r.data || []) : Promise.resolve([]),
 
       db.from('patient_immunizations').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }).then(r => r.data || []),
 
@@ -118,20 +94,18 @@ export async function GET(req: NextRequest) {
       patient?.preferred_pharmacy ? Promise.resolve(patient.preferred_pharmacy) : Promise.resolve(null),
     ])
 
-    console.log(`[patient-data] Loaded patient=${patientId} dcId=${dcId} meds=${medications.length}+${dcMedications.length} allergies=${allergies.length}+${dcAllergies.length}`)
+    console.log(`[patient-data] Loaded patient=${patientId} meds=${medications.length} allergies=${allergies.length}`)
 
     return NextResponse.json({
       patient,
-      drchrono_patient_id: dcId,
-      demographics,
-      medications: { local: medications, drchrono: dcMedications },
-      allergies: { local: allergies, drchrono: dcAllergies },
-      problems: { local: problems, drchrono: dcProblems },
+      medications: { local: medications },
+      allergies: { local: allergies },
+      problems: { local: problems },
       vitals,
       appointments,
-      clinical_notes: { local: clinicalNotes, drchrono: dcClinicalNotes },
-      documents: { local: documents, drchrono: dcDocuments },
-      lab_results: { local: labResults, drchrono: dcLabResults },
+      clinical_notes: { local: clinicalNotes },
+      documents: { local: documents },
+      lab_results: { local: labResults },
       immunizations,
       insurance,
       history,

@@ -3,7 +3,7 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
+import { db, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -12,19 +12,14 @@ export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get('type') || 'results'
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
+    const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
     if (type === 'orders') {
       const { data } = await db.from('lab_orders').select('*').eq('patient_id', resolvedUuid || patient_id).order('ordered_at', { ascending: false })
-      return NextResponse.json({ data: data || [], drchrono_data: [] })
+      return NextResponse.json({ data: data || [] })
     }
     const { data: results } = await db.from('lab_results').select('*').eq('patient_id', resolvedUuid || patient_id).order('resulted_at', { ascending: false }).limit(100)
-    let drchrono: any[] = []
-    if (dcId) {
-      const { data } = await db.from('drchrono_lab_results').select('*').eq('drchrono_patient_id', dcId).order('created_at', { ascending: false })
-      drchrono = data || []
-    }
-    console.log(`[lab-results] patient=${patient_id} local=${results?.length||0} dc=${drchrono.length}`)
-    return NextResponse.json({ data: results || [], drchrono_data: drchrono })
+    console.log(`[lab-results] patient=${patient_id} local=${results?.length||0}`)
+    return NextResponse.json({ data: results || [] })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
@@ -67,11 +62,9 @@ export async function DELETE(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for lab-results
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key + resolvePatientIds
+// Updated: 2026-02-20 | Removed DrChrono integration (drchrono_lab_results queries, getDrchronoPatientId)
 //
 // WIRING: Called by usePanelData hook from lab-results panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

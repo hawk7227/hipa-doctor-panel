@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<string, string> = {
 const ROUTES = ['oral', 'topical', 'inhalation', 'injection', 'intravenous', 'sublingual', 'rectal', 'ophthalmic', 'otic', 'nasal', 'transdermal', 'other'] as const
 
 export default function MedicationsPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'medications', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'medications', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Active')
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -31,9 +31,8 @@ export default function MedicationsPanelV2({ isOpen, onClose, patientId, patient
   })
 
   const allItems = useMemo(() => {
-    const dc = (drchronoData || []).map((d: any) => ({ ...d, _source: 'drchrono', medication_name: d.name || d.medication_name || 'Unknown', status: 'active' }))
-    return [...(data || []), ...dc]
-  }, [data, drchronoData])
+    return data || []
+  }, [data])
 
   const filtered = useMemo(() => {
     if (tab === 'Active') return allItems.filter((m: any) => m.status === 'active' || m.status === 'on_hold')
@@ -65,7 +64,6 @@ export default function MedicationsPanelV2({ isOpen, onClose, patientId, patient
       error={error} hasData={allItems.length > 0 || showAdd} emptyMessage="No medications recorded"
       onRetry={refetch} onClose={onClose} draggable={false}
       badge={activeCount || undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => { resetForm(); setShowAdd(true) }} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -144,7 +142,6 @@ export default function MedicationsPanelV2({ isOpen, onClose, patientId, patient
                   <span className="text-sm font-semibold text-white">{m.medication_name}</span>
                   <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[m.status] || STATUS_COLORS.active}`}>{(m.status || 'active').toUpperCase()}</span>
                   {m.is_prn && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">PRN</span>}
-                  {m._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   {m.dosage && <span>{m.dosage}</span>}
@@ -153,13 +150,11 @@ export default function MedicationsPanelV2({ isOpen, onClose, patientId, patient
                 </div>
                 {m.side_effects && <p className="text-xs text-amber-400 mt-0.5">⚠ {m.side_effects}</p>}
               </div>
-              {!m._source && (
-                <div className="flex gap-1 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                   <button onClick={() => { setEditId(m.id); setForm({ medication_name: m.medication_name, dosage: m.dosage || '', frequency: m.frequency || '', route: m.route || 'oral', prescriber: m.prescriber || '', start_date: m.start_date || '', end_date: m.end_date || '', is_prn: m.is_prn || false, prn_reason: m.prn_reason || '', side_effects: m.side_effects || '', adherence_score: m.adherence_score?.toString() || '', status: m.status || 'active', notes: m.notes || '' }); setShowAdd(true) }}
                     className="p-1 text-gray-500 hover:text-teal-400"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => remove(m.id)} className="p-1 text-gray-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              )}
+              </div>
             </div>
           ))}
         </div>

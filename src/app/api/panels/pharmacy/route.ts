@@ -3,7 +3,7 @@
 // ⚠️ DO NOT remove, rename, or delete this file or any code in it without explicit permission from the project owner.
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 import { NextRequest, NextResponse } from 'next/server'
-import { db, getDrchronoPatientId, resolvePatientIds, authenticateDoctor } from '../_shared'
+import { db, resolvePatientIds, authenticateDoctor } from '../_shared'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const patient_id = req.nextUrl.searchParams.get('patient_id')
   if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
   try {
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
+    const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
     const { data: patient } = await db.from('patients').select('preferred_pharmacy, preferred_pharmacy_phone').eq('id', resolvedUuid || patient_id).single()
     const pharmacy = patient?.preferred_pharmacy ? [{
       id: patient_id,
@@ -19,13 +19,7 @@ export async function GET(req: NextRequest) {
       phone: patient.preferred_pharmacy_phone,
       is_preferred: true,
     }] : []
-
-    let drchrono: any[] = []
-    if (dcId) {
-      const { data } = await db.from('drchrono_patients').select('default_pharmacy').eq('drchrono_patient_id', dcId).single()
-      if (data?.default_pharmacy) drchrono = [{ pharmacy: data.default_pharmacy }]
-    }
-    return NextResponse.json({ data: pharmacy, drchrono_data: drchrono })
+    return NextResponse.json({ data: pharmacy })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }
 
@@ -34,7 +28,7 @@ export async function PUT(req: NextRequest) {
   try {
     const { patient_id, name, phone } = await req.json()
     if (!patient_id) return NextResponse.json({ error: 'patient_id required' }, { status: 400 })
-    const { uuid: resolvedUuid, dcId } = await resolvePatientIds(patient_id)
+    const { uuid: resolvedUuid } = await resolvePatientIds(patient_id)
     const { data, error } = await db.from('patients').update({
       preferred_pharmacy: name || null,
       preferred_pharmacy_phone: phone || null,
@@ -47,11 +41,9 @@ export async function PUT(req: NextRequest) {
 
 // ═══ BUILD_HISTORY ═══════════════════════════════════════════
 // This file: Panel API for pharmacy
-// Built: 2026-02-17 | Uses service role key + getDrchronoPatientId, resolvePatientIds
-//
-// FIX-001: RLS disabled on drchrono_* tables
-// FIX-008: Uses email fallback when drchrono_patient_id is NULL
+// Built: 2026-02-17 | Uses service role key + resolvePatientIds
+// Updated: 2026-02-20 | Removed DrChrono integration (drchrono_patients queries, getDrchronoPatientId)
 //
 // WIRING: Called by usePanelData hook from pharmacy panel component
-// SHARED: Uses _shared.ts for getDrchronoPatientId, resolvePatientIds()
+// SHARED: Uses _shared.ts for resolvePatientIds()
 // ═══════════════════════════════════════════════════════════════

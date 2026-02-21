@@ -1362,9 +1362,9 @@ const handleSuggestionClick = (patient: Patient) => {
             <button
               onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
               className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-lg transition-colors whitespace-nowrap text-sm font-medium"
-              title="Search DrChrono + local (Ctrl+K)"
+              title="Advanced Search (Ctrl+K)"
             >
-              🔍 DrChrono
+              Advanced Search
             </button>
           </div>
         </div>
@@ -2376,8 +2376,8 @@ const handleSuggestionClick = (patient: Patient) => {
 // Built: 2026-02-17 | Switched from AppointmentDetailModal to WorkspaceCanvas
 //
 // FIX-005 (2026-02-17): Replaced old 7109-line modal with WorkspaceCanvas
-// FIX-008 (2026-02-17): DrChrono patient ID null → email fallback
+// FIX-008 (2026-02-17): Patient ID null → email fallback
 //
 // WIRING: WorkspaceCanvas, /api/patients/[id], /api/patients/search
-// TABLES: patients, drchrono_patients, appointments
+// TABLES: patients, appointments
 // ═══════════════════════════════════════════════════════════════

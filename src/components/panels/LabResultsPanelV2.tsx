@@ -17,15 +17,14 @@ const INTERP_COLORS: Record<string, string> = {
 }
 
 export default function LabResultsPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data: results, drchronoData, loading, error, refetch, create, update } = usePanelData({ endpoint: 'lab-results', patientId })
+  const { data: results, loading, error, refetch, create, update } = usePanelData({ endpoint: 'lab-results', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Results')
   const [showAdd, setShowAdd] = useState(false)
   const [orderForm, setOrderForm] = useState({ lab_name: '', lab_type: 'labcorp', tests: '', priority: 'routine', fasting_required: false, special_instructions: '', notes: '' })
 
   const allResults = useMemo(() => {
-    const dc = (drchronoData || []).map((d: any) => ({ ...d, _source: 'drchrono', test_name: d.test_name || d.name || 'Unknown' }))
-    return [...(results || []), ...dc].sort((a: any, b: any) => new Date(b.resulted_at || b.created_at).getTime() - new Date(a.resulted_at || a.created_at).getTime())
-  }, [results, drchronoData])
+    return [...(results || [])].sort((a: any, b: any) => new Date(b.resulted_at || b.created_at).getTime() - new Date(a.resulted_at || a.created_at).getTime())
+  }, [results])
 
   const needsReview = allResults.filter((r: any) => !r.reviewed_by && r.status === 'final')
   const abnormalCount = allResults.filter((r: any) => r.is_abnormal || r.is_critical).length
@@ -47,7 +46,6 @@ export default function LabResultsPanelV2({ isOpen, onClose, patientId, patientN
       error={error} hasData={allResults.length > 0 || showAdd} emptyMessage="No lab results"
       onRetry={refetch} onClose={onClose} draggable={false}
       badge={needsReview.length > 0 ? `${needsReview.length} to review` : allResults.length || undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => setShowAdd(!showAdd)} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -105,7 +103,6 @@ export default function LabResultsPanelV2({ isOpen, onClose, patientId, patientN
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-white">{r.test_name}</span>
-                  {r._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                   {r.is_critical && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">CRITICAL</span>}
                 </div>
                 <span className="text-[10px] text-gray-500">{r.resulted_at ? new Date(r.resulted_at).toLocaleDateString() : ''}</span>

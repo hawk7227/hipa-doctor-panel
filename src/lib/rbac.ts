@@ -4,7 +4,7 @@
 // ⚠️ When editing: FIX ONLY what is requested. Do NOT remove existing code, comments, console.logs, or imports.
 // ═══════════════════════════════════════════════════════════════
 // MEDAZON HEALTH — ENTERPRISE RBAC (Role-Based Access Control)
-// 50+ granular permissions modeled after DrChrono + HIPAA best practices
+// 50+ granular permissions modeled after HIPAA best practices
 // Doctor has FULL control over what staff can see, do, and access
 // ═══════════════════════════════════════════════════════════════
 
@@ -109,7 +109,7 @@ export const PERMISSIONS = {
   MANAGE_OFFICE_HOURS: 'manage_office_hours',       // Set office hours
   MANAGE_APPOINTMENT_TYPES: 'manage_appointment_types', // Configure visit types
   MANAGE_TEMPLATES: 'manage_templates',             // Clinical note templates
-  MANAGE_INTEGRATIONS: 'manage_integrations',       // DrChrono, Stripe, etc.
+  MANAGE_INTEGRATIONS: 'manage_integrations',       // Stripe, Twilio, etc.
   VIEW_SYSTEM_LOGS: 'view_system_logs',             // Technical system logs
 
   // ─── SENSITIVE DATA ACCESS ───
@@ -415,7 +415,7 @@ export const PERMISSION_GROUPS: {
       { key: 'manage_office_hours', label: 'Office Hours', description: 'Set and modify office working hours' },
       { key: 'manage_appointment_types', label: 'Appointment Types', description: 'Configure visit types, durations, and pricing' },
       { key: 'manage_templates', label: 'Note Templates', description: 'Create and edit clinical note templates' },
-      { key: 'manage_integrations', label: 'Integrations', description: 'Configure DrChrono, Stripe, Twilio, and other APIs', sensitive: true },
+      { key: 'manage_integrations', label: 'Integrations', description: 'Configure Stripe, Twilio, and other APIs', sensitive: true },
       { key: 'view_system_logs', label: 'System Logs', description: 'View technical logs and error reports' },
     ],
   },

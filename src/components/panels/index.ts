@@ -51,5 +51,3 @@ export const SafeMedazonScribe = dynamic(() => import('@/components/MedazonScrib
 // ── Billing ──
 export const SafeBillingPanel = dynamic(() => import('@/components/BillingPanel'), { ssr: false })
 
-// ── Integration ──
-export const SafeDrChronoOverlay = dynamic(() => import('@/components/DrChronoOverlay'), { ssr: false })

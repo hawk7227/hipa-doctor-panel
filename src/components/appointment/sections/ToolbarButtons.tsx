@@ -49,7 +49,6 @@ export const EHR_PANELS: ReadonlyArray<{
   { id: 'quality-measures', label: 'Quality', icon: BarChart3, color: '#10b981', hoverBg: 'hover:bg-emerald-700' },
   { id: 'cohorts', label: 'Cohorts', icon: Users, color: '#6366f1', hoverBg: 'hover:bg-indigo-700' },
   { id: 'chart-management', label: 'Chart', icon: Shield, color: '#a855f7', hoverBg: 'hover:bg-purple-700' },
-  { id: 'drchrono-erx', label: 'eRx', icon: Stethoscope, color: '#22c55e', hoverBg: 'hover:bg-green-700' },
 ] as const
 
 interface ToolbarButtonsProps {
@@ -62,25 +61,21 @@ export default React.memo(function ToolbarButtons({ onPanelToggle, isPanelOpen }
     <div className="flex items-center gap-1 flex-wrap">
       {EHR_PANELS.map(panel => {
         const Icon = panel.icon
-        const isErx = panel.id === 'drchrono-erx'
         const isActive = isPanelOpen(panel.id)
         return (
           <button
             key={panel.id}
             onClick={() => onPanelToggle(panel.id)}
             className={`flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white relative ${
-              isErx
-                ? 'px-4 py-2.5 text-sm border-green-500/60 bg-green-600/20 text-green-300 hover:bg-green-600/40 hover:border-green-400 shadow-lg shadow-green-900/30'
-                : isActive
+              isActive
                 ? 'px-2 py-1.5 text-[11px] border-white/30 text-white'
                 : 'px-2 py-1.5 text-[11px] border-white/10 hover:border-white/30 text-slate-300'
             }`}
-            style={isErx ? {} : { background: isActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)' }}
+            style={{ background: isActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)' }}
           >
-            <Icon className={isErx ? 'h-5 w-5' : 'h-3.5 w-3.5'} style={{ color: panel.color }} />
+            <Icon className="h-3.5 w-3.5" style={{ color: panel.color }} />
             {panel.label}
-            {/* Active indicator dot */}
-            {isActive && !isErx && (
+            {isActive && (
               <span
                 className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
                 style={{ backgroundColor: panel.color }}

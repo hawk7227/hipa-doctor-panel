@@ -436,11 +436,6 @@ export default function WorkspaceCanvas({
                     DOB {new Date(patientDob + 'T00:00:00').toLocaleDateString()}
                   </span>
                 )}
-                {(directPatient as any)?.drchrono_synced && (
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-green-500/20 text-green-400 border border-green-500/30">
-                    DrChrono Synced
-                  </span>
-                )}
                 {(directPatient as any)?.chart_id && (
                   <span className="text-[10px] text-gray-500">Chart #{(directPatient as any).chart_id}</span>
                 )}
@@ -511,23 +506,20 @@ export default function WorkspaceCanvas({
         <div className="flex items-center gap-1 flex-wrap">
           {EHR_PANELS.map(panel => {
             const Icon = panel.icon
-            const isErx = panel.id === 'drchrono-erx'
-            const isActive = isErx ? showErxModal : openPanels.includes(panel.id)
+            const isActive = openPanels.includes(panel.id)
             return (
               <button
                 key={panel.id}
-                onClick={() => isErx ? setShowErxModal(!showErxModal) : togglePanel(panel.id)}
+                onClick={() => togglePanel(panel.id)}
                 className={`flex items-center gap-1 rounded-lg font-bold whitespace-nowrap transition-all border hover:text-white relative ${
-                  isErx
-                    ? 'px-3 py-2 text-sm border-green-500/60 bg-green-600/20 text-green-300 hover:bg-green-600/40 hover:border-green-400 shadow-lg shadow-green-900/30'
-                    : isActive
+                  isActive
                     ? 'px-2 py-1 text-[11px] border-white/30 text-white bg-white/10'
                     : 'px-2 py-1 text-[11px] border-white/10 hover:border-white/30 text-slate-300 bg-white/5'
                 }`}
               >
-                <Icon className={isErx ? 'h-4 w-4' : 'h-3 w-3'} style={{ color: panel.color }} />
+                <Icon className="h-3 w-3" style={{ color: panel.color }} />
                 {panel.label}
-                {isActive && !isErx && (
+                {isActive && (
                   <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: panel.color }} />
                 )}
               </button>

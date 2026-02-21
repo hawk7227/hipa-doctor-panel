@@ -12,7 +12,7 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 import { signOutAndRedirect } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { NotificationProvider, NotificationBell, NotificationToast } from '@/lib/notifications'
-import SyncIndicator from '@/components/SyncIndicator'
+
 import PatientSearchBar from '@/components/PatientSearchBar'
 import PatientSearchModal from '@/components/PatientSearchModal'
 import KeyboardShortcutsModal, { useKeyboardShortcutsHelp } from '@/components/KeyboardShortcutsModal'
@@ -287,11 +287,6 @@ function DoctorLayoutInner({ children }: { children: ReactNode }) {
             {/* Notification Bell */}
             <div className={`flex ${collapsed ? 'justify-center' : 'px-1'}`}>
               <NotificationBell />
-            </div>
-
-            {/* DrChrono Sync */}
-            <div className={`flex ${collapsed ? 'justify-center' : 'px-1'}`}>
-              <SyncIndicator doctorId={doctorId} compact={collapsed} />
             </div>
 
             {/* Sign Out */}

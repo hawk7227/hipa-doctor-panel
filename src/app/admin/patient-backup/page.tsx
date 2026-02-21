@@ -156,7 +156,7 @@ export default function PatientBackupPage() {
               ))}
             </div>
             <p className="text-[10px] text-gray-600 mt-2">
-              Auto-syncs every 15 minutes. If Supabase or DrChrono are unreachable, the doctor can still search patients and view their info from this cached data.
+              Auto-syncs every 15 minutes. If Supabase is unreachable, the doctor can still search patients and view their info from this cached data.
             </p>
           </>
         ) : (

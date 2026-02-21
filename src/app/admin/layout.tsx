@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { href: '/admin/appointments', label: 'Appointments', icon: Calendar, badgeKey: '' },
   { href: '/admin/notifications', label: 'Notifications', icon: Bell, badgeKey: 'notifications' },
   { href: '/admin/bug-reports', label: 'Bug Reports', icon: Bug, badgeKey: 'bugs' },
-  { href: '/admin/drchrono-migration', label: 'DrChrono Sync', icon: Database, badgeKey: '' },
+  { href: '/admin/data-management', label: 'Data Management', icon: Database, badgeKey: '' },
   { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList, badgeKey: '' },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3, badgeKey: '' },
   { href: '/admin/settings', label: 'Settings', icon: Settings, badgeKey: '' },

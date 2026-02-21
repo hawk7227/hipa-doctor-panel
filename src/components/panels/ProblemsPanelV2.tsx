@@ -20,20 +20,15 @@ const CATEGORIES = ['problem', 'diagnosis', 'health_concern', 'symptom', 'findin
 const TABS = ['Active', 'All', 'Resolved'] as const
 
 export default function ProblemsPanelV2({ isOpen, onClose, patientId, patientName }: Props) {
-  const { data, drchronoData, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'problems', patientId })
+  const { data, loading, error, refetch, create, update, remove, saving } = usePanelData({ endpoint: 'problems', patientId })
   const [tab, setTab] = useState<typeof TABS[number]>('Active')
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ description: '', icd10_code: '', status: 'active', category: 'problem', severity: '', onset_date: '', is_chronic: false, notes: '' })
 
   const allItems = useMemo(() => {
-    const local = data || []
-    const dc = (drchronoData || []).map((d: any) => ({
-      ...d, _source: 'drchrono', description: d.description || d.name || 'Unknown',
-      icd10_code: d.icd_code || d.icd10_code, status: d.status || 'active'
-    }))
-    return [...local, ...dc]
-  }, [data, drchronoData])
+    return data || []
+  }, [data])
 
   const filtered = useMemo(() => {
     if (tab === 'Active') return allItems.filter((i: any) => i.status === 'active' || i.status === 'recurrence')
@@ -58,7 +53,6 @@ export default function ProblemsPanelV2({ isOpen, onClose, patientId, patientNam
       error={error} hasData={allItems.length > 0 || showAdd} emptyMessage="No problems/conditions recorded"
       onRetry={refetch} onClose={onClose} draggable={false}
       badge={allItems.filter((i: any) => i.status === 'active').length || undefined}
-      syncStatus={drchronoData.length > 0 ? 'synced' : null}
       headerActions={<button onClick={() => { resetForm(); setShowAdd(true) }} className="p-1 text-teal-400 hover:text-teal-300"><Plus className="w-3.5 h-3.5" /></button>}>
       <div className="flex flex-col h-full">
         <div className="flex border-b border-[#1a3d3d] px-3">
@@ -111,7 +105,6 @@ export default function ProblemsPanelV2({ isOpen, onClose, patientId, patientNam
                   <span className="text-sm font-semibold text-white">{item.description}</span>
                   <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${STATUS_COLORS[item.status] || STATUS_COLORS.active}`}>{(item.status || 'active').toUpperCase()}</span>
                   {item.is_chronic && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">CHRONIC</span>}
-                  {item._source === 'drchrono' && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DrChrono</span>}
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                   {item.icd10_code && <span className="font-mono bg-[#0d2626] px-1.5 py-0.5 rounded">{item.icd10_code}</span>}
@@ -120,13 +113,11 @@ export default function ProblemsPanelV2({ isOpen, onClose, patientId, patientNam
                 </div>
                 {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}
               </div>
-              {!item._source && (
-                <div className="flex gap-1 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                   <button onClick={() => { setEditId(item.id); setForm({ description: item.description, icd10_code: item.icd10_code || '', status: item.status || 'active', category: item.category || 'problem', severity: item.severity || '', onset_date: item.onset_date || '', is_chronic: item.is_chronic || false, notes: item.notes || '' }); setShowAdd(true) }}
                     className="p-1 text-gray-500 hover:text-teal-400"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => remove(item.id)} className="p-1 text-gray-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              )}
+              </div>
             </div>
           ))}
         </div>

@@ -18,32 +18,21 @@ export async function GET(req: NextRequest) {
     const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
     // ── Total Patients ──
-    // Local patients
     const { count: localPatients, error: lpErr } = await db.from('patients').select('*', { count: 'exact', head: true })
     if (lpErr) console.error('[Stats] patients count error:', lpErr.message)
-    // DrChrono patients
-    const { count: dcPatients, error: dcErr } = await db.from('drchrono_patients').select('*', { count: 'exact', head: true })
-    if (dcErr) console.error('[Stats] drchrono_patients count error:', dcErr.message)
-    const totalPatients = Math.max(localPatients || 0, dcPatients || 0)
-    console.log(`[Stats] Patients: local=${localPatients}, drchrono=${dcPatients}, total=${totalPatients}`)
+    const totalPatients = localPatients || 0
+    console.log(`[Stats] Patients: total=${totalPatients}`)
 
     // ── Active Patients (appointments in last 30 days) ──
     let activePatients = 0
     try {
-      // Local appointments
       const { data: localActive } = await db.from('appointments')
         .select('patient_id')
         .gte('requested_date_time', thirtyDaysAgo)
         .in('status', ['accepted', 'pending', 'completed'])
       const localActiveSet = new Set((localActive || []).map((a: any) => a.patient_id).filter(Boolean))
 
-      // DrChrono appointments
-      const { data: dcActive } = await db.from('drchrono_appointments')
-        .select('drchrono_patient_id')
-        .gte('scheduled_time', thirtyDaysAgo)
-      const dcActiveSet = new Set((dcActive || []).map((a: any) => a.drchrono_patient_id).filter(Boolean))
-
-      activePatients = Math.max(localActiveSet.size, dcActiveSet.size)
+      activePatients = localActiveSet.size
     } catch { /* tables may not exist */ }
 
     // ── New This Month ──
@@ -52,12 +41,7 @@ export async function GET(req: NextRequest) {
       const { count: localNew } = await db.from('patients')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', monthStart)
-      // For DrChrono, approximate "new" patients by looking at recent drchrono_updated_at
-      // (patients whose record was recently created/updated on DrChrono side)
-      const { count: dcNew } = await db.from('drchrono_patients')
-        .select('*', { count: 'exact', head: true })
-        .gte('drchrono_updated_at', monthStart)
-      newThisMonth = Math.max(localNew || 0, dcNew || 0)
+      newThisMonth = localNew || 0
     } catch { /* ok */ }
 
     // ── Today's Appointments ──
@@ -72,17 +56,8 @@ export async function GET(req: NextRequest) {
         .gte('requested_date_time', todayStart)
         .lte('requested_date_time', todayEnd)
         .in('status', ['accepted', 'pending'])
-      
-      // DrChrono today
-      const { data: dcToday } = await db.from('drchrono_appointments')
-        .select('drchrono_appointment_id, drchrono_patient_id, scheduled_time, status, reason')
-        .gte('scheduled_time', todayStart)
-        .lte('scheduled_time', todayEnd)
-        .neq('status', 'Cancelled')
 
-      const localCount = (localToday || []).length
-      const dcCount = (dcToday || []).length
-      appointmentsToday = Math.max(localCount, dcCount)
+      appointmentsToday = (localToday || []).length
 
       // Upcoming (next 5 appointments after today)
       const { data: localUpcoming } = await db.from('appointments')
@@ -92,14 +67,6 @@ export async function GET(req: NextRequest) {
         .order('requested_date_time', { ascending: true })
         .limit(5)
 
-      const { data: dcUpcoming } = await db.from('drchrono_appointments')
-        .select('drchrono_appointment_id, drchrono_patient_id, scheduled_time, status, reason')
-        .gt('scheduled_time', todayEnd)
-        .neq('status', 'Cancelled')
-        .order('scheduled_time', { ascending: true })
-        .limit(5)
-
-      // Merge and return upcoming — prefer local, supplement with DC
       upcomingAppointments = (localUpcoming || []).map((a: any) => ({
         id: a.id,
         requested_date_time: a.requested_date_time,
@@ -108,30 +75,6 @@ export async function GET(req: NextRequest) {
         patient_name: a.patients ? `${a.patients.first_name} ${a.patients.last_name}` : null,
         _source: 'local',
       }))
-
-      // Add DC appointments if we don't have enough local ones
-      if (upcomingAppointments.length < 5 && dcUpcoming && dcUpcoming.length > 0) {
-        for (const dca of dcUpcoming) {
-          if (upcomingAppointments.length >= 5) break
-          // Look up patient name from drchrono_patients
-          let patientName = null
-          if (dca.drchrono_patient_id) {
-            const { data: p } = await db.from('drchrono_patients')
-              .select('first_name, last_name')
-              .eq('drchrono_patient_id', dca.drchrono_patient_id)
-              .single()
-            if (p) patientName = `${p.first_name} ${p.last_name}`
-          }
-          upcomingAppointments.push({
-            id: dca.drchrono_appointment_id,
-            requested_date_time: dca.scheduled_time,
-            status: dca.status,
-            visit_type: dca.reason,
-            patient_name: patientName,
-            _source: 'drchrono',
-          })
-        }
-      }
     } catch (err) {
       console.error('Dashboard appointments error:', err)
     }
@@ -142,23 +85,12 @@ export async function GET(req: NextRequest) {
       const { count: totalAppts30d } = await db.from('appointments')
         .select('*', { count: 'exact', head: true })
         .gte('requested_date_time', thirtyDaysAgo)
-      const { count: dcAppts30d } = await db.from('drchrono_appointments')
-        .select('*', { count: 'exact', head: true })
-        .gte('scheduled_time', thirtyDaysAgo)
-      const total = Math.max(totalAppts30d || 0, dcAppts30d || 0)
+      const total = totalAppts30d || 0
       avgAppointments = total > 0 ? Math.round((total / 30) * 10) / 10 : 0
     } catch { /* ok */ }
 
     // ── Sync status ──
     let lastSyncedAt = null
-    try {
-      const { data: syncLog } = await db.from('drchrono_patients')
-        .select('last_synced_at')
-        .order('last_synced_at', { ascending: false })
-        .limit(1)
-        .single()
-      lastSyncedAt = syncLog?.last_synced_at || null
-    } catch { /* ok */ }
 
     // ── Notifications ──
     const notifications: any[] = []
@@ -206,62 +138,17 @@ export async function GET(req: NextRequest) {
         })
       }
 
-      // DrChrono upcoming appointments as notifications
-      const { data: dcTodayApts } = await db.from('drchrono_appointments')
-        .select('drchrono_appointment_id, drchrono_patient_id, scheduled_time, status, reason')
-        .gte('scheduled_time', todayStart2)
-        .lte('scheduled_time', todayEnd2)
-        .neq('status', 'Cancelled')
-        .limit(5)
-
-      for (const apt of (dcTodayApts || [])) {
-        let name = 'Patient'
-        if (apt.drchrono_patient_id) {
-          const { data: p } = await db.from('drchrono_patients')
-            .select('first_name, last_name')
-            .eq('drchrono_patient_id', apt.drchrono_patient_id)
-            .single()
-          if (p) name = `${p.first_name} ${p.last_name}`.trim()
-        }
-        // Avoid duplicates with local
-        if (!notifications.some(n => n.id.includes(String(apt.drchrono_appointment_id)))) {
-          notifications.push({
-            id: `dc-today-${apt.drchrono_appointment_id}`,
-            type: 'appointment_reminder',
-            title: 'Appointment Today (DrChrono)',
-            message: `${name} — ${apt.reason || 'visit'} at ${apt.scheduled_time ? new Date(apt.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD'}`,
-            is_read: false,
-            created_at: apt.scheduled_time,
-          })
-        }
-      }
-
       // New lab results (last 24 hours)
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const { count: newLabCount } = await db.from('drchrono_lab_results')
+      const { count: newLabCount } = await db.from('lab_results')
         .select('*', { count: 'exact', head: true })
-        .gte('last_synced_at', yesterday)
+        .gte('created_at', yesterday)
       if (newLabCount && newLabCount > 0) {
         notifications.push({
           id: 'lab-results-new',
           type: 'lab_results',
           title: 'New Lab Results',
           message: `${newLabCount} new lab result${newLabCount > 1 ? 's' : ''} received in the last 24 hours`,
-          is_read: false,
-          created_at: new Date().toISOString(),
-        })
-      }
-
-      // Unread messages
-      const { count: unreadMsgs } = await db.from('drchrono_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('read', false)
-      if (unreadMsgs && unreadMsgs > 0) {
-        notifications.push({
-          id: 'messages-unread',
-          type: 'messages',
-          title: 'Unread Messages',
-          message: `You have ${unreadMsgs} unread message${unreadMsgs > 1 ? 's' : ''} in your inbox`,
           is_read: false,
           created_at: new Date().toISOString(),
         })
@@ -284,7 +171,6 @@ export async function GET(req: NextRequest) {
       lastSyncedAt,
       sources: {
         local_patients: localPatients || 0,
-        dc_patients: dcPatients || 0,
       }
     })
   } catch (err: any) {

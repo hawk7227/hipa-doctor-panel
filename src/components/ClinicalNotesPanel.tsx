@@ -18,9 +18,8 @@ interface ClinicalNotesPanelProps {
 
 interface ClinicalNote {
   id: number
-  drchrono_clinical_note_id: number
-  drchrono_patient_id: number
-  drchrono_appointment_id: number | null
+  patient_id: string
+  appointment_id: string | null
   subjective: string | null
   objective: string | null
   assessment: string | null
@@ -44,9 +43,9 @@ export default function ClinicalNotesPanel({ isOpen, onClose, patientId, patient
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('drchrono_clinical_notes')
+        .from('clinical_notes')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('patient_id', patientId)
         .order('updated_at', { ascending: false })
       if (error) throw error
       setNotes((data as unknown as ClinicalNote[]) || [])
@@ -107,8 +106,8 @@ export default function ClinicalNotesPanel({ isOpen, onClose, patientId, patient
                       {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-white/40" /> : <ChevronRight className="w-3.5 h-3.5 text-white/40" />}
                       <span className="text-xs font-medium text-white">{dateStr}</span>
                       {note.locked && <Lock className="w-3 h-3 text-yellow-400" />}
-                      {note.drchrono_appointment_id && (
-                        <span className="text-[10px] text-white/30">Appt #{note.drchrono_appointment_id}</span>
+                      {note.appointment_id && (
+                        <span className="text-[10px] text-white/30">Appt #{note.appointment_id}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">

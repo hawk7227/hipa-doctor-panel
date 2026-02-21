@@ -18,8 +18,8 @@ interface LabResultsPanelProps {
 
 interface LabOrder {
   id: number
-  drchrono_lab_order_id: number
-  drchrono_patient_id: number
+  lab_order_id?: number
+  patient_id: string | number
   requisition_id: string | null
   status: string | null
   vendor: string | null
@@ -28,9 +28,9 @@ interface LabOrder {
 
 interface LabResult {
   id: number
-  drchrono_lab_result_id: number
-  drchrono_patient_id: number
-  drchrono_lab_order_id: number | null
+  lab_result_id?: number
+  patient_id: string | number
+  lab_order_id: number | null
   test_name: string
   value: string | null
   unit: string | null
@@ -51,8 +51,8 @@ export default function LabResultsPanel({ isOpen, onClose, patientId, patientNam
     setLoading(true)
     try {
       const [ordersRes, resultsRes] = await Promise.all([
-        supabase.from('drchrono_lab_orders').select('*').eq('drchrono_patient_id', patientId).order('order_date', { ascending: false }),
-        supabase.from('drchrono_lab_results').select('*').eq('drchrono_patient_id', patientId).order('observation_date', { ascending: false }),
+        supabase.from('lab_orders').select('*').eq('patient_id', patientId).order('order_date', { ascending: false }),
+        supabase.from('lab_results').select('*').eq('patient_id', patientId).order('observation_date', { ascending: false }),
       ])
       if (ordersRes.data) setOrders(ordersRes.data as unknown as LabOrder[])
       if (resultsRes.data) setResults(resultsRes.data as unknown as LabResult[])
@@ -141,7 +141,7 @@ export default function LabResultsPanel({ isOpen, onClose, patientId, patientNam
             <div className="space-y-2">
               {orders.map(order => {
                 const isExpanded = expandedOrder === order.id
-                const orderResults = results.filter(r => r.drchrono_lab_order_id === order.drchrono_lab_order_id)
+                const orderResults = results.filter(r => r.lab_order_id === order.id)
                 return (
                   <div key={order.id} className="bg-white/5 rounded-xl border border-white/5 overflow-hidden">
                     <button

@@ -28,29 +28,11 @@ export interface FixPattern {
 export const FIX_HISTORY: FixPattern[] = [
   {
     id: 'FIX-001',
-    title: 'RLS blocking all DrChrono table reads',
-    symptoms: ['No medications found', 'Empty allergies panel', 'Problems panel blank', '0 results from drchrono_* tables'],
-    rootCause: 'Row Level Security policies with USING(false) blocked service role key reads on drchrono_medications, drchrono_allergies, drchrono_problems, drchrono_appointments, and 14 other drchrono_* tables',
-    fix: 'Disabled RLS on all drchrono_* tables permanently. Service role key bypasses RLS but USING(false) was blocking even service role in some Supabase configs.',
-    sqlFix: `ALTER TABLE drchrono_medications DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_allergies DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_problems DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_appointments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_patients DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_clinical_notes DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_lab_orders DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_lab_results DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_vaccines DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_documents DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_procedures DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_care_plans DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_amendments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_prescription_messages DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_implantable_devices DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_line_items DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_eligibility_checks DISABLE ROW LEVEL SECURITY;
-ALTER TABLE drchrono_sync_log DISABLE ROW LEVEL SECURITY;
-ALTER TABLE patients DISABLE ROW LEVEL SECURITY;
+    title: 'RLS blocking table reads',
+    symptoms: ['No medications found', 'Empty allergies panel', 'Problems panel blank', '0 results from tables'],
+    rootCause: 'Row Level Security policies with USING(false) blocked service role key reads on clinical tables',
+    fix: 'Disabled RLS on clinical tables permanently. Service role key bypasses RLS but USING(false) was blocking even service role in some Supabase configs.',
+    sqlFix: `ALTER TABLE patients DISABLE ROW LEVEL SECURITY;
 ALTER TABLE patient_medications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE clinical_notes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE medication_history DISABLE ROW LEVEL SECURITY;
@@ -63,8 +45,8 @@ ALTER TABLE patient_data_exports DISABLE ROW LEVEL SECURITY;`,
     id: 'FIX-002',
     title: 'Medications API querying wrong tables',
     symptoms: ['No medications found in Rx Refill', 'Express checkout shows 0 meds'],
-    rootCause: 'API was querying medication_history and patient_medications instead of drchrono_medications where the 20,132 actual medications live',
-    fix: 'Rewrote medications API to query drchrono_medications as primary source with 7 fallback sources',
+    rootCause: 'API was querying wrong tables for medications',
+    fix: 'Rewrote medications API to query patient_medications as primary source with fallback sources',
     dateFixed: '2026-02-17',
     severity: 'critical',
     category: 'api',
@@ -73,7 +55,7 @@ ALTER TABLE patient_data_exports DISABLE ROW LEVEL SECURITY;`,
     id: 'FIX-003',
     title: 'Wrong column names in allergies/problems export',
     symptoms: ['Export shows null allergy names', 'Problems missing ICD codes'],
-    rootCause: 'drchrono_allergies uses "reaction" not "description" for allergy name. drchrono_problems uses "icd_code" and "date_diagnosis" not "date_onset"',
+    rootCause: 'Allergies uses "reaction" not "description" for allergy name. Problems uses "icd_code" and "date_diagnosis" not "date_onset"',
     fix: 'Updated export API to use correct column names: reaction (allergies), icd_code + date_diagnosis (problems)',
     dateFixed: '2026-02-17',
     severity: 'high',
@@ -122,10 +104,10 @@ ALTER TABLE patient_data_exports DISABLE ROW LEVEL SECURITY;`,
   },
   {
     id: 'FIX-008',
-    title: 'DrChrono patient ID often NULL in panel APIs',
-    symptoms: ['Panel shows no DrChrono data', 'drchrono_patient_id is null'],
-    rootCause: 'patients.drchrono_patient_id is NULL for many patients. Panel APIs need email fallback to find DrChrono data.',
-    fix: 'All panel APIs use _shared.ts getDrchronoPatientId() which tries patients.drchrono_patient_id first, then falls back to email match in drchrono_patients table.',
+    title: 'Patient ID lookup fallback needed in panel APIs',
+    symptoms: ['Panel shows no data', 'patient_id lookup fails'],
+    rootCause: 'Panel APIs need email fallback to find patient data when direct ID lookup fails.',
+    fix: 'All panel APIs use _shared.ts getPatientId() which tries direct ID first, then falls back to email match.',
     dateFixed: '2026-02-17',
     severity: 'high',
     category: 'data',
@@ -175,13 +157,13 @@ export const SYSTEM_MAP: SystemNode[] = [
   { id: 'page-patients', name: 'Patient Management', type: 'page', path: '/doctor/patients',
     description: 'Patient list, search, detail view. Opens WorkspaceCanvas with all EHR panels.',
     dependencies: ['workspace-canvas', 'api-patients'],
-    tables: ['patients', 'appointments', 'drchrono_patients'],
+    tables: ['patients', 'appointments'],
     knownIssues: ['FIX-005', 'FIX-008'],
   },
   { id: 'page-express-checkout', name: 'Express Checkout (Patient)', type: 'page', path: '/express-checkout',
     description: '4 visit types (Instant/Refill/Video/Phone), dynamic pricing, medication selector, Stripe payment',
     dependencies: ['api-medications', 'api-availability', 'stripe'],
-    tables: ['patients', 'appointments', 'drchrono_medications'],
+    tables: ['patients', 'appointments', 'patient_medications'],
     knownIssues: ['FIX-001', 'FIX-002'],
   },
   { id: 'page-data-export', name: 'Data Export', type: 'page', path: '/doctor/data-export',
@@ -206,24 +188,24 @@ export const SYSTEM_MAP: SystemNode[] = [
 
   // ═══ EHR PANELS (each calls /api/panels/{endpoint}) ═══
   { id: 'panel-medications', name: 'Medications Panel', type: 'panel',
-    description: 'Active medications with DrChrono merge + export fallback',
-    dependencies: ['api-panel-medications'], tables: ['drchrono_medications', 'patient_medications'],
+    description: 'Active medications with export fallback',
+    dependencies: ['api-panel-medications'], tables: ['patient_medications'],
     apiEndpoints: ['/api/panels/medications'], knownIssues: ['FIX-001', 'FIX-002'] },
   { id: 'panel-allergies', name: 'Allergies Panel', type: 'panel',
     description: 'Patient allergies with severity badges',
-    dependencies: ['api-panel-allergies'], tables: ['drchrono_allergies', 'patient_allergies'],
+    dependencies: ['api-panel-allergies'], tables: ['patient_allergies'],
     apiEndpoints: ['/api/panels/allergies'], knownIssues: ['FIX-001', 'FIX-003'] },
   { id: 'panel-problems', name: 'Problems Panel', type: 'panel',
     description: 'Active problems/diagnoses with ICD codes',
-    dependencies: ['api-panel-problems'], tables: ['drchrono_problems', 'patient_problems'],
+    dependencies: ['api-panel-problems'], tables: ['patient_problems'],
     apiEndpoints: ['/api/panels/problems'], knownIssues: ['FIX-001', 'FIX-003'] },
   { id: 'panel-appointments', name: 'Appointments Panel', type: 'panel',
     description: 'Patient appointment history',
-    dependencies: ['api-panel-appointments'], tables: ['appointments', 'drchrono_appointments'],
+    dependencies: ['api-panel-appointments'], tables: ['appointments'],
     apiEndpoints: ['/api/panels/patient-appointments'] },
   { id: 'panel-demographics', name: 'Demographics Panel', type: 'panel',
-    description: 'Patient demographics with DrChrono merge',
-    dependencies: ['api-panel-demographics'], tables: ['patients', 'drchrono_patients'],
+    description: 'Patient demographics',
+    dependencies: ['api-panel-demographics'], tables: ['patients'],
     apiEndpoints: ['/api/panels/demographics'] },
   { id: 'panel-vitals', name: 'Vitals Panel', type: 'panel',
     description: 'Patient vitals history',
@@ -235,15 +217,15 @@ export const SYSTEM_MAP: SystemNode[] = [
     apiEndpoints: ['/api/panels/clinical-notes'] },
   { id: 'panel-lab-results', name: 'Lab Results Panel', type: 'panel',
     description: 'Lab orders and results',
-    dependencies: ['api-panel-lab-results'], tables: ['drchrono_lab_orders', 'drchrono_lab_results'],
+    dependencies: ['api-panel-lab-results'], tables: ['lab_orders', 'lab_results'],
     apiEndpoints: ['/api/panels/lab-results'] },
   { id: 'panel-medication-history', name: 'Medication History Panel', type: 'panel',
     description: 'Full medication history with timeline',
-    dependencies: ['api-panel-medication-history'], tables: ['drchrono_medications', 'medication_history'],
+    dependencies: ['api-panel-medication-history'], tables: ['patient_medications', 'medication_history'],
     apiEndpoints: ['/api/panels/medication-history'], knownIssues: ['FIX-001'] },
   { id: 'panel-prescription-history', name: 'Prescription History Panel', type: 'panel',
     description: 'Prescription history',
-    dependencies: ['api-panel-prescriptions'], tables: ['drchrono_medications'],
+    dependencies: ['api-panel-prescriptions'], tables: ['patient_medications'],
     apiEndpoints: ['/api/panels/prescriptions'] },
   { id: 'panel-orders', name: 'Orders Panel', type: 'panel',
     description: 'Clinical orders management',
@@ -251,10 +233,10 @@ export const SYSTEM_MAP: SystemNode[] = [
     apiEndpoints: ['/api/panels/orders'] },
   { id: 'panel-immunizations', name: 'Immunizations Panel', type: 'panel',
     description: 'Immunization records', dependencies: ['api-panel-immunizations'],
-    tables: ['drchrono_vaccines'], apiEndpoints: ['/api/panels/immunizations'] },
+    tables: ['patient_immunizations'], apiEndpoints: ['/api/panels/immunizations'] },
   { id: 'panel-documents', name: 'Documents Panel', type: 'panel',
     description: 'Patient documents', dependencies: ['api-panel-documents'],
-    tables: ['drchrono_documents', 'patient_documents'], apiEndpoints: ['/api/panels/documents'] },
+    tables: ['patient_documents'], apiEndpoints: ['/api/panels/documents'] },
   { id: 'panel-history', name: 'History Panels (Family/Social/Surgical)', type: 'panel',
     description: 'Patient history records', dependencies: ['api-panel-history'],
     apiEndpoints: ['/api/panels/history'] },
@@ -295,18 +277,14 @@ export const SYSTEM_MAP: SystemNode[] = [
   // ═══ CRON / AUTOMATION ═══
   { id: 'cron-export', name: 'Daily Data Export Cron', type: 'cron', path: '/api/cron-export',
     description: 'Runs daily at 6AM UTC. Exports all patients + meds + allergies + problems + appointments to patient_data_exports table.',
-    dependencies: [], tables: ['drchrono_patients', 'drchrono_medications', 'drchrono_allergies', 'drchrono_problems', 'drchrono_appointments', 'patient_data_exports'],
-  },
-  { id: 'cron-drchrono-sync', name: 'DrChrono Sync Cron', type: 'cron', path: '/api/drchrono/cron-sync',
-    description: 'Runs every 30 minutes. Syncs all DrChrono entities.',
-    dependencies: [], tables: ['drchrono_sync_log'],
+    dependencies: [], tables: ['patients', 'patient_medications', 'patient_allergies', 'patient_problems', 'appointments', 'patient_data_exports'],
   },
 
   // ═══ CORE DATA ═══
-  { id: 'data-export-system', name: '3-Tier Fallback System', type: 'service',
-    description: 'Tier 1: Live DrChrono query. Tier 2: Supabase patient_data_exports. Tier 3: Static /public/data/patient-medications.json (4.3MB baked into app). Ensures data access even without internet.',
+  { id: 'data-export-system', name: '2-Tier Fallback System', type: 'service',
+    description: 'Tier 1: Supabase patient_data_exports. Tier 2: Static /public/data/patient-medications.json (4.3MB baked into app). Ensures data access even without internet.',
     dependencies: ['cron-export'],
-    tables: ['patient_data_exports', 'drchrono_medications', 'drchrono_allergies', 'drchrono_problems', 'drchrono_appointments'],
+    tables: ['patient_data_exports', 'patient_medications', 'patient_allergies', 'patient_problems', 'appointments'],
   },
 ]
 
@@ -324,10 +302,10 @@ export interface HealthCheck {
 export const HEALTH_CHECKS: HealthCheck[] = [
   { id: 'hc-dashboard', name: 'Dashboard API', type: 'api', endpoint: '/api/dashboard/stats', expectStatus: 200 },
   { id: 'hc-patients-count', name: 'Patients table', type: 'count', table: 'patients', minCount: 6000 },
-  { id: 'hc-medications-count', name: 'Medications table', type: 'count', table: 'drchrono_medications', minCount: 20000 },
-  { id: 'hc-allergies-count', name: 'Allergies table', type: 'count', table: 'drchrono_allergies', minCount: 600 },
-  { id: 'hc-problems-count', name: 'Problems table', type: 'count', table: 'drchrono_problems', minCount: 1300 },
-  { id: 'hc-appointments-count', name: 'Appointments table', type: 'count', table: 'drchrono_appointments', minCount: 250 },
+  { id: 'hc-medications-count', name: 'Medications table', type: 'count', table: 'patient_medications', minCount: 20000 },
+  { id: 'hc-allergies-count', name: 'Allergies table', type: 'count', table: 'patient_allergies', minCount: 600 },
+  { id: 'hc-problems-count', name: 'Problems table', type: 'count', table: 'patient_problems', minCount: 1300 },
+  { id: 'hc-appointments-count', name: 'Appointments table', type: 'count', table: 'appointments', minCount: 250 },
   { id: 'hc-export-fresh', name: 'Export freshness', type: 'count', table: 'patient_data_exports', minCount: 1 },
   // Panel APIs
   ...['medications', 'allergies', 'problems', 'patient-appointments', 'demographics',

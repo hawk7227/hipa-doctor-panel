@@ -43,7 +43,6 @@ export interface LocalPatient {
   sms_enabled?: boolean
   email_enabled?: boolean
   call_enabled?: boolean
-  drchrono_patient_id?: number | null
   created_at: string
   updated_at: string
   _synced: number       // 0=pending, 1=synced
@@ -73,7 +72,6 @@ export interface LocalAppointment {
   chart_locked?: boolean | null
   consent_accepted?: boolean | null
   notes?: string | null
-  drchrono_appointment_id?: number | null
   created_at: string
   updated_at: string
   _synced: number
@@ -105,7 +103,6 @@ export interface LocalClinicalNote {
 export interface LocalMedication {
   id: string
   patient_id: string
-  drchrono_patient_id?: number | null
   medication_name: string
   dosage?: string | null
   frequency?: string | null
@@ -114,7 +111,6 @@ export interface LocalMedication {
   prescriber?: string | null
   is_active: boolean
   source: string
-  drchrono_medication_id?: number | null
   _synced: number
   _device_id: string
 }
@@ -122,12 +118,10 @@ export interface LocalMedication {
 export interface LocalAllergy {
   id: string
   patient_id: string
-  drchrono_patient_id?: number | null
   allergy_name: string
   reaction?: string | null
   severity?: string | null
   source: string
-  drchrono_allergy_id?: number | null
   _synced: number
   _device_id: string
 }
@@ -198,11 +192,11 @@ class MedazonLocalDB extends Dexie {
     super('medazon_local')
 
     this.version(1).stores({
-      patients: 'id, email, phone, last_name, drchrono_patient_id, updated_at, _synced',
+      patients: 'id, email, phone, last_name, updated_at, _synced',
       appointments: 'id, patient_id, doctor_id, status, visit_type, requested_date_time, updated_at, _synced',
       clinicalNotes: 'id, appointment_id, doctor_id, patient_id, updated_at, _synced',
-      medications: 'id, patient_id, drchrono_patient_id, is_active, _synced',
-      allergies: 'id, patient_id, drchrono_patient_id, _synced',
+      medications: 'id, patient_id, is_active, _synced',
+      allergies: 'id, patient_id, _synced',
       messages: 'id, appointment_id, created_at, _synced',
       documents: 'id, appointment_id, _synced',
       syncQueue: '++id, table, record_id, synced, created_at',

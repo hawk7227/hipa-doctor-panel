@@ -126,21 +126,14 @@ export default function DemographicsPanel({ isOpen, onClose, patientId, patientN
     if (!patientId) return
     setLoading(true)
     try {
-      const { data: drPatient } = await supabase
-        .from('drchrono_patients')
+      const { data: patient } = await supabase
+        .from('patients')
         .select('*')
-        .eq('drchrono_patient_id', patientId)
+        .eq('id', patientId)
         .single()
 
-      if (drPatient) {
-        setData(drPatient as unknown as PatientDemo)
-      } else {
-        const { data: localPatient } = await supabase
-          .from('patients')
-          .select('*')
-          .eq('id', patientId)
-          .single()
-        if (localPatient) setData(localPatient as unknown as PatientDemo)
+      if (patient) {
+        setData(patient as unknown as PatientDemo)
       }
     } catch (err) {
       console.error('Error fetching demographics:', err)
@@ -162,9 +155,9 @@ export default function DemographicsPanel({ isOpen, onClose, patientId, patientN
     setSaving(true)
     try {
       const { error } = await supabase
-        .from('drchrono_patients')
+        .from('patients')
         .update(editData)
-        .eq('drchrono_patient_id', patientId)
+        .eq('id', patientId)
       if (error) throw error
       setData(prev => {
         if (!prev) return prev

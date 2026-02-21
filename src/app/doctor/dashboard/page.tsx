@@ -52,7 +52,7 @@ export default function DoctorDashboard() {
   const fetchAll = useCallback(async (docId: string) => {
     setLoading(true)
     try {
-      // 1. Dashboard stats API (DrChrono + local)
+      // 1. Dashboard stats API
       try {
         const res = await authFetch('/api/dashboard/stats')
         if (res.ok) {
