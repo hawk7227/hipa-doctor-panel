@@ -121,7 +121,7 @@ export default function DoctorDashboard() {
       <div className="px-6 py-4 flex flex-wrap gap-3 border-b border-[#1a3d3d]/20">
         <ActionBtn label="Create Meeting Link" color="bg-blue-600 hover:bg-blue-700" href="/doctor/appointments" />
         <ActionBtn label="Start No-Call Review" color="bg-rose-500 hover:bg-rose-600" href="/doctor/chart-management" />
-        <ActionBtn label="Open Calendar" color="bg-[#1a3d3d] hover:bg-[#245050]" href="/doctor/schedule" />
+        <ActionBtn label="Open Calendar" color="bg-[#1a3d3d] hover:bg-[#245050]" href="/doctor/appointments" />
         <ActionBtn label="Manage Staff" color="bg-amber-500 hover:bg-amber-600" href="/doctor/staff-hub" />
         <ActionBtn label="Chart Management" color="bg-emerald-600 hover:bg-emerald-700" href="/doctor/chart-management" />
         <SyncButton />
